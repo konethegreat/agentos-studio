@@ -1,0 +1,1181 @@
+//! Vault store: the Agent Bus task queue and shared memory, kept as Markdown files.
+//!
+//! File layout and formats are compatible with the AgentOS Python server, so both can
+//! operate on the same vault concurrently.
+
+use std::fs;
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
+use std::thread::sleep;
+use std::time::{Duration, SystemTime};
+
+use anyhow::{anyhow, bail, Context, Result};
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+pub const AGENTS: [&str; 5] = ["hermes", "claude-code", "qoder", "antigravity", "human"];
+pub const PRIORITIES: [&str; 4] = ["low", "medium", "high", "critical"];
+const DASH_START: &str = "<!-- AGENTOS:TASKS:START -->";
+const DASH_END: &str = "<!-- AGENTOS:TASKS:END -->";
+const RESERVED_MEMORY: [&str; 2] = ["system_context", "decision_log"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum State {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+impl State {
+    pub fn dir(self) -> &'static str {
+        match self {
+            State::Pending => "Pending",
+            State::InProgress => "In_Progress",
+            State::Completed => "Completed",
+        }
+    }
+    pub fn status(self) -> &'static str {
+        match self {
+            State::Pending => "pending",
+            State::InProgress => "in_progress",
+            State::Completed => "completed",
+        }
+    }
+    pub fn parse(s: &str) -> Result<State> {
+        match s.trim().to_lowercase().replace(['-', ' '], "_").as_str() {
+            "pending" => Ok(State::Pending),
+            "in_progress" | "inprogress" => Ok(State::InProgress),
+            "completed" | "done" => Ok(State::Completed),
+            other => bail!("Unknown state '{other}'. Use pending, in_progress or completed."),
+        }
+    }
+    pub const ALL: [State; 3] = [State::Pending, State::InProgress, State::Completed];
+}
+
+/// Ordered YAML frontmatter value.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Fm {
+    Str(String),
+    List(Vec<String>),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Doc {
+    pub meta: Vec<(String, Fm)>,
+    pub body: String,
+}
+
+impl Doc {
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.meta
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| match v {
+                Fm::Str(s) => Some(s.as_str()),
+                Fm::List(_) => None,
+            })
+    }
+    pub fn list(&self, key: &str) -> Vec<String> {
+        self.meta
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| match v {
+                Fm::List(l) => l.clone(),
+                Fm::Str(s) if !s.is_empty() => vec![s.clone()],
+                Fm::Str(_) => vec![],
+            })
+            .unwrap_or_default()
+    }
+    pub fn set(&mut self, key: &str, val: Fm) {
+        if let Some(slot) = self.meta.iter_mut().find(|(k, _)| k == key) {
+            slot.1 = val;
+        } else {
+            self.meta.push((key.to_string(), val));
+        }
+    }
+    pub fn set_str(&mut self, key: &str, val: impl Into<String>) {
+        self.set(key, Fm::Str(val.into()));
+    }
+
+    pub fn parse(raw: &str) -> Doc {
+        let raw = raw.replace("\r\n", "\n");
+        if let Some(rest) = raw.strip_prefix("---") {
+            if let Some(end) = rest.find("\n---") {
+                let fm = &rest[..end];
+                let after = &rest[end + 4..];
+                let body = after.trim_start_matches('\n');
+                let mut meta = Vec::new();
+                if let Ok(serde_yaml::Value::Mapping(map)) =
+                    serde_yaml::from_str::<serde_yaml::Value>(fm)
+                {
+                    for (k, v) in map {
+                        let key = scalar(&k);
+                        let val = match v {
+                            serde_yaml::Value::Sequence(items) => {
+                                Fm::List(items.iter().map(scalar).collect())
+                            }
+                            other => Fm::Str(scalar(&other)),
+                        };
+                        meta.push((key, val));
+                    }
+                }
+                return Doc {
+                    meta,
+                    body: body.to_string(),
+                };
+            }
+        }
+        Doc {
+            meta: Vec::new(),
+            body: raw,
+        }
+    }
+
+    pub fn render(&self) -> String {
+        let mut out = String::from("---\n");
+        for (k, v) in &self.meta {
+            match v {
+                Fm::Str(s) => out.push_str(&format!("{k}: {}\n", yaml_scalar(s))),
+                Fm::List(items) if items.is_empty() => out.push_str(&format!("{k}: []\n")),
+                Fm::List(items) => {
+                    out.push_str(&format!("{k}:\n"));
+                    for i in items {
+                        out.push_str(&format!("- {}\n", yaml_scalar(i)));
+                    }
+                }
+            }
+        }
+        out.push_str("---\n\n");
+        out.push_str(self.body.trim_end());
+        out.push('\n');
+        out
+    }
+}
+
+fn scalar(v: &serde_yaml::Value) -> String {
+    match v {
+        serde_yaml::Value::Null => String::new(),
+        serde_yaml::Value::Bool(b) => b.to_string(),
+        serde_yaml::Value::Number(n) => n.to_string(),
+        serde_yaml::Value::String(s) => s.clone(),
+        other => serde_yaml::to_string(other)
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
+    }
+}
+
+/// Emit a YAML scalar that PyYAML and serde_yaml both read back as the same string.
+fn yaml_scalar(s: &str) -> String {
+    let plain =
+        Regex::new(r"^[A-Za-z][A-Za-z0-9_/.\-]*( [A-Za-z0-9_/.,()\-]+)*$").expect("static regex");
+    let reserved = ["true", "false", "yes", "no", "on", "off", "null", "y", "n"];
+    if plain.is_match(s) && !reserved.contains(&s.to_lowercase().as_str()) {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', "''"))
+    }
+}
+
+pub fn now() -> String {
+    chrono::Local::now()
+        .format("%Y-%m-%dT%H:%M:%S%:z")
+        .to_string()
+}
+
+pub fn slug(text: &str, max: usize) -> String {
+    let re = Regex::new(r"[^A-Za-z0-9]+").expect("static regex");
+    let s = re.replace_all(text, "_");
+    let s = s.trim_matches('_');
+    let cut: String = s.chars().take(max).collect();
+    let cut = cut.trim_end_matches('_').to_string();
+    if cut.is_empty() {
+        "untitled".into()
+    } else {
+        cut
+    }
+}
+
+pub fn norm_agent(name: &str) -> Result<String> {
+    let n = name.trim().to_lowercase().replace(['_', ' '], "-");
+    let n = match n.as_str() {
+        "claude" | "claudecode" => "claude-code".to_string(),
+        "user" => "human".to_string(),
+        _ => n,
+    };
+    if AGENTS.contains(&n.as_str()) {
+        Ok(n)
+    } else {
+        bail!("Invalid agent '{name}'. Valid: {}", AGENTS.join(", "))
+    }
+}
+
+pub fn norm_task_id(id: &str) -> Result<String> {
+    let t = id.trim().to_uppercase();
+    if Regex::new(r"^TASK-\d{3,}$")
+        .expect("static regex")
+        .is_match(&t)
+    {
+        Ok(t)
+    } else {
+        bail!("Invalid task_id '{id}'. Expected format TASK-001.")
+    }
+}
+
+fn atomic_write(path: &Path, text: &str) -> Result<()> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| anyhow!("no parent for {}", path.display()))?;
+    fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!(".tmp_{}.md", uuid::Uuid::new_v4().simple()));
+    {
+        let mut f =
+            fs::File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
+        f.write_all(text.as_bytes())?;
+        f.sync_all()?;
+    }
+    fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))?;
+    Ok(())
+}
+
+/// Cross-process lock for bus mutations (GUI and MCP processes share one vault).
+struct BusLock(PathBuf);
+
+impl BusLock {
+    fn acquire(dir: &Path) -> Result<BusLock> {
+        fs::create_dir_all(dir)?;
+        let path = dir.join(".agentos.lock");
+        for _ in 0..200 {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(_) => return Ok(BusLock(path)),
+                Err(_) => {
+                    let stale = fs::metadata(&path)
+                        .and_then(|m| m.modified())
+                        .map(|t| {
+                            SystemTime::now().duration_since(t).unwrap_or_default()
+                                > Duration::from_secs(15)
+                        })
+                        .unwrap_or(false);
+                    if stale {
+                        let _ = fs::remove_file(&path);
+                    } else {
+                        sleep(Duration::from_millis(25));
+                    }
+                }
+            }
+        }
+        bail!(
+            "Agent Bus is locked by another process ({})",
+            path.display()
+        )
+    }
+}
+
+impl Drop for BusLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Task {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub state: State,
+    pub assigned_to: String,
+    pub creator: String,
+    pub project: String,
+    pub priority: String,
+    pub timestamp: String,
+    pub claimed_by: Option<String>,
+    pub claimed_at: Option<String>,
+    pub completed_by: Option<String>,
+    pub completed_at: Option<String>,
+    pub context_files: Vec<String>,
+    pub path: String,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct Board {
+    pub pending: Vec<Task>,
+    pub in_progress: Vec<Task>,
+    pub completed: Vec<Task>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchHit {
+    pub path: String,
+    pub relative_path: String,
+    pub score: usize,
+    pub matched_terms: Vec<String>,
+    pub matches: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NoteInfo {
+    pub relative_path: String,
+    pub title: String,
+    pub modified: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DelegateArgs {
+    pub title: String,
+    pub assigned_to: String,
+    #[serde(default)]
+    pub creator: String,
+    #[serde(default)]
+    pub project: String,
+    #[serde(default)]
+    pub context_files: Vec<String>,
+    pub instructions: String,
+    #[serde(default = "default_priority")]
+    pub priority: String,
+}
+
+fn default_priority() -> String {
+    "high".into()
+}
+
+fn prio_rank(p: &str) -> u8 {
+    match p {
+        "critical" => 0,
+        "high" => 1,
+        "medium" => 2,
+        "low" => 3,
+        _ => 9,
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Vault {
+    pub root: PathBuf,
+}
+
+impl Vault {
+    pub fn new(root: impl Into<PathBuf>) -> Vault {
+        Vault { root: root.into() }
+    }
+    pub fn bus(&self) -> PathBuf {
+        self.root.join("02_Agent_Bus")
+    }
+    pub fn state_dir(&self, s: State) -> PathBuf {
+        self.bus().join(s.dir())
+    }
+    pub fn memory(&self) -> PathBuf {
+        self.root.join("03_Memory")
+    }
+    pub fn projects(&self) -> PathBuf {
+        self.root.join("01_Projects")
+    }
+    pub fn decision_log(&self) -> PathBuf {
+        self.memory().join("DECISION_LOG.md")
+    }
+    pub fn dashboard(&self) -> PathBuf {
+        self.root.join("DASHBOARD.md")
+    }
+    pub fn worker_logs(&self) -> PathBuf {
+        self.root.join("04_Agent_Engine").join("worker_logs")
+    }
+
+    pub fn ensure_dirs(&self) -> Result<()> {
+        for s in State::ALL {
+            fs::create_dir_all(self.state_dir(s))?;
+        }
+        fs::create_dir_all(self.memory())?;
+        fs::create_dir_all(self.projects())?;
+        Ok(())
+    }
+
+    /// Create the full vault tree and seed files. Existing files are never overwritten.
+    pub fn scaffold(&self) -> Result<Vec<String>> {
+        let mut created = Vec::new();
+        for d in [
+            "00_Inbox",
+            "01_Projects",
+            "02_Agent_Bus/Pending",
+            "02_Agent_Bus/In_Progress",
+            "02_Agent_Bus/Completed",
+            "03_Memory",
+            "04_Agent_Engine/templates",
+        ] {
+            let p = self.root.join(d);
+            if !p.exists() {
+                fs::create_dir_all(&p)?;
+                created.push(format!("{d}/"));
+            }
+        }
+        let raw = crate::constitution::DEFAULT_CONSTITUTION.replace("\r\n", "\n");
+        let seeds: Vec<(&str, String)> = vec![
+            ("00_Inbox/README.md", "# 00_Inbox\n\nQuick dumps, raw prompts, and unsorted agent outputs.\n".into()),
+            ("04_Agent_Engine/templates/CONSTITUTION.md", raw.clone()),
+            ("03_Memory/SYSTEM_CONTEXT.md", format!(
+                "---\ntitle: SYSTEM_CONTEXT\ntype: system-context\nversion: 2\ntags: [memory, system, agentos]\n---\n\n# SYSTEM CONTEXT - read this first\n\n> [!important] Every agent reads this note before doing any work. Interface: the `agentos-hub` MCP server.\n\n## Constitution\n\n{}\n\n## Vault map\n- `00_Inbox/` - raw dumps\n- `01_Projects/` - one note per project\n- `02_Agent_Bus/` - `Pending/` -> `In_Progress/` -> `Completed/`\n- `03_Memory/` - this file, [[DECISION_LOG]], topic notes\n- `04_Agent_Engine/` - templates and worker logs\n- [[DASHBOARD]] - live overview\n",
+                crate::constitution::managed_block(&raw, crate::constitution::Kind::System))),
+            ("03_Memory/DECISION_LOG.md", format!(
+                "---\ntitle: DECISION_LOG\ntype: decision-log\ntags: [memory, decisions, agentos]\n---\n\n# Decision Log\n\nChronological record of decisions. Newest entries at the bottom.\n\n### {} - [architecture] Vault initialized by AgentOS Studio\n- **By:** agentos-studio\n- Vault scaffolded as the canonical shared memory and task bus.\n", now())),
+            ("DASHBOARD.md", format!(
+                "---\ntitle: DASHBOARD\ntype: dashboard\ntags: [dashboard, agentos]\n---\n\n# AgentOS Dashboard\n\n> [!abstract] Local-first Agent Bus + Shared Memory. Read [[03_Memory/SYSTEM_CONTEXT|SYSTEM_CONTEXT]] first.\n\n## Agent Bus\n\n{DASH_START}\n{DASH_END}\n")),
+        ];
+        for (rel, content) in seeds {
+            let p = self.root.join(rel);
+            if !p.exists() {
+                atomic_write(&p, &content)?;
+                created.push(rel.to_string());
+            }
+        }
+        self.refresh_dashboard()?;
+        Ok(created)
+    }
+
+    pub fn structure_ok(&self) -> (bool, Vec<String>) {
+        let missing: Vec<String> = [
+            "00_Inbox",
+            "01_Projects",
+            "02_Agent_Bus/Pending",
+            "02_Agent_Bus/In_Progress",
+            "02_Agent_Bus/Completed",
+            "03_Memory",
+            "04_Agent_Engine",
+        ]
+        .iter()
+        .filter(|d| !self.root.join(d).is_dir())
+        .map(|d| d.to_string())
+        .collect();
+        (missing.is_empty(), missing)
+    }
+
+    fn find_task(&self, id: &str, states: &[State]) -> Option<(PathBuf, State)> {
+        for s in states {
+            if let Ok(rd) = fs::read_dir(self.state_dir(*s)) {
+                for e in rd.flatten() {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if name == format!("{id}.md")
+                        || (name.starts_with(&format!("{id}_")) && name.ends_with(".md"))
+                    {
+                        return Some((e.path(), *s));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn next_id(&self) -> String {
+        let re = Regex::new(r"^TASK-(\d+)").expect("static regex");
+        let mut hi = 0u64;
+        for s in State::ALL {
+            if let Ok(rd) = fs::read_dir(self.state_dir(s)) {
+                for e in rd.flatten() {
+                    if let Some(c) = re.captures(&e.file_name().to_string_lossy()) {
+                        hi = hi.max(c[1].parse().unwrap_or(0));
+                    }
+                }
+            }
+        }
+        format!("TASK-{:03}", hi + 1)
+    }
+
+    fn task_from(&self, path: &Path, state: State) -> Result<Task> {
+        let doc = Doc::parse(&fs::read_to_string(path)?);
+        let opt = |k: &str| doc.get(k).filter(|s| !s.is_empty()).map(str::to_string);
+        Ok(Task {
+            id: doc.get("id").unwrap_or_default().to_string(),
+            title: doc.get("title").unwrap_or_default().to_string(),
+            status: doc.get("status").unwrap_or(state.status()).to_string(),
+            state,
+            assigned_to: doc.get("assigned_to").unwrap_or_default().to_string(),
+            creator: doc.get("creator").unwrap_or_default().to_string(),
+            project: doc.get("project").unwrap_or_default().to_string(),
+            priority: doc.get("priority").unwrap_or_default().to_string(),
+            timestamp: doc.get("timestamp").unwrap_or_default().to_string(),
+            claimed_by: opt("claimed_by"),
+            claimed_at: opt("claimed_at"),
+            completed_by: opt("completed_by"),
+            completed_at: opt("completed_at"),
+            context_files: doc.list("context_files"),
+            path: path.display().to_string(),
+            body: doc.body.clone(),
+        })
+    }
+
+    fn tasks_in(&self, s: State) -> Vec<Task> {
+        let mut out: Vec<Task> = fs::read_dir(self.state_dir(s))
+            .map(|rd| {
+                rd.flatten()
+                    .filter(|e| {
+                        let n = e.file_name().to_string_lossy().to_string();
+                        n.starts_with("TASK-") && n.ends_with(".md")
+                    })
+                    .filter_map(|e| self.task_from(&e.path(), s).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.sort_by(|a, b| {
+            prio_rank(&a.priority)
+                .cmp(&prio_rank(&b.priority))
+                .then(a.id.cmp(&b.id))
+        });
+        out
+    }
+
+    pub fn board(&self) -> Board {
+        let mut completed = self.tasks_in(State::Completed);
+        completed.sort_by(|a, b| b.completed_at.cmp(&a.completed_at).then(b.id.cmp(&a.id)));
+        Board {
+            pending: self.tasks_in(State::Pending),
+            in_progress: self.tasks_in(State::InProgress),
+            completed,
+        }
+    }
+
+    pub fn get_task(&self, id: &str) -> Result<(Task, String)> {
+        let tid = norm_task_id(id)?;
+        let (path, s) = self
+            .find_task(&tid, &State::ALL)
+            .ok_or_else(|| anyhow!("{tid} not found"))?;
+        let raw = fs::read_to_string(&path)?;
+        Ok((self.task_from(&path, s)?, raw))
+    }
+
+    pub fn delegate_task(&self, a: DelegateArgs) -> Result<Value> {
+        let assignee = norm_agent(&a.assigned_to)?;
+        let prio = a.priority.trim().to_lowercase();
+        if !PRIORITIES.contains(&prio.as_str()) {
+            bail!(
+                "Invalid priority '{}'. Valid: {}",
+                a.priority,
+                PRIORITIES.join(", ")
+            );
+        }
+        if a.title.trim().is_empty() {
+            bail!("title must not be empty");
+        }
+        if a.instructions.trim().is_empty() {
+            bail!("instructions must not be empty");
+        }
+        self.ensure_dirs()?;
+        let _lock = BusLock::acquire(&self.bus())?;
+        let id = self.next_id();
+        let ts = now();
+        let creator = if a.creator.trim().is_empty() {
+            "unknown".to_string()
+        } else {
+            a.creator.trim().to_string()
+        };
+        let project = if a.project.trim().is_empty() {
+            "general".to_string()
+        } else {
+            a.project.trim().to_string()
+        };
+        let mut doc = Doc::default();
+        doc.set_str("id", &id);
+        doc.set_str("title", a.title.trim());
+        doc.set_str("status", "pending");
+        doc.set_str("assigned_to", &assignee);
+        doc.set_str("creator", &creator);
+        doc.set_str("project", &project);
+        doc.set_str("priority", &prio);
+        doc.set_str("timestamp", &ts);
+        doc.set("context_files", Fm::List(a.context_files.clone()));
+        doc.set(
+            "tags",
+            Fm::List(vec!["agent-bus".into(), format!("agent/{assignee}")]),
+        );
+        let ctx = if a.context_files.is_empty() {
+            "- _none_".to_string()
+        } else {
+            a.context_files
+                .iter()
+                .map(|c| format!("- `{c}`"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        doc.body = format!(
+            "# {id}: {}\n\n> [!task] Assigned to **{assignee}** by **{creator}** - priority **{prio}**\n\n## Context files\n{ctx}\n\n## Instructions\n{}\n\n## Activity log\n- {ts} - created by {creator}\n",
+            a.title.trim(),
+            a.instructions.trim()
+        );
+        let path = self
+            .state_dir(State::Pending)
+            .join(format!("{id}_{}.md", slug(&a.title, 60)));
+        atomic_write(&path, &doc.render())?;
+        drop(_lock);
+        self.refresh_dashboard()?;
+        Ok(
+            json!({"id": id, "status": "pending", "path": path.display().to_string(), "assigned_to": assignee, "priority": prio}),
+        )
+    }
+
+    pub fn fetch_pending_tasks(&self, agent: &str) -> Result<Vec<Task>> {
+        let who = agent.trim().to_lowercase();
+        let who = if who == "all" || who.is_empty() {
+            "all".to_string()
+        } else {
+            norm_agent(&who)?
+        };
+        self.ensure_dirs()?;
+        let mut tasks = self.tasks_in(State::Pending);
+        tasks.extend(self.tasks_in(State::InProgress));
+        if who != "all" {
+            tasks.retain(|t| t.assigned_to == who);
+        }
+        tasks.sort_by(|a, b| {
+            prio_rank(&a.priority)
+                .cmp(&prio_rank(&b.priority))
+                .then(a.id.cmp(&b.id))
+        });
+        Ok(tasks)
+    }
+
+    pub fn claim_task(&self, id: &str, agent: &str) -> Result<String> {
+        let tid = norm_task_id(id)?;
+        let who = norm_agent(agent)?;
+        let _lock = BusLock::acquire(&self.bus())?;
+        let (src, _) = match self.find_task(&tid, &[State::Pending]) {
+            Some(x) => x,
+            None => {
+                if self.find_task(&tid, &[State::InProgress]).is_some() {
+                    bail!("{tid} is already in progress.");
+                }
+                if self.find_task(&tid, &[State::Completed]).is_some() {
+                    bail!("{tid} is already completed.");
+                }
+                bail!("{tid} not found in Pending/.");
+            }
+        };
+        let mut doc = Doc::parse(&fs::read_to_string(&src)?);
+        let ts = now();
+        doc.set_str("status", "in_progress");
+        doc.set_str("claimed_by", &who);
+        doc.set_str("claimed_at", &ts);
+        if doc.get("assigned_to") != Some(who.as_str()) {
+            let prev = doc.get("assigned_to").unwrap_or_default().to_string();
+            doc.set_str("reassigned_from", prev);
+            doc.set_str("assigned_to", &who);
+        }
+        doc.body = format!("{}\n- {ts} - claimed by {who}\n", doc.body.trim_end());
+        let dst = self
+            .state_dir(State::InProgress)
+            .join(src.file_name().unwrap_or_default());
+        atomic_write(&dst, &doc.render())?;
+        fs::remove_file(&src)?;
+        drop(_lock);
+        self.refresh_dashboard()?;
+        Ok(format!("{tid} claimed by {who} -> {}", dst.display()))
+    }
+
+    pub fn complete_task(&self, id: &str, agent: &str, summary: &str) -> Result<String> {
+        let tid = norm_task_id(id)?;
+        let who = norm_agent(agent)?;
+        if summary.trim().is_empty() {
+            bail!("summary_of_work must not be empty");
+        }
+        let _lock = BusLock::acquire(&self.bus())?;
+        let (src, _) = match self.find_task(&tid, &[State::InProgress]) {
+            Some(x) => x,
+            None => {
+                if self.find_task(&tid, &[State::Pending]).is_some() {
+                    bail!("{tid} is still pending - call claim_task first.");
+                }
+                if self.find_task(&tid, &[State::Completed]).is_some() {
+                    bail!("{tid} is already completed.");
+                }
+                bail!("{tid} not found in In_Progress/.");
+            }
+        };
+        let mut doc = Doc::parse(&fs::read_to_string(&src)?);
+        let ts = now();
+        doc.set_str("status", "completed");
+        doc.set_str("completed_by", &who);
+        doc.set_str("completed_at", &ts);
+        doc.body = format!(
+            "{}\n- {ts} - completed by {who}\n\n## Completion summary\n> [!success] Completed by **{who}** at {ts}\n\n{}\n",
+            doc.body.trim_end(),
+            summary.trim()
+        );
+        let dst = self
+            .state_dir(State::Completed)
+            .join(src.file_name().unwrap_or_default());
+        atomic_write(&dst, &doc.render())?;
+        fs::remove_file(&src)?;
+        drop(_lock);
+        self.refresh_dashboard()?;
+        Ok(format!("{tid} completed by {who} -> {}", dst.display()))
+    }
+
+    /// Move a task to any state (used by the Kanban board), recording who moved it.
+    pub fn move_task(&self, id: &str, to: State, actor: &str) -> Result<String> {
+        let tid = norm_task_id(id)?;
+        let (task, _) = self.get_task(&tid)?;
+        if task.state == to {
+            return Ok(format!("{tid} is already {}", to.status()));
+        }
+        match (task.state, to) {
+            (State::Pending, State::InProgress) => {
+                let agent = norm_agent(&task.assigned_to).unwrap_or_else(|_| "human".into());
+                return self.claim_task(&tid, &agent);
+            }
+            (State::InProgress, State::Completed) => {
+                let agent = task
+                    .claimed_by
+                    .clone()
+                    .unwrap_or_else(|| task.assigned_to.clone());
+                let agent = norm_agent(&agent).unwrap_or_else(|_| "human".into());
+                return self.complete_task(
+                    &tid,
+                    &agent,
+                    &format!("Marked complete from AgentOS Studio by {actor}."),
+                );
+            }
+            _ => {}
+        }
+        let _lock = BusLock::acquire(&self.bus())?;
+        let src = PathBuf::from(&task.path);
+        let mut doc = Doc::parse(&fs::read_to_string(&src)?);
+        let ts = now();
+        doc.set_str("status", to.status());
+        if to == State::Pending {
+            doc.meta.retain(|(k, _)| {
+                !matches!(
+                    k.as_str(),
+                    "claimed_by" | "claimed_at" | "completed_by" | "completed_at"
+                )
+            });
+        }
+        if to == State::Completed {
+            doc.set_str("completed_by", "human");
+            doc.set_str("completed_at", &ts);
+        }
+        doc.body = format!(
+            "{}\n- {ts} - moved to {} by {actor}\n",
+            doc.body.trim_end(),
+            to.status()
+        );
+        let dst = self.state_dir(to).join(src.file_name().unwrap_or_default());
+        atomic_write(&dst, &doc.render())?;
+        fs::remove_file(&src)?;
+        drop(_lock);
+        self.refresh_dashboard()?;
+        Ok(format!("{tid} moved to {}", to.status()))
+    }
+
+    /// Append a line to a task's activity log without changing its state.
+    pub fn log_activity(&self, id: &str, line: &str) -> Result<()> {
+        let tid = norm_task_id(id)?;
+        let _lock = BusLock::acquire(&self.bus())?;
+        let (path, _) = self
+            .find_task(&tid, &State::ALL)
+            .ok_or_else(|| anyhow!("{tid} not found"))?;
+        let mut doc = Doc::parse(&fs::read_to_string(&path)?);
+        doc.body = format!("{}\n- {} - {line}\n", doc.body.trim_end(), now());
+        atomic_write(&path, &doc.render())
+    }
+
+    fn append_decision(&self, title: &str, detail: &str, author: &str) -> Result<()> {
+        let log = self.decision_log();
+        if !log.exists() {
+            atomic_write(
+                &log,
+                "# Decision Log\n\nChronological record of decisions.\n",
+            )?;
+        }
+        let mut f = fs::OpenOptions::new().append(true).open(&log)?;
+        write!(
+            f,
+            "\n### {} - {title}\n- **By:** {author}\n- {detail}\n",
+            now()
+        )?;
+        Ok(())
+    }
+
+    pub fn write_shared_memory(
+        &self,
+        topic: &str,
+        content: &str,
+        category: &str,
+    ) -> Result<String> {
+        if topic.trim().is_empty() || content.trim().is_empty() {
+            bail!("topic and content must not be empty");
+        }
+        let cat = slug(&category.to_lowercase(), 30).to_lowercase();
+        let file_slug = slug(topic, 60);
+        if RESERVED_MEMORY.contains(&file_slug.to_lowercase().as_str()) {
+            bail!("SYSTEM_CONTEXT and DECISION_LOG are reserved; choose another topic.");
+        }
+        self.ensure_dirs()?;
+        let path = self.memory().join(format!("{file_slug}.md"));
+        let ts = now();
+        let section = format!("## {ts} ({cat})\n\n{}\n", content.trim());
+        let action = if path.exists() {
+            let mut doc = Doc::parse(&fs::read_to_string(&path)?);
+            doc.set_str("updated", &ts);
+            let mut cats = doc.list("categories");
+            if !cats.contains(&cat) {
+                cats.push(cat.clone());
+            }
+            cats.sort();
+            doc.set("categories", Fm::List(cats));
+            doc.body = format!("{}\n\n{section}", doc.body.trim_end());
+            atomic_write(&path, &doc.render())?;
+            "appended"
+        } else {
+            let mut doc = Doc::default();
+            doc.set_str("topic", topic.trim());
+            doc.set("categories", Fm::List(vec![cat.clone()]));
+            doc.set_str("created", &ts);
+            doc.set_str("updated", &ts);
+            doc.set(
+                "tags",
+                Fm::List(vec!["memory".into(), format!("memory/{cat}")]),
+            );
+            doc.body = format!(
+                "# {}\n\nSee also: [[SYSTEM_CONTEXT]] - [[DECISION_LOG]]\n\n{section}",
+                topic.trim()
+            );
+            atomic_write(&path, &doc.render())?;
+            "created"
+        };
+        let first: String = content
+            .trim()
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .chars()
+            .take(160)
+            .collect();
+        self.append_decision(
+            &format!("[{cat}] {}", topic.trim()),
+            &format!("Memory {action}: [[{file_slug}]] - {first}"),
+            "agentos-hub",
+        )?;
+        Ok(format!("Memory note {action}: {}", path.display()))
+    }
+
+    pub fn search_shared_memory(&self, query: &str) -> Result<Vec<SearchHit>> {
+        let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+        if terms.is_empty() {
+            bail!("query must not be empty");
+        }
+        let mut hits = Vec::new();
+        for root in [self.projects(), self.memory()] {
+            for entry in walkdir::WalkDir::new(&root).into_iter().flatten() {
+                let p = entry.path();
+                if !entry.file_type().is_file()
+                    || p.extension().and_then(|e| e.to_str()) != Some("md")
+                {
+                    continue;
+                }
+                let Ok(text) = fs::read_to_string(p) else {
+                    continue;
+                };
+                let mut hit_terms: Vec<String> = Vec::new();
+                let mut matches = Vec::new();
+                for (i, line) in text.lines().enumerate() {
+                    let low = line.to_lowercase();
+                    let found: Vec<&String> =
+                        terms.iter().filter(|t| low.contains(t.as_str())).collect();
+                    if found.is_empty() {
+                        continue;
+                    }
+                    for f in &found {
+                        if !hit_terms.contains(f) {
+                            hit_terms.push((*f).clone());
+                        }
+                    }
+                    let mut snippet = line.trim().to_string();
+                    if snippet.chars().count() > 240 {
+                        let idx = low.find(found[0].as_str()).unwrap_or(0);
+                        let start = idx.saturating_sub(100);
+                        let start = (0..=start)
+                            .rev()
+                            .find(|i| snippet.is_char_boundary(*i))
+                            .unwrap_or(0);
+                        let tail: String = snippet[start..].chars().take(240).collect();
+                        snippet = format!("{}{tail}...", if start > 0 { "..." } else { "" });
+                    }
+                    matches.push(json!({"line": i + 1, "snippet": snippet}));
+                }
+                let stem = p
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default()
+                    .to_lowercase();
+                for t in &terms {
+                    if stem.contains(t.as_str()) && !hit_terms.contains(t) {
+                        hit_terms.push(t.clone());
+                    }
+                }
+                if !hit_terms.is_empty() {
+                    hit_terms.sort();
+                    let rel = p
+                        .strip_prefix(&self.root)
+                        .unwrap_or(p)
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    hits.push(SearchHit {
+                        path: p.display().to_string(),
+                        relative_path: rel,
+                        score: hit_terms.len() * 100 + matches.len(),
+                        matched_terms: hit_terms,
+                        matches: matches.into_iter().take(8).collect(),
+                    });
+                }
+            }
+        }
+        hits.sort_by(|a, b| {
+            b.score
+                .cmp(&a.score)
+                .then(a.relative_path.cmp(&b.relative_path))
+        });
+        hits.truncate(25);
+        Ok(hits)
+    }
+
+    pub fn list_memory_notes(&self) -> Vec<NoteInfo> {
+        let mut notes: Vec<NoteInfo> = walkdir::WalkDir::new(self.memory())
+            .into_iter()
+            .flatten()
+            .filter(|e| {
+                e.file_type().is_file()
+                    && e.path().extension().and_then(|x| x.to_str()) == Some("md")
+            })
+            .filter_map(|e| {
+                let meta = e.metadata().ok()?;
+                let modified: chrono::DateTime<chrono::Local> = meta.modified().ok()?.into();
+                Some(NoteInfo {
+                    relative_path: e
+                        .path()
+                        .strip_prefix(&self.root)
+                        .ok()?
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                    title: e.path().file_stem()?.to_string_lossy().replace('_', " "),
+                    modified: modified.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
+                    size: meta.len(),
+                })
+            })
+            .collect();
+        notes.sort_by(|a, b| b.modified.cmp(&a.modified));
+        notes
+    }
+
+    /// Resolve a vault-relative path, rejecting anything that escapes the vault.
+    pub fn resolve_rel(&self, rel: &str) -> Result<PathBuf> {
+        let p = Path::new(rel);
+        if p.is_absolute()
+            || p.components()
+                .any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)))
+        {
+            bail!("Path must be relative to the vault: {rel}");
+        }
+        Ok(self.root.join(p))
+    }
+
+    pub fn read_note(&self, rel: &str) -> Result<String> {
+        let p = self.resolve_rel(rel)?;
+        fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))
+    }
+
+    pub fn write_note(&self, rel: &str, content: &str) -> Result<()> {
+        let p = self.resolve_rel(rel)?;
+        atomic_write(&p, content)
+    }
+
+    /// Rewrite the task section of DASHBOARD.md between the AgentOS markers.
+    pub fn refresh_dashboard(&self) -> Result<()> {
+        let mut rows = Vec::new();
+        let mut counts = [0usize; 3];
+        for (i, (label, s)) in [
+            ("Pending", State::Pending),
+            ("In Progress", State::InProgress),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let tasks = self.tasks_in(*s);
+            counts[i] = tasks.len();
+            for t in tasks {
+                let link = Path::new(&t.path)
+                    .strip_prefix(&self.root)
+                    .map(|p| p.with_extension("").to_string_lossy().replace('\\', "/"))
+                    .unwrap_or_default();
+                rows.push(format!(
+                    "| [[{link}\\|{}]] | {} | {label} | {} | {} | {} |",
+                    t.id, t.title, t.assigned_to, t.priority, t.project
+                ));
+            }
+        }
+        let completed = self.board().completed;
+        counts[2] = completed.len();
+        let mut lines = vec![
+            DASH_START.to_string(),
+            format!("_Auto-refreshed by AgentOS-Hub at {}_", now()),
+            String::new(),
+            "| Pending | In Progress | Completed |".into(),
+            "|:---:|:---:|:---:|".into(),
+            format!("| {} | {} | {} |", counts[0], counts[1], counts[2]),
+            String::new(),
+            "#### Active tasks".into(),
+            String::new(),
+            "| ID | Title | Status | Assigned | Priority | Project |".into(),
+            "|---|---|---|---|---|---|".into(),
+        ];
+        if rows.is_empty() {
+            lines.push("| - | _No active tasks_ | - | - | - | - |".into());
+        } else {
+            lines.extend(rows);
+        }
+        lines.extend(["".into(), "#### Recently completed".into(), "".into()]);
+        if completed.is_empty() {
+            lines.push("_Nothing completed yet._".into());
+        } else {
+            lines.push("| ID | Title | Completed by | Completed at |".into());
+            lines.push("|---|---|---|---|".into());
+            for t in completed.iter().take(10) {
+                let link = Path::new(&t.path)
+                    .strip_prefix(&self.root)
+                    .map(|p| p.with_extension("").to_string_lossy().replace('\\', "/"))
+                    .unwrap_or_default();
+                lines.push(format!(
+                    "| [[{link}\\|{}]] | {} | {} | {} |",
+                    t.id,
+                    t.title,
+                    t.completed_by.clone().unwrap_or_default(),
+                    t.completed_at.clone().unwrap_or_default()
+                ));
+            }
+        }
+        lines.push(DASH_END.into());
+        let block = lines.join("\n");
+        let dash = self.dashboard();
+        let text = fs::read_to_string(&dash).unwrap_or_else(|_| "# AgentOS Dashboard\n".into());
+        let new = match (text.find(DASH_START), text.find(DASH_END)) {
+            (Some(s), Some(e)) if e > s => {
+                format!("{}{block}{}", &text[..s], &text[e + DASH_END.len()..])
+            }
+            _ => format!("{}\n\n## Agent Bus\n\n{block}\n", text.trim_end()),
+        };
+        atomic_write(&dash, &new)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vault() -> (tempfile::TempDir, Vault) {
+        let dir = tempfile::tempdir().unwrap();
+        let v = Vault::new(dir.path());
+        v.scaffold().unwrap();
+        (dir, v)
+    }
+
+    fn args(title: &str, to: &str) -> DelegateArgs {
+        DelegateArgs {
+            title: title.into(),
+            assigned_to: to.into(),
+            creator: "hermes".into(),
+            project: "AgentOS".into(),
+            context_files: vec!["03_Memory/SYSTEM_CONTEXT.md".into()],
+            instructions: "Do the thing.".into(),
+            priority: "medium".into(),
+        }
+    }
+
+    #[test]
+    fn full_lifecycle() {
+        let (_d, v) = vault();
+        let t = v.delegate_task(args("First task", "qoder")).unwrap();
+        assert_eq!(t["id"], "TASK-001");
+        let t2 = v
+            .delegate_task(args("Second: with colon", "hermes"))
+            .unwrap();
+        assert_eq!(t2["id"], "TASK-002");
+        assert_eq!(v.fetch_pending_tasks("qoder").unwrap().len(), 1);
+        v.claim_task("task-001", "qoder").unwrap();
+        assert!(v
+            .claim_task("TASK-001", "qoder")
+            .unwrap_err()
+            .to_string()
+            .contains("already in progress"));
+        v.complete_task("TASK-001", "qoder", "Done.").unwrap();
+        let b = v.board();
+        assert_eq!(
+            (b.pending.len(), b.in_progress.len(), b.completed.len()),
+            (1, 0, 1)
+        );
+        assert_eq!(b.pending[0].title, "Second: with colon");
+        assert_eq!(b.completed[0].completed_by.as_deref(), Some("qoder"));
+        let dash = fs::read_to_string(v.dashboard()).unwrap();
+        assert!(dash.contains("| 1 | 0 | 1 |"));
+    }
+
+    #[test]
+    fn rejects_bad_input() {
+        let (_d, v) = vault();
+        assert!(v.delegate_task(args("x", "nobody")).is_err());
+        let mut a = args("x", "hermes");
+        a.priority = "urgent".into();
+        assert!(v.delegate_task(a).is_err());
+        assert!(v.claim_task("../etc", "hermes").is_err());
+        assert!(v.read_note("../outside.md").is_err());
+    }
+
+    #[test]
+    fn move_task_any_direction() {
+        let (_d, v) = vault();
+        v.delegate_task(args("Movable", "hermes")).unwrap();
+        v.move_task("TASK-001", State::Completed, "human").unwrap();
+        assert_eq!(v.board().completed.len(), 1);
+        v.move_task("TASK-001", State::Pending, "human").unwrap();
+        let b = v.board();
+        assert_eq!(b.pending.len(), 1);
+        assert!(b.pending[0].completed_by.is_none());
+    }
+
+    #[test]
+    fn memory_write_and_search() {
+        let (_d, v) = vault();
+        v.write_shared_memory("Zebra Canary", "zebracanary marker", "test")
+            .unwrap();
+        v.write_shared_memory("Zebra Canary", "second entry", "architecture")
+            .unwrap();
+        let hits = v.search_shared_memory("zebracanary").unwrap();
+        assert!(hits
+            .iter()
+            .any(|h| h.relative_path == "03_Memory/Zebra_Canary.md"));
+        let doc = Doc::parse(&v.read_note("03_Memory/Zebra_Canary.md").unwrap());
+        assert_eq!(
+            doc.list("categories"),
+            vec!["architecture".to_string(), "test".to_string()]
+        );
+        assert!(v.write_shared_memory("SYSTEM_CONTEXT", "x", "a").is_err());
+    }
+
+    #[test]
+    fn frontmatter_roundtrip_quotes_ambiguous_values() {
+        let mut d = Doc::default();
+        d.set_str("timestamp", "2026-11-05T21:52:07+02:00");
+        d.set_str("title", "it's: tricky");
+        d.set_str("status", "pending");
+        d.set_str("flag", "yes");
+        d.body = "# Body".into();
+        let r = d.render();
+        assert!(r.contains("timestamp: '2026-11-05T21:52:07+02:00'"));
+        assert!(r.contains("status: pending"));
+        assert!(r.contains("flag: 'yes'"));
+        let back = Doc::parse(&r);
+        assert_eq!(back.get("title"), Some("it's: tricky"));
+        assert_eq!(back.body.trim(), "# Body");
+    }
+}
