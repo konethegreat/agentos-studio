@@ -1,3 +1,10 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+*.log
+.DS_Store
+
 # >>> AgentOS local agent caches (rule files stay tracked) >>>
 .claude/settings.local.json
 .qoder/settings.local.json
@@ -5,3 +12,4 @@ CLAUDE.local.md
 AGENTS.local.md
 GEMINI.local.md
 # <<< AgentOS <<<
+*.tsbuildinfo
