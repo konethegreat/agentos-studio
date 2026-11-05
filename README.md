@@ -58,7 +58,19 @@ flowchart LR
 
 The vault is the single source of truth. Every task is a Markdown file with YAML frontmatter that moves `Pending/ -> In_Progress/ -> Completed/`, so humans can read and edit it in Obsidian and every agent sees the same state.
 
-## Install and run
+## Download
+
+Grab the latest installer from [Releases](https://github.com/konethegreat/agentos-studio/releases/latest):
+
+| Platform | File |
+|---|---|
+| Windows 10 / 11 | `AgentOS Studio_<version>_x64-setup.exe` (NSIS) or `_x64_en-US.msi` |
+| macOS | `_aarch64.dmg` (Apple Silicon) or `_x64.dmg` (Intel) |
+| Linux | `.AppImage`, `.deb` or `.rpm` |
+
+Builds are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper ask for confirmation on first launch. Every `v*` tag is built for all three platforms by [`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+## Build from source
 
 Prerequisites: [Rust](https://rustup.rs) (stable), Node.js 20+, and the [Tauri v2 system dependencies](https://v2.tauri.app/start/prerequisites/) for your OS (WebView2 is already present on Windows 10 and 11).
 
