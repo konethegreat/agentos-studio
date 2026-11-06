@@ -521,12 +521,24 @@ pub fn reveal_path(path: String) -> CmdResult<()> {
     if !p.exists() {
         return Err(format!("{path} does not exist"));
     }
+    // Always a directory, never the file itself, so nothing is executed.
     let dir = if p.is_dir() {
         p
     } else {
         p.parent().unwrap_or(p)
     };
-    open_with_os(&dir.display().to_string()).map_err(err)
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(dir)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        open_with_os(&dir.display().to_string()).map_err(err)
+    }
 }
 
 // ------------------------------------------------------------------ safety

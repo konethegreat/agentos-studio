@@ -815,7 +815,8 @@ pub fn link_project(folder_id: &str, approved: bool) -> Result<String> {
             permissions::run_guarded("org.link_project", folder_id, &summary, approved, || {
                 let (code, out, err) = procs::run_with_timeout(
                     "hermes",
-                    &["project", "create", &name, "--slug", &slug, &path],
+                    // `--` ends option parsing, so a name or path starting with '-' stays positional.
+                    &["project", "create", "--slug", &slug, "--", &name, &path],
                     None,
                     None,
                     std::time::Duration::from_secs(60),
