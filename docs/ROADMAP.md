@@ -49,8 +49,7 @@ Hermes stays the source of truth; Studio connects to what it already owns.
 
 - **Memory:** vault-first browser with wikilinks and frontmatter, and a "memory ledger" on every
   chat turn listing exactly which notes were read and written (assembled from `tool_use` events of
-  `agentos-hub`, file tools and Notion MCP). Notion two-way sync through a vault sync ledger
-  (`notion_id`, `synced_at`, content hash; last-writer-wins with conflict notes).
+  `agentos-hub` and file tools). Notion is handled in v0.4.2 as publish-out, not as two-way sync.
 - **Transparency:** run timeline across chats, PTYs, workers and updates; reasoning panel fed from
   `state.db` `reasoning` columns after each turn (stream-json does not stream reasoning; the PTY
   does); token and cost panel from `state.db` and `hermes insights`; pause and step-in through
@@ -62,6 +61,32 @@ Hermes stays the source of truth; Studio connects to what it already owns.
 
 Why after v0.4.0: the memory ledger and cost panel produce the per-turn outcome data the model
 router needs, and the design tokens are needed by every later screen, so both stay ahead of v0.5.0.
+
+## v0.4.2: Notion as a publishing surface
+
+Two-way last-writer-wins sync was on this roadmap and has been removed. It sounds symmetric and is
+not: the vault is markdown in git, Notion is a hosted database with its own editors, and a silent
+last-writer-wins merge loses someone's work without ever saying so. Notion is better used where it
+is strong, as the dashboard other humans read.
+
+**Out (vault to Notion), written in Rust against the Notion API:**
+- Fleet table: one row per repository with rule-file version, last sync and open tasks.
+- Roadmap: the phase table from `docs/ROADMAP.md`, upserted by page id.
+- Weekly decision digest: the week's `type: decision` entries, grouped by project.
+- Task status: Agent Bus tasks mirrored as rows, status only.
+- One owner per field. Each published field names its source; nothing is written back.
+
+**In (Notion to vault), one narrow door:**
+- A Notion database literally called "Inbox for agents". Pages created there are pulled into
+  `00_Inbox/` with their title, body and page id, then left alone. No other Notion page is read.
+
+**Bookkeeping:** `sync_ledger` (vault_path, notion_id, content_hash, synced_at, direction). A row
+per published object, so a repeated publish with an unchanged hash is a no-op and a changed vault
+note is visible as a diff before it goes out.
+
+**Sequencing:** build the ledger and the outbound publisher first, run it in dry-run against the
+Command Center page, then enable the Inbox pull. Only after publishing works should `fleet.rs` stop
+creating LLM bus tasks for routine Notion row appends. Until that publisher exists, leave it alone.
 
 ## v0.5.0: model layer, full parity and live freshness
 
