@@ -1,24 +1,11 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import {
-  ArrowUp,
-  BookDown,
-  Brain,
-  ChevronRight,
-  FolderOpen,
-  Loader2,
-  MessageSquarePlus,
-  Pencil,
-  Search,
-  Square,
-  Stethoscope,
-  Trash2,
-  Workflow,
-  Plug,
-  Cloud,
-} from "lucide-react";
+import { ArrowUp, Brain, ChevronRight, Cloud, FolderOpen, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Square, SquareTerminal, Stethoscope, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { api, errorText, events, type HermesStatus, type RepoInfo, type SessionSummary } from "../lib/api";
-import { applyEvent, fromHistory, newId, relativeTime, type ChatItem } from "../lib/chat";
+import { api, errorText, events, type HermesStatus, type RepoInfo } from "../lib/api";
+import { studio, type Folder, type OrgSnapshot, type PlacedChat } from "../lib/studio";
+import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
+import { WorkspaceTree } from "../components/WorkspaceTree";
+import { applyEvent, fromHistory, newId, type ChatItem } from "../lib/chat";
 import { basename } from "../lib/format";
 import { useCli } from "../components/CliDrawer";
 import { Markdown } from "../components/Markdown";
@@ -33,7 +20,14 @@ const SLASH = [
   { cmd: "/mcp-test", label: "mcp-test", icon: Plug, hint: "Ping every MCP server and list its tools" },
   { cmd: "/delegate-to-kanban", label: "delegate-to-kanban", icon: Workflow, hint: "Queue the text as a task on the Agent Bus" },
   { cmd: "/sync-notion", label: "sync-notion", icon: Cloud, hint: "Have Hermes update your AgentOS Command Center in Notion" },
+  { cmd: "/gh", label: "gh", icon: GitPullRequest, hint: "Run a GitHub CLI command in the terminal, for example /gh pr list" },
 ] as const;
+
+/** Same text as org::context_preamble in Rust: the agent reads attached files itself. */
+function contextPreamble(files: string[]) {
+  if (!files.length) return "";
+  return `Attached context files (read the ones relevant to this message with your file tools):\n${files.map((f) => `- ${f}`).join("\n")}\n\n`;
+}
 
 const STARTERS = [
   "Summarize what changed in this repository this week and what is left to do.",
@@ -60,16 +54,20 @@ export function ChatStudio({
   home,
   onStatusChanged,
   onOpenControl,
+  incoming,
 }: {
   repos: RepoInfo[];
   hermes: HermesStatus | null;
   home: string;
   onStatusChanged: () => void;
   onOpenControl: (tab: "providers" | "mcp") => void;
+  /** A hand-off from another view: start a new chat with this draft (and folder). */
+  incoming: { text: string; cwd?: string; nonce: number } | null;
 }) {
   const toast = useToast();
   const cli = useCli();
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const guarded = useGuarded();
+  const [snapshot, setSnapshot] = useState<OrgSnapshot | null>(null);
   const [query, setQuery] = useState("");
   const [loadingList, setLoadingList] = useState(false);
   const [current, setCurrent] = useState<string | null>(null);
@@ -81,8 +79,7 @@ export function ChatStudio({
   const [backend, setBackend] = useState<Backend>(() => ls<Backend>("chat-backend", "hermes"));
   const [workingDir, setWorkingDir] = useState<string>(() => ls("chat-cwd", ""));
   const [draft, setDraft] = useState("");
-  const [editing, setEditing] = useState<{ id: string; title: string } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const pendingFolder = useRef<Folder | null>(null);
   const runRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -97,7 +94,7 @@ export function ChatStudio({
     async (q = query) => {
       setLoadingList(true);
       try {
-        setSessions(await api.sessions(q.trim() || null));
+        setSnapshot(await studio.org.snapshot(q.trim().startsWith("#") ? null : q.trim() || null));
       } catch (e) {
         toast("error", errorText(e));
       } finally {
@@ -137,8 +134,14 @@ export function ChatStudio({
       if (e.kind === "tool_start") setStatusLine(`Calling ${e.server ? `${e.server.replace(/_/g, "-")} / ` : ""}${e.tool_name}`);
       if (e.kind === "token") setStatusLine("Writing");
       if ((e.kind === "session" || e.kind === "complete") && e.session_id) {
-        if (backendRef.current === "hermes") setCurrent(e.session_id);
-        else setClaudeSession(e.session_id);
+        if (backendRef.current === "hermes") {
+          setCurrent(e.session_id);
+          const f = pendingFolder.current;
+          if (f) {
+            pendingFolder.current = null;
+            void studio.org.placeChat(e.session_id, f.id, null).catch(() => undefined);
+          }
+        } else setClaudeSession(e.session_id);
       }
       setItems((prev) => applyEvent(prev, e));
       if (e.kind === "complete") {
@@ -164,9 +167,10 @@ export function ChatStudio({
     el.style.height = `${Math.min(el.scrollHeight, 280)}px`;
   }, [draft]);
 
-  async function openSession(s: SessionSummary) {
+  async function openSession(s: PlacedChat) {
     if (streaming) return toast("info", "Wait for the reply to finish or press Stop");
     setCurrent(s.id);
+    pendingFolder.current = null;
     setClaudeSession(null);
     setBackend("hermes");
     setLoadingHistory(true);
@@ -182,8 +186,23 @@ export function ChatStudio({
     }
   }
 
-  function newChat() {
+  useEffect(() => {
+    if (!incoming) return;
+    if (streamingRef.current) {
+      toast("info", "Wait for the reply to finish, then try again");
+      return;
+    }
+    newChat();
+    if (incoming.cwd) setWorkingDir(incoming.cwd);
+    setDraft(incoming.text);
+    window.setTimeout(() => textarea.current?.focus(), 30);
+    // Only a new nonce starts a hand-off.
+  }, [incoming?.nonce]);
+
+  function newChat(folder: Folder | null = null) {
     if (streaming) return toast("info", "Wait for the reply to finish or press Stop");
+    pendingFolder.current = folder;
+    if (folder?.path) setWorkingDir(folder.path);
     setCurrent(null);
     setClaudeSession(null);
     setItems([]);
@@ -203,13 +222,27 @@ export function ChatStudio({
     }
     setItems((prev) => [...prev, { kind: "user", id: newId("u"), text: prompt }]);
     setDraft("");
+    // Files attached to this chat and its folders are listed for the agent, and shown here.
+    let full = prompt;
+    if (backend === "hermes") {
+      try {
+        const folderId = chats.find((c) => c.id === current)?.folder_id ?? pendingFolder.current?.id ?? null;
+        const files = await studio.org.contextFiles(current, folderId);
+        if (files.length) {
+          full = contextPreamble(files) + prompt;
+          setItems((prev) => [...prev, { kind: "notice", id: newId("n"), level: "info", text: `Attached for the agent: ${files.join(", ")}` }]);
+        }
+      } catch {
+        // attachments are optional context
+      }
+    }
     stick.current = true;
     streamingRef.current = true;
     runRef.current = null;
     setStreaming(true);
     setStatusLine(backend === "hermes" ? "Starting Hermes" : "Starting Claude Code");
     try {
-      const started = await api.sendChat(backend === "hermes" ? current : claudeSession, prompt, cwd, backend, null);
+      const started = await api.sendChat(backend === "hermes" ? current : claudeSession, full, cwd, backend, null);
       runRef.current = started.run_id;
     } catch (e) {
       streamingRef.current = false;
@@ -241,6 +274,10 @@ export function ChatStudio({
       } else if (cmd === "/sync-notion") {
         setBackend("hermes");
         await send(SYNC_NOTION_PROMPT);
+      } else if (cmd === "/gh") {
+        if (!arg.trim()) return note("info", "Type a GitHub CLI command after /gh, for example: /gh pr list, /gh run list, /gh issue view 12. The GitHub view has buttons for all of these.");
+        await cli.run(`gh ${arg}`, cwd);
+        note("info", `gh ${arg} is running in the terminal below.`);
       }
     } catch (e) {
       note("error", errorText(e));
@@ -263,12 +300,9 @@ export function ChatStudio({
     }
   }
 
-  async function saveRename() {
-    if (!editing) return;
+  async function rename(id: string, title: string) {
     try {
-      await api.renameSession(editing.id, editing.title);
-      setEditing(null);
-      void loadSessions();
+      await api.renameSession(id, title);
     } catch (e) {
       toast("error", errorText(e));
     }
@@ -283,20 +317,21 @@ export function ChatStudio({
   }
 
   async function remove(id: string) {
-    if (confirmDelete !== id) {
-      setConfirmDelete(id);
-      window.setTimeout(() => setConfirmDelete((c) => (c === id ? null : c)), 4000);
-      return;
-    }
     try {
-      await api.deleteSession(id);
+      await guarded((a) => api.deleteSession(id, a.approved));
       toast("ok", "Session deleted");
       if (current === id) newChat();
-      setConfirmDelete(null);
       void loadSessions();
     } catch (e) {
-      toast("error", errorText(e));
+      if (!(e instanceof ApprovalDeclined)) toast("error", errorText(e));
     }
+  }
+
+  async function continueInTerminal() {
+    const sid = backend === "hermes" ? current : claudeSession;
+    if (!sid) return toast("info", "Send a message first, then continue the conversation in a terminal");
+    const t = await cli.openPty({ profile: backend === "hermes" ? "hermes-resume" : "claude-resume", session_id: sid, cwd });
+    if (t) toast("ok", `${t.title} is open in the terminal panel. The chat stays here too.`);
   }
 
   async function browse() {
@@ -304,10 +339,16 @@ export function ChatStudio({
     if (typeof dir === "string") setWorkingDir(dir);
   }
 
+  const chats = useMemo(() => snapshot?.chats ?? [], [snapshot]);
+  const currentChat = chats.find((c) => c.id === current);
   const title = useMemo(() => {
     if (backend === "claude-code") return claudeSession ? "Claude Code session" : "New Claude Code chat";
-    return sessions.find((s) => s.id === current)?.title ?? (current ? "Hermes session" : "New chat");
-  }, [backend, claudeSession, current, sessions]);
+    return currentChat?.title ?? (current ? "Hermes session" : pendingFolder.current ? `New chat in ${pendingFolder.current.name}` : "New chat");
+  }, [backend, claudeSession, current, currentChat]);
+  const folderName = currentChat?.folder_id ? snapshot?.folders.find((f) => f.id === currentChat.folder_id)?.name : undefined;
+  const attachedCount = currentChat
+    ? (snapshot?.attachments ?? []).filter((a) => a.owner_kind === "chat" && a.owner_id === currentChat.id).length
+    : 0;
 
   const repoOptions = useMemo(() => {
     const list = repos.map((r) => ({ path: r.path, name: r.name }));
@@ -320,7 +361,8 @@ export function ChatStudio({
       <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-[#0a0e15]/60">
         <div className="space-y-2 p-3">
           <button
-            onClick={newChat}
+            onClick={() => newChat()}
+            title="Start a new conversation (Ctrl+K, then New chat)"
             className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 text-sm font-semibold text-emerald-950 hover:bg-emerald-400"
           >
             <MessageSquarePlus className="size-4" /> New Chat
@@ -344,68 +386,37 @@ export function ChatStudio({
               <FolderOpen className="size-3.5" />
             </button>
           </div>
-          <div className="flex items-center gap-2 rounded-lg bg-card px-2 ring-1 ring-line">
-            <Search className="size-3.5 text-slate-500" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search conversations" className="h-8 min-w-0 flex-1 bg-transparent text-xs text-slate-100 outline-none placeholder:text-slate-600" />
-            {loadingList && <Loader2 className="size-3.5 animate-spin text-slate-500" />}
-          </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {sessions.length === 0 && !loadingList && <div className="px-3 py-6 text-center text-xs text-slate-600">{query ? "No conversations match" : "No Hermes conversations yet"}</div>}
-          {sessions.map((s) => (
-            <div
-              key={s.id}
-              className={`group mb-0.5 rounded-lg px-2.5 py-2 ${current === s.id ? "bg-white/[0.07]" : "hover:bg-white/[0.03]"}`}
-            >
-              {editing?.id === s.id ? (
-                <input
-                  autoFocus
-                  value={editing.title}
-                  onChange={(e) => setEditing({ id: s.id, title: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void saveRename();
-                    if (e.key === "Escape") setEditing(null);
-                  }}
-                  onBlur={() => void saveRename()}
-                  className="w-full rounded-md bg-canvas px-1.5 py-0.5 text-xs text-slate-100 outline-none ring-1 ring-emerald-500/50"
-                />
-              ) : (
-                <button onClick={() => void openSession(s)} className="block w-full text-left">
-                  <div className="truncate text-[12.5px] text-slate-200">{s.title}</div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-slate-500">
-                    <span>{relativeTime(s.last_activity)}</span>
-                    <span>{s.message_count} msgs</span>
-                    {s.source && s.source !== "cli" && <span className="truncate rounded bg-white/5 px-1">{s.source}</span>}
-                  </div>
-                </button>
-              )}
-              <div className="mt-1 hidden items-center gap-0.5 group-hover:flex">
-                <button onClick={() => setEditing({ id: s.id, title: s.title })} title="Rename" aria-label="Rename" className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-slate-200">
-                  <Pencil className="size-3" />
-                </button>
-                <button onClick={() => void exportSession(s.id)} title="Export to Obsidian" aria-label="Export to Obsidian" className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-slate-200">
-                  <BookDown className="size-3" />
-                </button>
-                <button
-                  onClick={() => void remove(s.id)}
-                  title={confirmDelete === s.id ? "Click again to delete" : "Delete"}
-                  className={`ml-auto inline-flex items-center gap-1 rounded p-1 text-[10.5px] ${confirmDelete === s.id ? "bg-red-500/15 text-red-300" : "text-slate-500 hover:bg-white/5 hover:text-red-300"}`}
-                >
-                  <Trash2 className="size-3" />
-                  {confirmDelete === s.id && "Delete"}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+        <WorkspaceTree
+          snapshot={snapshot}
+          loading={loadingList}
+          query={query}
+          setQuery={setQuery}
+          current={current}
+          reload={() => void loadSessions()}
+          actions={{
+            onOpen: (c) => void openSession(c),
+            onRename: rename,
+            onExport: (id) => void exportSession(id),
+            onDelete: remove,
+            onNewChatIn: (f) => newChat(f),
+          }}
+        />
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-5">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-slate-100">{title}</div>
-            <div className="truncate text-[11px] text-slate-500" title={cwd}>
-              {cwd}
+            <div className="flex items-center gap-1.5 truncate text-[11px] text-slate-500" title={cwd}>
+              {folderName && <span className="rounded bg-white/5 px-1 text-slate-400">{folderName}</span>}
+              {attachedCount > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-slate-400" title="Files attached to this chat are listed for the agent with every message">
+                  <Paperclip className="size-3" />
+                  {attachedCount}
+                </span>
+              )}
+              <span className="truncate">{cwd}</span>
             </div>
           </div>
           <div className="flex rounded-full bg-white/[0.04] p-0.5 ring-1 ring-line">
@@ -426,6 +437,15 @@ export function ChatStudio({
               </button>
             ))}
           </div>
+          <button
+            onClick={() => void continueInTerminal()}
+            disabled={streaming || !(backend === "hermes" ? current : claudeSession)}
+            title={`Continue this conversation in a real terminal (${backend === "hermes" ? "hermes --resume" : "claude --resume"}), with live reasoning and typed approvals`}
+            aria-label="Continue in terminal"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] text-slate-300 ring-1 ring-line hover:bg-white/5 hover:text-slate-100 disabled:opacity-40"
+          >
+            <SquareTerminal className="size-3.5" /> Continue in terminal
+          </button>
           <ProviderSwitcher backend={backend} hermes={hermes} onSwitched={onStatusChanged} onOpenControl={() => onOpenControl("providers")} />
         </header>
 
