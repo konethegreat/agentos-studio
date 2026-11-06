@@ -303,7 +303,11 @@ mod tests {
         let skills = scan(d.path());
         let mut names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
         names.sort();
-        assert_eq!(names, vec!["alpha", "beta", "loose"], "sorted by category then name");
+        assert_eq!(
+            names,
+            vec!["alpha", "beta", "loose"],
+            "sorted by category then name"
+        );
         let alpha = skills.iter().find(|s| s.name == "alpha").unwrap();
         assert_eq!(alpha.category, "dev");
         assert_eq!(alpha.description, "first");

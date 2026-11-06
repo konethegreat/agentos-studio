@@ -9,7 +9,12 @@ fn skills_tree_reads_real_skills() {
     let all = skills::list();
     println!("installed skills: {}", all.len());
     for s in all.iter().take(5) {
-        println!("  {:<28} {:<24} {}", s.name, s.category, &s.description.chars().take(60).collect::<String>());
+        println!(
+            "  {:<28} {:<24} {}",
+            s.name,
+            s.category,
+            &s.description.chars().take(60).collect::<String>()
+        );
     }
     assert!(all.len() > 5, "expected the bundled skills to be visible");
     let known = all
@@ -40,8 +45,14 @@ fn projects_list_matches_hermes() {
         );
     }
     // The rule under test is the path matcher, not the number of projects.
-    assert!(projects::under("C:/Users/Konet/agentos-studio/src", "c:/users/konet/agentos-studio"));
-    assert!(!projects::under("C:/Users/Konet/agentos-studio-old", "C:/Users/Konet/agentos-studio"));
+    assert!(projects::under(
+        "C:/Users/Konet/agentos-studio/src",
+        "c:/users/konet/agentos-studio"
+    ));
+    assert!(!projects::under(
+        "C:/Users/Konet/agentos-studio-old",
+        "C:/Users/Konet/agentos-studio"
+    ));
 }
 
 #[test]
