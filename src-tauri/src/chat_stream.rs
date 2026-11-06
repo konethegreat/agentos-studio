@@ -358,6 +358,9 @@ pub struct ChatRequest {
     pub working_dir: String,
     pub agent_backend: String,
     pub model: Option<String>,
+    /// Skills preloaded for this turn (`hermes chat -s a,b`).
+    #[serde(default)]
+    pub skills: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -423,6 +426,15 @@ pub fn build_args(backend: &str, req: &ChatRequest, query_file: &Path, cwd: &Pat
         }
         if let Some(m) = model {
             a.extend(["-m".into(), m.into()]);
+        }
+        let skills: Vec<String> = req
+            .skills
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !skills.is_empty() {
+            a.extend(["-s".into(), skills.join(",")]);
         }
     } else {
         a.extend(
@@ -915,6 +927,7 @@ mod tests {
             working_dir: "C:/repo".into(),
             agent_backend: "hermes".into(),
             model: Some("claude-opus-5-5[1m]".into()),
+            skills: vec!["agentos-studio-dev".into(), "obsidian".into()],
         };
         let h = build_args("hermes", &req, Path::new("C:/q.md"), Path::new("C:/repo"));
         let joined = h.join(" ");
@@ -926,6 +939,10 @@ mod tests {
         );
         assert!(joined.contains("--in C:/repo"));
         assert!(joined.contains("-m claude-opus-5-5[1m]"));
+        assert!(
+            joined.contains("-s agentos-studio-dev,obsidian"),
+            "{joined}"
+        );
         let c = build_args(
             "claude-code",
             &ChatRequest {
