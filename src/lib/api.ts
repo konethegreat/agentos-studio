@@ -349,6 +349,44 @@ export interface CliLine {
 
 export const MCP_AGENTS = ["hermes", "claude-code", "qoder", "antigravity"] as const;
 
+
+export type BootStatus = "ok" | "repaired" | "warn" | "failed" | "skipped";
+
+export interface BootStep {
+  id: string;
+  label: string;
+  status: BootStatus;
+  detail: string;
+  ms: number;
+  fix_view: string | null;
+}
+
+export interface BootSummary {
+  ok: number;
+  repaired: number;
+  warn: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface BootReport {
+  app_version: string;
+  started_at: string;
+  elapsed_ms: number;
+  ready: boolean;
+  steps: BootStep[];
+  summary: BootSummary;
+  logs_dir: string;
+  vault: string;
+  previous_crash: string | null;
+}
+
+export interface BootProgress {
+  steps: BootStep[];
+  done: boolean;
+  report?: BootReport;
+}
+
 export const api = {
   getSettings: () => invoke<SettingsView>("get_settings"),
   saveSettings: (vault: string, scanRoots: string[]) => invoke<SettingsView>("save_settings", { vault, scanRoots }),
@@ -419,6 +457,12 @@ export const api = {
   activeChat: () => invoke<string | null>("active_chat"),
   applyCode: (workingDir: string, relPath: string, content: string) =>
     invoke<{ path: string; created: boolean; bytes: number }>("apply_code_to_file", { workingDir, relPath, content }),
+  bootSnapshot: () => invoke<BootReport | null>("boot_snapshot"),
+  bootRun: () => invoke<BootReport>("boot_run"),
+  bootLogsDir: () => invoke<string>("boot_logs_dir"),
+  bootReadLog: (name: string) => invoke<string>("boot_read_log", { name }),
+  bootOpenLogs: () => invoke<string>("boot_open_logs"),
+
   runCli: (command: string, cwd: string) => invoke<string>("execute_cli_command", { command, cwd }),
   killCli: (runId: string) => invoke<void>("kill_cli_command", { runId }),
 };
@@ -434,6 +478,7 @@ export const events = {
     listen<HermesStatus>("agentos://hermes-status", (e) => cb(e.payload)),
   chat: (cb: (e: ChatEvent) => void): Promise<UnlistenFn> => listen<ChatEvent>("agentos://chat-event", (e) => cb(e.payload)),
   cli: (cb: (e: CliLine) => void): Promise<UnlistenFn> => listen<CliLine>("agentos://cli-output", (e) => cb(e.payload)),
+  boot: (cb: (p: BootProgress) => void): Promise<UnlistenFn> => listen<BootProgress>("agentos://boot", (e) => cb(e.payload)),
 };
 
 export function errorText(e: unknown): string {

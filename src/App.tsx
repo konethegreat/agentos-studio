@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowUpCircle,
   Bot,
   FolderGit2,
@@ -21,6 +22,8 @@ import {
   errorText,
   events,
   type Board,
+  type BootReport,
+  type BootStep,
   type HermesStatus,
   type RepoInfo,
   type SettingsView,
@@ -31,6 +34,7 @@ import {
 } from "./lib/api";
 import { basename } from "./lib/format";
 import { ApprovalProvider } from "./components/ApprovalProvider";
+import { BootSplash } from "./components/BootSplash";
 import { CliDock, CliProvider, useCli } from "./components/CliDrawer";
 import { CommandBar } from "./components/CommandBar";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
@@ -41,6 +45,7 @@ import { WorkerDrawer } from "./components/WorkerDrawer";
 import { ChatStudio } from "./views/ChatStudio";
 import { ConstitutionStudio } from "./views/ConstitutionStudio";
 import { ControlPlane } from "./views/ControlPlane";
+import { Diagnostics } from "./views/Diagnostics";
 import { FleetManager } from "./views/FleetManager";
 import { MissionControl } from "./views/MissionControl";
 import { SafetyCenter } from "./views/SafetyCenter";
@@ -49,7 +54,7 @@ import { UpdateCenter } from "./views/UpdateCenter";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 
-type View = "chat" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup";
+type View = "chat" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup" | "diagnostics";
 
 const NAV: { id: View; label: string; icon: ReactNode; hint: string; keys?: string }[] = [
   { id: "chat", label: "Hermes Chat Studio", icon: <MessagesSquare className="size-4" />, hint: "Chat with Hermes or Claude Code, organised in workspaces and folders", keys: "Alt+1" },
@@ -61,6 +66,7 @@ const NAV: { id: View; label: string; icon: ReactNode; hint: string; keys?: stri
   { id: "updates", label: "Updates", icon: <ArrowUpCircle className="size-4" />, hint: "Hermes, Claude Code and Studio versions, changelogs, backups and rollback", keys: "Alt+7" },
   { id: "safety", label: "Safety", icon: <ShieldCheck className="size-4" />, hint: "Permission policies and the audit log", keys: "Alt+8" },
   { id: "setup", label: "Setup and Integrations", icon: <PlugZap className="size-4" />, hint: "Install, sign in and repair everything", keys: "Alt+9" },
+  { id: "diagnostics", label: "Diagnostics", icon: <Activity className="size-4" />, hint: "Startup checks, safe repairs, crash log and boot log" },
 ];
 
 export default function App() {
@@ -95,6 +101,11 @@ function Studio() {
   const [visited, setVisited] = useState<Set<View>>(() => new Set<View>(["chat"]));
   const [incoming, setIncoming] = useState<{ text: string; cwd?: string; nonce: number } | null>(null);
   const [palette, setPalette] = useState(false);
+  const [bootSteps, setBootSteps] = useState<BootStep[]>([]);
+  const [bootReport, setBootReport] = useState<BootReport | null>(null);
+  const [bootDone, setBootDone] = useState(false);
+  const [splash, setSplash] = useState(true);
+  const liveBoot = useRef(false);
   const boardTimer = useRef<number | undefined>(undefined);
 
   const go = useCallback((v: View) => {
@@ -158,13 +169,40 @@ function Studio() {
     }
   }, [toast]);
 
+  // Startup checks: the window paints immediately and the report streams in beside it.
   useEffect(() => {
+    const un = events.boot((p) => {
+      liveBoot.current = true;
+      setBootSteps(p.steps);
+      if (p.report) setBootReport(p.report);
+      if (p.done) setBootDone(true);
+    });
+    api
+      .bootSnapshot()
+      .then((r) => {
+        if (!r) return;
+        setBootSteps((prev) => (prev.length ? prev : r.steps));
+        setBootReport((prev) => prev ?? r);
+        // A cached report only counts as done if no live run announced itself, so a stale
+        // "ready" from last launch cannot hide a failure found on this one.
+        window.setTimeout(() => {
+          if (!liveBoot.current && r.ready) setBootDone(true);
+        }, 2000);
+      })
+      .catch(() => undefined);
+    return () => void un.then((f) => f());
+  }, []);
+
+  // Heavy data loads wait for the checks, so the first paint is never competing with a full
+  // stack probe and a fleet scan.
+  useEffect(() => {
+    if (!bootDone) return;
     api.getSettings().then(setSettings).catch((e) => toast("error", errorText(e)));
     void loadHermes();
     void loadBoard();
     void loadStatus();
     void scan();
-  }, [loadBoard, loadHermes, loadStatus, scan, toast]);
+  }, [bootDone, loadBoard, loadHermes, loadStatus, scan, toast]);
 
   useEffect(() => {
     const subs = [
@@ -222,8 +260,26 @@ function Studio() {
   const runningWorker = drawer ? workers.find((w) => w.task_id === drawer) : undefined;
   const home = settings?.home ?? "";
 
+  const bootProblems = bootSteps.filter((s) => s.status === "warn" || s.status === "failed").length;
+
   return (
     <CliProvider home={home} repos={repos}>
+      {splash && (
+        <BootSplash
+          steps={bootSteps}
+          report={bootReport}
+          done={bootDone}
+          onContinue={() => setSplash(false)}
+          onDiagnostics={() => {
+            setSplash(false);
+            go("diagnostics");
+          }}
+          onFix={(v) => {
+            setSplash(false);
+            go(v as View);
+          }}
+        />
+      )}
       <div className="flex h-full">
         <nav className="flex w-56 shrink-0 flex-col border-r border-line bg-[#0a0e15]" aria-label="Main">
           <div className="flex items-center gap-2.5 px-5 py-4">
@@ -256,6 +312,9 @@ function Studio() {
                 <span className={view === n.id ? "text-emerald-300" : ""}>{n.icon}</span>
                 {n.label}
                 {n.id === "updates" && updates.alerts.length > 0 && <span className="ml-auto rounded-full bg-emerald-500 px-1.5 text-[10px] font-semibold text-emerald-950">{updates.alerts.length}</span>}
+                {n.id === "diagnostics" && bootProblems > 0 && (
+                  <span className="ml-auto rounded-full bg-amber-500/20 px-1.5 text-[10px] font-semibold text-amber-300 ring-1 ring-amber-500/30">{bootProblems}</span>
+                )}
               </button>
             ))}
           </div>
@@ -307,6 +366,7 @@ function Studio() {
             {view === "constitution" && <ConstitutionStudio memoryTick={memoryTick} />}
             {view === "updates" && <UpdateCenter />}
             {view === "safety" && <SafetyCenter />}
+            {view === "diagnostics" && <Diagnostics onFix={(v) => go(v as View)} />}
           </div>
           <CliDock />
         </main>

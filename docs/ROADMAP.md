@@ -14,6 +14,20 @@ phase before it, so nothing is scheduled that cannot be built yet.
 | Safety | Per-action permission policies (allow, ask, deny) enforced in Rust, approval modal, audit log view. |
 | Guidance | Command palette (Ctrl+K), tooltips on every new control. |
 
+## v0.3.1: reliable startup (shipped)
+
+- **Single instance:** a second launch focuses the existing window instead of starting a second
+  heartbeat, watcher and fleet scan. The most common report of "it does not start" was an instance
+  already running with no visible window.
+- **Staged startup with safe self-repair:** eight bounded checks (folders, PATH, settings, database,
+  vault, tools, Hermes config, agent registration) with per-step timings, streamed to a boot screen.
+  Safe repairs run automatically; anything that changes another tool's config is offered as a fix.
+- **Boot screen and Diagnostics view:** every check with its status and duration, the boot log, the
+  crash log, and a re-run button. Panics now write `logs/crash.log` with a backtrace instead of
+  exiting silently.
+- **Deferred startup loads:** stack status, fleet scan and the board wait for the checks, so the
+  window is responsive immediately.
+
 ## v0.4.0: memory, transparency, design language
 
 - **Memory:** vault-first browser with wikilinks and frontmatter, and a "memory ledger" on every
