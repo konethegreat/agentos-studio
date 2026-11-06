@@ -261,6 +261,60 @@ fn check_tool(name: &str, args: &[&str]) -> (Status, String) {
     }
 }
 
+const TOOL_CACHE: &str = "tool-versions.json";
+const TOOL_TTL_SECS: u64 = 3600;
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ToolCached {
+    detail: String,
+    at: u64,
+}
+
+fn tool_cache_path() -> PathBuf {
+    config_dir().join(TOOL_CACHE)
+}
+
+fn load_tool_cache() -> std::collections::HashMap<String, ToolCached> {
+    fs::read_to_string(tool_cache_path())
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn save_tool_cache(map: &std::collections::HashMap<String, ToolCached>) {
+    if let Ok(text) = serde_json::to_string_pretty(map) {
+        let _ = fs::create_dir_all(config_dir());
+        let _ = fs::write(tool_cache_path(), text);
+    }
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Probe a tool, or reuse a fresh cache entry. Only successful probes are cached: `claude
+/// --version` costs about three seconds, and re-proving it on every launch is what made startup
+/// feel slow.
+fn check_tool_cached(
+    name: &'static str,
+    args: &'static [&'static str],
+    cache: &std::collections::HashMap<String, ToolCached>,
+) -> (Status, String, Option<String>) {
+    if let Some(entry) = cache.get(name) {
+        let fresh = now_secs().saturating_sub(entry.at) < TOOL_TTL_SECS;
+        // The binary must still resolve; that costs microseconds, unlike a version probe.
+        if fresh && procs::find(name).is_some() {
+            return (Status::Ok, format!("{} (cached)", entry.detail), None);
+        }
+    }
+    let (status, detail) = check_tool(name, args);
+    let fresh = (status == Status::Ok).then(|| detail.clone());
+    (status, detail, fresh)
+}
+
 /// Run every check and return the report. Blocking; call it off the UI thread.
 pub fn run(app: Option<AppHandle>) -> BootReport {
     let started = Instant::now();
@@ -309,10 +363,21 @@ pub fn run(app: Option<AppHandle>) -> BootReport {
             .unwrap_or(false)
         {
             (Status::Ok, "Saved vault path".to_string())
+        } else if vault.exists() {
+            (
+                Status::Ok,
+                format!(
+                    "Using {} (not saved yet; pick it in Setup to pin it)",
+                    vault.display()
+                ),
+            )
         } else {
             (
                 Status::Warn,
-                format!("No vault saved; using {}", vault.display()),
+                format!(
+                    "Vault not found at {}. Choose a folder in Setup.",
+                    vault.display()
+                ),
             )
         }
     });
@@ -355,25 +420,39 @@ pub fn run(app: Option<AppHandle>) -> BootReport {
         }
     });
 
-    // 6. Tools, checked in parallel so the total wait is one timeout, not five.
-    let (tx, rx) = mpsc::channel::<(&'static str, Status, String)>();
-    for (name, args) in TOOLS {
-        let tx = tx.clone();
-        let name = *name;
-        std::thread::spawn(move || {
-            let (status, detail) = check_tool(name, args);
-            let _ = tx.send((name, status, detail));
-        });
-    }
-    drop(tx);
-    let mut found: Vec<(String, Status, String)> = Vec::new();
-    for _ in 0..TOOLS.len() {
-        if let Ok(v) = rx.recv_timeout(Duration::from_secs(6)) {
-            found.push((v.0.to_string(), v.1, v.2));
-        }
-    }
-    found.sort_by(|a, b| a.0.cmp(&b.0));
+    // 6. Tools. Parallel so the total wait is one timeout rather than five, and cached for an
+    //    hour so a warm launch does not re-probe what was just confirmed.
+    let tool_cache = load_tool_cache();
     r.run("tools", "Connected tools", Some("setup"), || {
+        let (tx, rx) = mpsc::channel::<(&'static str, Status, String, Option<String>)>();
+        for (name, args) in TOOLS {
+            let tx = tx.clone();
+            let name = *name;
+            let cached = tool_cache.clone();
+            std::thread::spawn(move || {
+                let (status, detail, fresh) = check_tool_cached(name, args, &cached);
+                let _ = tx.send((name, status, detail, fresh));
+            });
+        }
+        drop(tx);
+        let mut found = Vec::new();
+        let mut updates: std::collections::HashMap<String, ToolCached> = tool_cache.clone();
+        for _ in 0..TOOLS.len() {
+            if let Ok((name, status, detail, fresh)) = rx.recv_timeout(Duration::from_secs(8)) {
+                if let Some(d) = fresh {
+                    updates.insert(
+                        name.to_string(),
+                        ToolCached {
+                            detail: d,
+                            at: now_secs(),
+                        },
+                    );
+                }
+                found.push((name.to_string(), status, detail));
+            }
+        }
+        save_tool_cache(&updates);
+        found.sort_by(|a, b| a.0.cmp(&b.0));
         let missing: Vec<&str> = found
             .iter()
             .filter(|(_, s, _)| s.is_problem())
