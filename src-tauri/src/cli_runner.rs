@@ -36,9 +36,9 @@ pub struct CliState {
 pub fn interactive_hint(command: &str) -> Option<&'static str> {
     let words: Vec<&str> = command.split_whitespace().collect();
     match words.as_slice() {
-        ["hermes"] | ["hermes", "chat"] => Some("Interactive Hermes runs in the Chat Studio tab. Use hermes chat -q \"...\" here for one-shot answers."),
-        ["claude"] => Some("Interactive Claude Code runs in the Chat Studio tab (backend: Claude Code). Use claude -p \"...\" here."),
-        ["hermes", "model"] | ["hermes", "setup"] => Some("This wizard is interactive. Use the Control Plane tab to switch providers and models."),
+        ["hermes"] | ["hermes", "chat"] => Some("Interactive Hermes needs a real terminal: press + in this panel and pick Hermes (or Hermes TUI)."),
+        ["claude"] => Some("Interactive Claude Code needs a real terminal: press + in this panel and pick Claude Code."),
+        ["hermes", "model"] | ["hermes", "setup"] => Some("This wizard is interactive: press + in this panel and pick Shell, then run it there. Providers and models can also be switched in MCP and Providers."),
         _ => None,
     }
 }

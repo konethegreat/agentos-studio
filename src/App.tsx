@@ -1,5 +1,21 @@
-import { FolderGit2, LayoutDashboard, MessagesSquare, PlugZap, ScrollText, SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  ArrowUpCircle,
+  Bot,
+  FolderGit2,
+  GitPullRequest,
+  LayoutDashboard,
+  MessageSquarePlus,
+  MessagesSquare,
+  PlugZap,
+  RefreshCw,
+  ScrollText,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  SquareTerminal,
+  TerminalSquare,
+} from "lucide-react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   api,
   errorText,
@@ -14,39 +30,54 @@ import {
   type WorkerInfo,
 } from "./lib/api";
 import { basename } from "./lib/format";
-import { CliDock, CliProvider } from "./components/CliDrawer";
+import { ApprovalProvider } from "./components/ApprovalProvider";
+import { CliDock, CliProvider, useCli } from "./components/CliDrawer";
 import { CommandBar } from "./components/CommandBar";
+import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { StatusBar } from "./components/StatusBar";
 import { ToastProvider, useToast } from "./components/Toasts";
+import { UpdateBanner, UpdatesProvider, useUpdates } from "./components/Updates";
 import { WorkerDrawer } from "./components/WorkerDrawer";
 import { ChatStudio } from "./views/ChatStudio";
 import { ConstitutionStudio } from "./views/ConstitutionStudio";
 import { ControlPlane } from "./views/ControlPlane";
 import { FleetManager } from "./views/FleetManager";
 import { MissionControl } from "./views/MissionControl";
+import { SafetyCenter } from "./views/SafetyCenter";
 import { SetupWizard } from "./views/SetupWizard";
+import { UpdateCenter } from "./views/UpdateCenter";
 
-type View = "chat" | "mission" | "control" | "fleet" | "constitution" | "setup";
+const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 
-const NAV: { id: View; label: string; icon: ReactNode }[] = [
-  { id: "chat", label: "Hermes Chat Studio", icon: <MessagesSquare className="size-4" /> },
-  { id: "mission", label: "Mission Control", icon: <LayoutDashboard className="size-4" /> },
-  { id: "control", label: "MCP and Providers", icon: <SlidersHorizontal className="size-4" /> },
-  { id: "fleet", label: "Fleet Repositories", icon: <FolderGit2 className="size-4" /> },
-  { id: "constitution", label: "Constitution and Memory", icon: <ScrollText className="size-4" /> },
-  { id: "setup", label: "Setup and Integrations", icon: <PlugZap className="size-4" /> },
+type View = "chat" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup";
+
+const NAV: { id: View; label: string; icon: ReactNode; hint: string; keys?: string }[] = [
+  { id: "chat", label: "Hermes Chat Studio", icon: <MessagesSquare className="size-4" />, hint: "Chat with Hermes or Claude Code, organised in workspaces and folders", keys: "Alt+1" },
+  { id: "github", label: "GitHub", icon: <GitPullRequest className="size-4" />, hint: "Pull requests, issues, Actions, branches and commits through gh", keys: "Alt+2" },
+  { id: "mission", label: "Mission Control", icon: <LayoutDashboard className="size-4" />, hint: "The Agent Bus board: dispatch and track tasks", keys: "Alt+3" },
+  { id: "control", label: "MCP and Providers", icon: <SlidersHorizontal className="size-4" />, hint: "Switch providers and manage MCP servers in every agent", keys: "Alt+4" },
+  { id: "fleet", label: "Fleet Repositories", icon: <FolderGit2 className="size-4" />, hint: "Every local repository and its rule-file sync state", keys: "Alt+5" },
+  { id: "constitution", label: "Constitution and Memory", icon: <ScrollText className="size-4" />, hint: "Edit and broadcast the agent constitution, browse shared memory", keys: "Alt+6" },
+  { id: "updates", label: "Updates", icon: <ArrowUpCircle className="size-4" />, hint: "Hermes, Claude Code and Studio versions, changelogs, backups and rollback", keys: "Alt+7" },
+  { id: "safety", label: "Safety", icon: <ShieldCheck className="size-4" />, hint: "Permission policies and the audit log", keys: "Alt+8" },
+  { id: "setup", label: "Setup and Integrations", icon: <PlugZap className="size-4" />, hint: "Install, sign in and repair everything", keys: "Alt+9" },
 ];
 
 export default function App() {
   return (
     <ToastProvider>
-      <Studio />
+      <ApprovalProvider>
+        <UpdatesProvider>
+          <Studio />
+        </UpdatesProvider>
+      </ApprovalProvider>
     </ToastProvider>
   );
 }
 
 function Studio() {
   const toast = useToast();
+  const updates = useUpdates();
   const [view, setView] = useState<View>("chat");
   const [controlTab, setControlTab] = useState<"providers" | "mcp">("providers");
   const [settings, setSettings] = useState<SettingsView | null>(null);
@@ -62,6 +93,8 @@ function Studio() {
   const [activeJob, setActiveJob] = useState<string | null>(null);
   const [memoryTick, setMemoryTick] = useState(0);
   const [visited, setVisited] = useState<Set<View>>(() => new Set<View>(["chat"]));
+  const [incoming, setIncoming] = useState<{ text: string; cwd?: string; nonce: number } | null>(null);
+  const [palette, setPalette] = useState(false);
   const boardTimer = useRef<number | undefined>(undefined);
 
   const go = useCallback((v: View) => {
@@ -73,6 +106,14 @@ function Studio() {
     (tab: "providers" | "mcp") => {
       setControlTab(tab);
       go("control");
+    },
+    [go],
+  );
+
+  const askHermes = useCallback(
+    (text: string, cwd?: string) => {
+      setIncoming({ text, cwd, nonce: Date.now() });
+      go("chat");
     },
     [go],
   );
@@ -159,31 +200,62 @@ function Studio() {
     };
   }, [loadBoard, loadHermes, loadStatus, toast]);
 
+  // Keyboard: Ctrl+K palette, Alt+1..9 views.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPalette((p) => !p);
+      }
+      if (e.altKey && !e.ctrlKey && /^[1-9]$/.test(e.key)) {
+        const n = NAV[Number(e.key) - 1];
+        if (n) {
+          e.preventDefault();
+          go(n.id);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [go]);
+
   const runningWorker = drawer ? workers.find((w) => w.task_id === drawer) : undefined;
   const home = settings?.home ?? "";
 
   return (
     <CliProvider home={home} repos={repos}>
       <div className="flex h-full">
-        <nav className="flex w-56 shrink-0 flex-col border-r border-line bg-[#0a0e15]">
+        <nav className="flex w-56 shrink-0 flex-col border-r border-line bg-[#0a0e15]" aria-label="Main">
           <div className="flex items-center gap-2.5 px-5 py-4">
             <img src="/icon.png" alt="" className="size-8 rounded-lg" />
             <div>
               <div className="text-sm font-semibold tracking-tight text-slate-100">AgentOS Studio</div>
-              <div className="text-[11px] text-slate-500">v{settings?.version ?? "0.2.0"}</div>
+              <div className="text-[11px] text-slate-500">v{settings?.version ?? "0.3.0"}</div>
             </div>
           </div>
+          <button
+            onClick={() => setPalette(true)}
+            className="mx-3 mb-2 flex items-center gap-2 whitespace-nowrap rounded-lg bg-white/[0.03] px-3 py-1.5 text-left text-[12px] text-slate-500 ring-1 ring-line hover:text-slate-300"
+            title="Search every command and screen"
+          >
+            <Search className="size-3.5 shrink-0" />
+            <span className="truncate">Search commands</span>
+            <kbd className="ml-auto shrink-0 rounded bg-white/5 px-1 text-[10px]">Ctrl K</kbd>
+          </button>
           <div className="flex-1 space-y-0.5 px-3">
             {NAV.map((n) => (
               <button
                 key={n.id}
                 onClick={() => go(n.id)}
+                title={`${n.hint}${n.keys ? ` (${n.keys})` : ""}`}
+                aria-current={view === n.id ? "page" : undefined}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors ${
                   view === n.id ? "bg-white/[0.07] font-medium text-slate-100" : "text-slate-400 hover:bg-white/[0.03] hover:text-slate-200"
                 }`}
               >
                 <span className={view === n.id ? "text-emerald-300" : ""}>{n.icon}</span>
                 {n.label}
+                {n.id === "updates" && updates.alerts.length > 0 && <span className="ml-auto rounded-full bg-emerald-500 px-1.5 text-[10px] font-semibold text-emerald-950">{updates.alerts.length}</span>}
               </button>
             ))}
           </div>
@@ -201,10 +273,18 @@ function Studio() {
         </nav>
         <main className="flex min-w-0 flex-1 flex-col">
           <StatusBar hermes={hermes} stack={status} onOpenSetup={() => go("setup")} onOpenControl={openControl} onRefresh={() => void loadHermes(true)} />
+          <UpdateBanner onOpen={() => go("updates")} />
           <div className="relative min-h-0 flex-1">
             {visited.has("chat") && (
               <div className={view === "chat" ? "h-full" : "hidden"}>
-                <ChatStudio repos={repos} hermes={hermes} home={home} onStatusChanged={() => void loadHermes()} onOpenControl={openControl} />
+                <ChatStudio repos={repos} hermes={hermes} home={home} onStatusChanged={() => void loadHermes()} onOpenControl={openControl} incoming={incoming} />
+              </div>
+            )}
+            {visited.has("github") && (
+              <div className={view === "github" ? "h-full" : "hidden"}>
+                <Suspense fallback={null}>
+                  <GitHubView repos={repos} onAskHermes={askHermes} />
+                </Suspense>
               </div>
             )}
             {view === "mission" && (
@@ -222,16 +302,41 @@ function Studio() {
               </div>
             )}
             {view === "control" && <ControlPlane tab={controlTab} onTab={setControlTab} onStatusChanged={() => void loadHermes()} />}
-            {view === "setup" && (
-              <SetupWizard status={status} settings={settings} setupLog={setupLog} activeJob={activeJob} onRefresh={loadStatus} onSettings={setSettings} />
-            )}
+            {view === "setup" && <SetupWizard status={status} settings={settings} setupLog={setupLog} activeJob={activeJob} onRefresh={loadStatus} onSettings={setSettings} />}
             {view === "fleet" && <FleetManager repos={repos} scanning={scanning} onRescan={scan} />}
             {view === "constitution" && <ConstitutionStudio memoryTick={memoryTick} />}
+            {view === "updates" && <UpdateCenter />}
+            {view === "safety" && <SafetyCenter />}
           </div>
           <CliDock />
         </main>
         {drawer && <WorkerDrawer key={drawer} taskId={drawer} worker={runningWorker} liveLines={lines[drawer] ?? []} onClose={() => setDrawer(null)} />}
+        <PaletteHost open={palette} onClose={() => setPalette(false)} go={go} askHermes={askHermes} onRescan={() => void scan()} />
       </div>
     </CliProvider>
   );
+}
+
+/** Lives inside CliProvider so commands can open terminals. */
+function PaletteHost({ open, onClose, go, askHermes, onRescan }: { open: boolean; onClose: () => void; go: (v: View) => void; askHermes: (t: string, cwd?: string) => void; onRescan: () => void }) {
+  const cli = useCli();
+  const updates = useUpdates();
+  const commands = useMemo<PaletteCommand[]>(
+    () => [
+      { id: "new-chat", group: "Chat", label: "New chat", hint: "Start a new Hermes conversation", icon: <MessageSquarePlus className="size-4" />, run: () => askHermes("") },
+      ...NAV.map((n) => ({ id: `go-${n.id}`, group: "Go to", label: n.label, hint: n.hint, keys: n.keys, icon: n.icon, run: () => go(n.id) })),
+      { id: "term-toggle", group: "Terminal", label: "Show or hide the terminal", keys: "Ctrl+`", icon: <SquareTerminal className="size-4" />, run: () => cli.setOpen(!cli.open) },
+      { id: "term-shell", group: "Terminal", label: "New shell terminal", hint: "PowerShell or your login shell", icon: <TerminalSquare className="size-4" />, run: () => void cli.openPty({ profile: "shell" }) },
+      { id: "term-hermes", group: "Terminal", label: "New interactive Hermes terminal", hint: "Live reasoning, slash commands, typed approvals", icon: <Bot className="size-4" />, run: () => void cli.openPty({ profile: "hermes" }) },
+      { id: "term-hermes-tui", group: "Terminal", label: "New Hermes TUI terminal", icon: <Bot className="size-4" />, run: () => void cli.openPty({ profile: "hermes-tui" }) },
+      { id: "term-claude", group: "Terminal", label: "New Claude Code terminal", icon: <Bot className="size-4" />, run: () => void cli.openPty({ profile: "claude" }) },
+      { id: "hermes-doctor", group: "Hermes", label: "Run hermes doctor", icon: <SquareTerminal className="size-4" />, run: () => void cli.run("hermes doctor") },
+      { id: "hermes-status", group: "Hermes", label: "Run hermes status", icon: <SquareTerminal className="size-4" />, run: () => void cli.run("hermes status") },
+      { id: "hermes-insights", group: "Hermes", label: "Token and cost usage (hermes insights, 7 days)", icon: <SquareTerminal className="size-4" />, run: () => void cli.run("hermes insights --days 7") },
+      { id: "updates-check", group: "Updates", label: "Check for updates now", hint: `${updates.alerts.length} waiting`, icon: <RefreshCw className="size-4" />, run: () => void updates.check().then(() => go("updates")) },
+      { id: "fleet-rescan", group: "Fleet", label: "Rescan repositories", icon: <FolderGit2 className="size-4" />, run: onRescan },
+    ],
+    [askHermes, cli, go, onRescan, updates],
+  );
+  return <CommandPalette commands={commands} open={open} onClose={onClose} />;
 }

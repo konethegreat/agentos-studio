@@ -8,11 +8,18 @@ pub mod cli_runner;
 pub mod commands;
 pub mod constitution;
 pub mod fleet;
+pub mod github;
 pub mod hermes_engine;
 pub mod mcp_manager;
 pub mod mcp_stdio;
+pub mod ops;
+pub mod org;
+pub mod permissions;
 pub mod procs;
+pub mod pty;
 pub mod settings;
+pub mod store;
+pub mod updates;
 pub mod vault;
 
 use std::sync::{Arc, Mutex};
@@ -33,9 +40,12 @@ pub fn run_gui() {
         hermes: hermes.clone(),
         chat: chat_stream::ChatState::default(),
         cli: cli_runner::CliState::default(),
+        pty: pty::PtyState::default(),
     };
+    let pty_for_exit = state.pty.clone();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(state)
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -51,6 +61,28 @@ pub fn run_gui() {
                     eprintln!("vault watcher not started: {e:#}");
                 }
             }
+            // Update checks: shortly after start, then every 6 hours. New versions raise an
+            // in-app event and, once per version, an OS notification.
+            let upd = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(20));
+                loop {
+                    let report = updates::check_all();
+                    for p in updates::take_notifications(&report) {
+                        use tauri_plugin_notification::NotificationExt;
+                        let _ = upd
+                            .notification()
+                            .builder()
+                            .title(format!("{} update available", p.label))
+                            .body(updates::notification_body(&p))
+                            .show();
+                    }
+                    if upd.emit(updates::EV_UPDATES, &report).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_secs(6 * 3600));
+                }
+            });
             // Heartbeat: Hermes version, provider, model and MCP count every 15 seconds.
             let beat = hermes.clone();
             std::thread::spawn(move || loop {
@@ -112,7 +144,66 @@ pub fn run_gui() {
             commands::apply_code_to_file,
             commands::execute_cli_command,
             commands::kill_cli_command,
+            ops::pty_spawn,
+            ops::pty_write,
+            ops::pty_resize,
+            ops::pty_kill,
+            ops::pty_list,
+            ops::pty_snapshot,
+            ops::check_updates,
+            ops::last_update_report,
+            ops::apply_update,
+            ops::skip_update,
+            ops::snooze_update,
+            ops::clear_update_choice,
+            ops::list_update_backups,
+            ops::rollback_update,
+            ops::org_snapshot,
+            ops::org_create_workspace,
+            ops::org_update_workspace,
+            ops::org_delete_workspace,
+            ops::org_create_folder,
+            ops::org_update_folder,
+            ops::org_delete_folder,
+            ops::org_place_chat,
+            ops::org_set_chat_flags,
+            ops::org_set_tags,
+            ops::org_add_attachment,
+            ops::org_remove_attachment,
+            ops::org_context_files,
+            ops::org_link_project,
+            ops::gh_auth_status,
+            ops::gh_login,
+            ops::gh_repos,
+            ops::gh_repo_for_dir,
+            ops::gh_branches,
+            ops::gh_commits,
+            ops::gh_prs,
+            ops::gh_pr_detail,
+            ops::gh_pr_diff,
+            ops::gh_pr_merge,
+            ops::gh_pr_review,
+            ops::gh_pr_create,
+            ops::gh_issues,
+            ops::gh_issue_detail,
+            ops::gh_issue_create,
+            ops::gh_comment,
+            ops::gh_issue_close,
+            ops::gh_runs,
+            ops::gh_run_detail,
+            ops::gh_run_failed_log,
+            ops::gh_run_rerun,
+            ops::list_policies,
+            ops::set_policy,
+            ops::list_audit,
+            ops::open_external,
+            ops::reveal_path,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running AgentOS Studio");
+        .build(tauri::generate_context!())
+        .expect("error while building AgentOS Studio")
+        .run(move |_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                pty::kill_all(&pty_for_exit);
+            }
+        });
 }

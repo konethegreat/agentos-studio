@@ -1,5 +1,6 @@
 import { Loader2, X } from "lucide-react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { studio } from "../lib/studio";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -102,5 +103,22 @@ export function Empty({ icon, title, hint }: { icon: ReactNode; title: string; h
       <div className="text-xs font-medium text-slate-400">{title}</div>
       {hint && <div className="text-[11px] text-slate-600">{hint}</div>}
     </div>
+  );
+}
+
+/** A link that opens in the system browser (the webview never navigates away). */
+export function ExternalLink({ href, children, className = "" }: { href: string | undefined; children: ReactNode; className?: string }) {
+  return (
+    <a
+      href={href}
+      title={href}
+      onClick={(e) => {
+        e.preventDefault();
+        if (href) void studio.os.openExternal(href).catch(() => undefined);
+      }}
+      className={`cursor-pointer text-emerald-300 underline decoration-emerald-500/40 underline-offset-2 hover:text-emerald-200 ${className}`}
+    >
+      {children}
+    </a>
   );
 }

@@ -28,8 +28,25 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Hot-swap provider switchboard.** Run on your Claude Pro or Max subscription today, then move to OpenRouter, Gemini, the Anthropic or OpenAI APIs, DeepSeek, Nous Portal or a local Ollama model from a dropdown. Keys go into Hermes's own `.env`, and every switch can be checked with a live test turn.
 - **Universal MCP router.** One table of every MCP server across Hermes, Claude Code, Qoder and Antigravity: which agent has it, whether it answers, how fast, and every tool it exposes. Add servers from a one-click catalog, sync them to all four agents, toggle them per conversation, or run OAuth sign-in.
 - **Native Rust MCP bus.** The same binary run with `--mcp-stdio` is `agentos-hub`: 6 tools for a shared task queue and shared memory, no Python, a full initialize plus tools/list round trip in about 35 ms.
-- **Built-in terminal.** A docked console for any `hermes`, `claude`, `git`, `gh` or PowerShell command, with one-click quick actions.
+- **Real terminals.** A docked panel with true PTY terminals (ConPTY on Windows) for interactive Hermes, the Hermes TUI, Claude Code or your shell, plus a one-shot command runner. Any chat can be continued in a terminal with one click.
+- **Workspaces and folders.** Organise chats into workspaces, folders and sub-folders with drag and drop, pins, tags, archive and file attachments. Map a folder to a repository and every chat run there lands in it automatically; link it to a Hermes project.
+- **GitHub.** Pull requests (diff, checks, review, merge, create), issues, Actions runs (failed logs, re-run), branches and commits, all through your `gh` login, with "Ask Hermes" hand-offs into chat.
+- **Update Center.** Hermes, Claude Code and Studio are checked automatically, with an in-app alert, an OS notification and a readable changelog. Update, Skip this version or Remind me later; every update is backed up first and can be rolled back.
+- **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
+
+## What is new in v0.3.0
+
+| Area | v0.2 | v0.3 |
+|---|---|---|
+| Terminal | Line-based command runner | Real PTY terminals (interactive Hermes, Hermes TUI, Claude Code, shell) next to the runner; "Continue in terminal" for any chat |
+| Organisation | Flat session list | Workspaces > folders > sub-folders > chats, drag and drop, pins, tags, archive, attachments, folders mapped to repos and Hermes projects |
+| GitHub | Token helper for the GitHub MCP server | Full GitHub view: PRs, reviews, merges, issues, Actions, branches, commits; `/gh` in chat; "Ask Hermes" hand-offs |
+| Updates | None | Update Center for Hermes, Claude Code and Studio with notifications, changelogs, skip and snooze, backups and rollback |
+| Safety | Ad-hoc confirms | Permission policies enforced in Rust, approval modal, audit log |
+| Navigation | Sidebar | Command palette (Ctrl+K), Alt+1 to Alt+9, tooltips on every new control |
+
+Design docs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (diagram, components, data model), [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/adr/0001-v0.3-stack.md](docs/adr/0001-v0.3-stack.md) (stack changes and what was refused).
 
 ## What is new in v0.2.0
 
@@ -46,8 +63,8 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 ```mermaid
 flowchart LR
     subgraph Studio["AgentOS Studio (Tauri v2)"]
-        UI["React 19 UI<br/>Chat Studio - Mission Control - Control Plane<br/>Fleet - Constitution - Terminal"]
-        Core["Rust core<br/>hermes_engine - chat_stream - mcp_manager<br/>cli_runner - bus - fleet - bootstrapper"]
+        UI["React 19 UI<br/>Chat Studio - GitHub - Updates - Safety - Mission Control<br/>Control Plane - Fleet - Constitution - Terminal (xterm.js)"]
+        Core["Rust core<br/>hermes_engine - chat_stream - pty - updates - org - github<br/>permissions - mcp_manager - cli_runner - bus - fleet"]
         UI <-- "invoke / events" --> Core
     end
 
@@ -58,6 +75,9 @@ flowchart LR
     Core -- "stream-json chat turns" --> Hermes["Hermes"]
     Core -- "stream-json chat turns" --> Claude["Claude Code"]
     Core -- "sessions (SQLite), settings" --> HermesHome
+    Core -- "interactive PTY" --> Hermes
+    Core -- "gh --json" --> GH[("GitHub")]
+    Core -- "workspaces, policies, audit" --> StudioDb[("studio.db")]
     Core -- "MCP registry + native probes" --> Configs[("~/.claude.json - ~/.qoder/settings.json<br/>~/.gemini/config/mcp_config.json")]
     Core -- "read/write + notify watcher" --> Vault
     Hub -- "tasks + memory" --> Vault
@@ -141,7 +161,55 @@ The home screen. Pick a working directory (any of your repositories, or any fold
 
 ## Terminal
 
-Press **Terminal** in the status bar (or `` Ctrl+` ``) for a console docked under the app. Commands run through PowerShell (or `sh`) in the folder you pick, stream stdout and stderr live, and can be stopped. Quick actions cover `hermes doctor`, `hermes mcp list`, `hermes status`, `claude auth status`, `claude mcp list`, `git status` and `gh auth status`. Interactive programs (bare `hermes`, `claude`, `hermes model`) are pointed to the matching Studio screen instead of hanging.
+Press **Terminal** in the status bar (or `` Ctrl+` ``) for the panel docked under the app. It has two kinds of tabs:
+
+- **Commands**: one-shot commands through PowerShell (or `sh`) in the folder you pick, with live stdout and stderr, Stop, history and quick actions (`hermes doctor`, `hermes mcp list`, `hermes status`, `claude auth status`, `claude mcp list`, `git status`, `gh auth status`).
+- **Real terminals** (press **+**): a pseudo terminal (ConPTY on Windows, openpty on macOS and Linux) rendered with xterm.js. Pick **Shell**, **Hermes** (the interactive REPL, with live reasoning, slash commands and typed approvals), **Hermes TUI** or **Claude Code**. Terminals keep running while the panel is hidden, survive a UI reload, and are stopped when Studio exits.
+
+**Continue in terminal** in the chat header opens the current conversation with `hermes --resume <id>` (or `claude --resume <id>`) in a new terminal tab. Only these programs can be started this way, and session ids are validated before they reach the command line.
+
+## Workspaces and folders
+
+The chat sidebar is a tree: **workspaces > folders > sub-folders > chats**, plus **Pinned** and **Unfiled**.
+
+- Drag chats onto folders or workspaces, and folders into other folders or workspaces (cycles are refused). F2 renames, the row menu has everything else: tags (search with `#tag`), pin, archive (hidden until **Archived** is ticked), export to Obsidian and delete.
+- **Map to a directory**: chats whose working directory is inside a folder's directory appear in it automatically (longest match wins, marked `auto`). **New chat** on a mapped folder starts in that directory and files the chat there.
+- **Link to a Hermes project**: reuses the Hermes project that already contains the directory, or runs `hermes project create`.
+- **Attach files** to a chat or a folder. When you send a message, the attached paths of the chat and every parent folder are listed at the top of the prompt for the agent, and the chat shows which files were included. Files are referenced, never copied.
+- Deleting a folder or workspace never deletes chats; they return to Unfiled. Hermes sessions stay in Hermes's `state.db`; placement lives in Studio's `studio.db`.
+
+## GitHub
+
+The GitHub view works through your `gh` login (Studio never sees the token). Pick a repository (local clones found by the fleet scan are marked) and use the tabs:
+
+- **Pull requests**: state filter, check status, diff, files, reviews and comments; **Submit review** (comment, approve, request changes), **Merge** (squash, merge or rebase, optional branch delete), comment, and **New PR** from a local clone.
+- **Issues**: create, comment, close as completed or not planned.
+- **Actions**: runs with job and step status, the failed-step log, **Re-run failed jobs** or all jobs.
+- **Branches** and **Commits** per branch.
+
+**Ask Hermes to review / fix / diagnose** hands a PR, issue or failed run to Chat Studio with a prepared prompt, inside the local clone when there is one. In chat, `/gh <args>` runs any `gh` command in the terminal. Writes go through the permission policies below.
+
+## Update Center
+
+Hermes (`hermes update --check` plus its GitHub release notes), Claude Code (the npm registry plus its `CHANGELOG.md`) and AgentOS Studio (GitHub releases) are checked 20 seconds after start and every 6 hours. A new version shows a banner and, once per version, an OS notification with a short summary. Each product card shows the changes grouped by section, and offers **Update**, **Skip this version** and **Remind me later**. Offline or failed checks say "Could not check", never "Up to date".
+
+Every update is backed up first, under `%APPDATA%\agentos-studio\backups` (or the platform config directory):
+
+| Product | Backup | Update | Roll back |
+|---|---|---|---|
+| Hermes | `hermes backup --quick` state snapshot plus the exact code commit | `hermes update --yes` (restarts the gateway) | Pins the code to the recorded commit; **Restore state** opens a Hermes terminal with `/snapshot restore <id>` typed in |
+| Claude Code | The installed version is recorded | `claude update` | `claude install <version> --force` |
+| Studio | The installed version is recorded | Downloads the release installer, verifies its SHA-256 against GitHub's digest, runs it | Installs the previous release the same way |
+
+Studio copies built from source (running out of `target\release`) are not replaced by an installer, because agents point their `agentos-hub` registration at that path; the card says to pull and rebuild instead.
+
+## Safety
+
+**Safety** lists every sensitive action with a policy of **allow**, **ask** or **deny**: merging, reviewing and creating PRs, creating, commenting on and closing issues, re-running workflows, installing updates and rollbacks, deleting workspaces and folders, linking Hermes projects and deleting Hermes sessions. The check runs in the Rust core before the action, so it covers buttons, chat commands and the palette alike. **Ask** shows an approval prompt that says exactly what will run; ticking "Always allow" switches that action to allow. Every guarded action, its outcome and policy changes are written to the audit log, which is searchable in the same view.
+
+## Command palette and keyboard
+
+`Ctrl+K` opens the command palette: every screen, new terminals, Hermes diagnostics, update checks and more. `Alt+1` to `Alt+9` switch screens, `` Ctrl+` `` toggles the terminal, F2 renames in the chat tree.
 
 ## The native MCP server
 
@@ -200,16 +268,24 @@ Claude Code workers run with `--permission-mode acceptEdits` and access to the `
 
 ```
 src/                      React 19 + TypeScript + Tailwind 4 UI
-  views/                  ChatStudio, MissionControl, ControlPlane, FleetManager, ConstitutionStudio, SetupWizard
-  components/             StatusBar, ProviderSwitcher, Markdown, ToolCard, CliDrawer, CommandBar, TaskCard, WorkerDrawer, UI kit
-  lib/api.ts              Typed bindings for every Rust command and event
+  views/                  ChatStudio, GitHubView, UpdateCenter, SafetyCenter, MissionControl, ControlPlane, FleetManager, ConstitutionStudio, SetupWizard
+  components/             WorkspaceTree, PtyTerminal, CliDrawer, CommandPalette, ApprovalProvider, Updates, StatusBar, ProviderSwitcher, Markdown, ToolCard, CommandBar, TaskCard, WorkerDrawer, UI kit
+  lib/api.ts              Typed bindings for the v0.1 and v0.2 Rust commands and events
+  lib/studio.ts           Typed bindings for terminals, updates, organisation, GitHub and safety
   lib/chat.ts             Stream event reducer and history loader
 src-tauri/src/
   main.rs                 GUI by default, MCP server with --mcp-stdio
   hermes_engine.rs        Heartbeat, provider switchboard, model discovery, state.db sessions
   chat_stream.rs          Streaming chat turns for Hermes and Claude Code, event parsers, Apply
   mcp_manager.rs          MCP registry across four agents, native MCP client, catalog
-  cli_runner.rs           In-app terminal
+  cli_runner.rs           One-shot command runner
+  pty.rs                  Real terminals (portable-pty) with replayable scrollback
+  updates.rs              Version checks, changelogs, backups, updates and rollback
+  org.rs                  Workspaces, folders, chat placement, tags, attachments, Hermes projects
+  github.rs               gh wrappers for repos, PRs, issues, Actions, branches, commits
+  permissions.rs          Permission policies, approval guard, audit log
+  store.rs                studio.db (SQLite) and migrations
+  ops.rs                  Tauri commands for the v0.3 modules
   mcp_stdio.rs            JSON-RPC 2.0 MCP server (agentos-hub)
   vault.rs                Task bus, shared memory, dashboard, cross-process lock
   bootstrapper.rs         Stack detection, installers, OAuth launchers, registrations
@@ -218,6 +294,7 @@ src-tauri/src/
   constitution.rs         Managed blocks, law toggles, line-ending safe writes
   broadcast.rs            Save and Broadcast
 src-tauri/tests/          Native MCP probe against the real binary, plus opt-in live tests
+docs/                     Architecture, roadmap and ADRs
 templates/CONSTITUTION.md Default constitution bundled into the binary
 ```
 
@@ -234,9 +311,10 @@ cargo test                    # unit tests plus the native MCP probe
 # Opt-in checks against a real Hermes and Claude Code install on this machine
 cargo test --test live_smoke -- --ignored --nocapture
 cargo test --test live_chat -- --ignored --nocapture
+cargo test --test live_v3 -- --ignored --nocapture --test-threads 1   # PTY, updates, GitHub
 ```
 
-The live tests read your Hermes sessions, providers and MCP servers, run real chat turns on both backends (then delete the session they created), and re-apply your active provider without changing it.
+The live tests read your Hermes sessions, providers and MCP servers, run real chat turns on both backends (then delete the session they created), and re-apply your active provider without changing it. `live_v3` runs PowerShell and interactive Hermes inside a real PTY, checks all three update channels against the network, and reads PRs, diffs, branches, commits, runs and issues of this repository through `gh` (read-only).
 
 Contributions follow the AgentOS constitution in [`CLAUDE.md`](CLAUDE.md): branch, atomic conventional commits, PR, self-review, squash merge.
 

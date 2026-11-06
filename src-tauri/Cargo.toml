@@ -1,6 +1,6 @@
 [package]
 name = "agentos-studio"
-version = "0.2.0"
+version = "0.3.0"
 description = "Native control plane and Rust MCP bus for multi-agent engineering fleets"
 authors = ["Kone Tshivhinda"]
 license = "MIT"
@@ -35,6 +35,10 @@ which = "7"
 dirs = "6"
 anyhow = "1"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
+portable-pty = "0.9.0"
+ureq = "3.2.1"
+sha2 = "0.10.9"
+tauri-plugin-notification = "2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
