@@ -1,5 +1,6 @@
 //! AgentOS Studio: native control plane (Tauri GUI) and native MCP server (`--mcp-stdio`).
 
+pub mod boot;
 pub mod bootstrapper;
 pub mod broadcast;
 pub mod bus;
@@ -18,6 +19,7 @@ pub mod permissions;
 pub mod procs;
 pub mod pty;
 pub mod settings;
+pub mod single;
 pub mod store;
 pub mod updates;
 pub mod vault;
@@ -28,6 +30,11 @@ use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 pub fn run_gui() {
+    boot::install_panic_hook();
+    // A second GUI instance would double the heartbeat, the watcher and every task thread.
+    if single::already_running() {
+        return;
+    }
     // GUI processes inherit a stale PATH; heal it once so every spawn finds the CLIs.
     let healed = procs::heal_process_path();
     let hermes = Arc::new(hermes_engine::HermesState::default());
@@ -49,6 +56,9 @@ pub fn run_gui() {
         .manage(state)
         .setup(move |app| {
             let handle = app.handle().clone();
+            if let Err(e) = single::claim(handle.clone()) {
+                eprintln!("single instance guard not claimed: {e:#}");
+            }
             let st = app.state::<commands::AppState>();
             let root = st
                 .settings
@@ -61,6 +71,11 @@ pub fn run_gui() {
                     eprintln!("vault watcher not started: {e:#}");
                 }
             }
+            // Staged startup checks: streamed to the boot screen, cached for the next launch.
+            let boot_handle = handle.clone();
+            std::thread::spawn(move || {
+                boot::run(Some(boot_handle));
+            });
             // Update checks: shortly after start, then every 6 hours. New versions raise an
             // in-app event and, once per version, an OS notification.
             let upd = app.handle().clone();
@@ -198,6 +213,11 @@ pub fn run_gui() {
             ops::list_audit,
             ops::open_external,
             ops::reveal_path,
+            commands::boot_snapshot,
+            commands::boot_run,
+            commands::boot_logs_dir,
+            commands::boot_read_log,
+            commands::boot_open_logs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")

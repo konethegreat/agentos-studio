@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, State};
 
+use crate::boot::{self, BootReport};
 use crate::bus::{self, BusState, WorkerInfo};
 use crate::chat_stream::{self, ApplyResult, ChatRequest, ChatStarted, ChatState};
 use crate::cli_runner::{self, CliState};
@@ -578,4 +579,66 @@ pub async fn execute_cli_command(
 #[tauri::command]
 pub fn kill_cli_command(state: State<'_, AppState>, run_id: String) -> CmdResult<()> {
     cli_runner::kill_cli_command(&state.cli, &run_id).map_err(err)
+}
+
+// ---------------------------------------------------------------------------------------------
+// v0.4: startup checks, logs and diagnostics
+// ---------------------------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn boot_snapshot() -> Option<BootReport> {
+    boot::load_snapshot()
+}
+
+#[tauri::command]
+pub async fn boot_run(app: AppHandle) -> CmdResult<BootReport> {
+    tauri::async_runtime::spawn_blocking(move || boot::run(Some(app)))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn boot_logs_dir() -> String {
+    boot::logs_dir().display().to_string()
+}
+
+/// Only the two files this app writes are readable here, and only the last 200 KB of each.
+#[tauri::command]
+pub fn boot_read_log(name: String) -> CmdResult<String> {
+    let path = match name.as_str() {
+        "boot.log" => boot::logs_dir().join("boot.log"),
+        "crash.log" => boot::crash_log(),
+        other => return Err(format!("Unknown log '{other}'")),
+    };
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let cut = text.len().saturating_sub(200 * 1024);
+    Ok(text[cut..].to_string())
+}
+
+#[tauri::command]
+pub fn boot_open_logs() -> CmdResult<String> {
+    let dir = boot::logs_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(dir.display().to_string())
 }
