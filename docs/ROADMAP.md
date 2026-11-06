@@ -1,6 +1,9 @@
 # AgentOS Studio roadmap
 
-## v0.3.0 (this release)
+Phases are ordered by dependency, not by excitement. Each one lists what it needs from the
+phase before it, so nothing is scheduled that cannot be built yet.
+
+## v0.3.0 (shipped)
 
 | Area | Ships |
 |---|---|
@@ -11,23 +14,107 @@
 | Safety | Per-action permission policies (allow, ask, deny) enforced in Rust, approval modal, audit log view. |
 | Guidance | Command palette (Ctrl+K), tooltips on every new control. |
 
-## v0.4.0
+## v0.4.0: memory, transparency, design language
 
-- Memory: vault-first memory browser with wikilinks and frontmatter, and a "memory ledger" on every chat turn listing exactly which notes were read and written (from `tool_use` events of `agentos-hub`, file tools and Notion MCP). Notion two-way sync through a vault sync ledger (`notion_id`, `synced_at`, content hash; last-writer-wins with conflict notes).
-- Transparency: run timeline across chats, PTYs, workers and updates; reasoning panel fed from `state.db` `reasoning` columns after each turn (stream-json does not stream reasoning; the PTY does); token and cost panel from `state.db` and `hermes insights`; pause and step-in through `hermes pause` and the PTY.
-- Design system: semantic tokens for colour, type scale, spacing, radius and motion; light theme; focus rings and full keyboard navigation audit; reduced-motion support.
-- Guidance: first-run onboarding, contextual guides, searchable help center built from the docs folder.
+- **Memory:** vault-first browser with wikilinks and frontmatter, and a "memory ledger" on every
+  chat turn listing exactly which notes were read and written (assembled from `tool_use` events of
+  `agentos-hub`, file tools and Notion MCP). Notion two-way sync through a vault sync ledger
+  (`notion_id`, `synced_at`, content hash; last-writer-wins with conflict notes).
+- **Transparency:** run timeline across chats, PTYs, workers and updates; reasoning panel fed from
+  `state.db` `reasoning` columns after each turn (stream-json does not stream reasoning; the PTY
+  does); token and cost panel from `state.db` and `hermes insights`; pause and step-in through
+  `hermes pause` and the PTY.
+- **Design system:** semantic tokens for colour, type scale, spacing, radius and motion; light
+  theme; focus rings and a full keyboard navigation audit; reduced-motion support.
+- **Guidance:** first-run onboarding, contextual guides, searchable help center built from the docs
+  folder.
 
-## v0.5.0
+Why here: the memory ledger and the cost panel produce the per-turn outcome data that the model
+router in v0.6.0 needs. Building the router first would mean guessing.
 
-- Permission model extended to MCP servers and individual MCP tools (mirrors `hermes tools enable|disable`), HTTP APIs and computer use (`hermes computer-use status|doctor`), with per-workspace overrides.
+## v0.5.0: model layer, full parity and live freshness
+
+Goal: anything Hermes can connect to in a terminal can be chosen in the app, and new models appear
+without shipping a new Studio release.
+
+- **Every Hermes provider, not a curated eight.** The provider list is read from Hermes's own
+  provider plugin registry (35+ today: OpenRouter, Anthropic, OpenAI, Gemini, DeepSeek, xAI, Z.ai,
+  MiniMax, Kimi, Qwen, Fireworks, Novita, NVIDIA, HuggingFace, Bedrock, Vertex, Azure, Nous, local
+  and custom endpoints, and others). If Hermes gains a provider, Studio shows it with no code
+  change. The curated cards stay as the short list; a full list sits behind "All providers".
+  Trade-off: provider quirks vary, so each entry reports its own auth kind and readiness instead of
+  pretending to be uniform.
+- **Live catalog freshness.** Refresh from three sources on a schedule (at start, every 6 hours,
+  and manually): the models.dev cache with ETag revalidation, each provider's `/v1/models` through
+  `hermes model --refresh` semantics, and a local Ollama `/api/tags` probe. New models get a "new"
+  badge, retired models get a deprecation warning on the card and in the chat header, and the
+  catalog changelog is readable in the Update Center.
+  Deliberate rule: freshness surfaces and suggests, it never silently changes your default.
+- **Aliases, fallbacks, pools.** First-class UI for `model.aliases` (named model shortcuts),
+  `hermes fallback` chains (tried on rate limit, overload or connection failure), `hermes auth`
+  credential pools (add, label, reorder, reset exhaustion, refresh OAuth) and `hermes moa` presets
+  (multi-model mixtures). All of it is written through the Hermes CLI so the terminal and the app
+  never disagree.
+- **Capability metadata per model.** Tool calling, vision, reasoning effort levels, context window,
+  price per million tokens, streaming and structured output, from models.dev where known and
+  provider documentation where not. This is the input the router needs, and it also lets the app
+  refuse an impossible pairing early (for example, an image attachment on a model without vision)
+  instead of failing mid-turn.
+- **Per-workspace model defaults.** A folder (and anything under it) can pin a provider and model,
+  so opening a repo always starts on the model that suits it.
+- **Switch-cost awareness.** Warn before switching models inside a live session, because a switch
+  invalidates the prompt cache and can double the cost of the next turn.
+
+Depends on: nothing from v0.4 except the design tokens for the new panels.
+
+## v0.6.0: auto model routing and cost guardrails
+
+Goal: pick the right model for each task automatically, explainably and cheaply, with the user
+always able to override. Design in [`MODEL-ROUTER.md`](MODEL-ROUTER.md).
+
+- **Deterministic router first.** Hard constraints (must support tool calling, must fit the
+  context, vision needed, provider allowed) filter the candidate set. A scoring pass then ranks
+  what is left on task class, cost, latency and measured quality. Rules are inspectable and
+  versioned; no model call is spent deciding which model to use.
+- **Signals it uses:** the turn's task class (chat, code edit, review, research, long-context
+  synthesis, vision, shell-heavy work), required tools and MCP servers, context size, attachment
+  types, workspace pins and tags, remaining budget, and your own history with that task class.
+- **Shadow mode first.** For the first weeks the router only recommends: every turn records what it
+  would have chosen next to what actually ran, and a weekly report shows the difference in cost,
+  latency and retries. Nothing changes until the numbers justify it.
+- **Escalation ladder as an alternative to prediction.** Start on a cheap model, verify the result
+  (tests, linter, self-check), escalate only if verification fails. For coding this is often more
+  reliable than predicting difficulty up front, and it is cheaper per successful task.
+- **Explainability.** Every turn shows "Auto chose X because Y", with a one-click pin to override
+  for the turn, the chat or the workspace.
+- **Cost guardrails, same release.** A monthly budget per workspace and overall, a warning
+  threshold, and a hard pause on dispatch when exceeded. Auto routing without a budget is a way to
+  spend money faster.
+- **Model scorecards.** Per-model success rate, retries, tool errors, tokens and cost per task
+  class, computed from your own sessions, shown on the provider cards and used by the scorer.
+- **Evaluation harness.** A repeatable set of real tasks from your history, run against a candidate
+  model or routing policy, with results stored in the vault so a prompt or model change can be
+  compared instead of guessed.
+
+Depends on: v0.5 capability metadata, and the cost and outcome data from v0.4.
+
+## v0.7.0: trust and distribution
+
+- Permission model extended to MCP servers and individual MCP tools (mirrors `hermes tools
+  enable|disable`), HTTP APIs and computer use (`hermes computer-use status|doctor`), with
+  per-workspace overrides.
 - Studio secrets in the OS keychain (`keyring`), surfacing `hermes secrets` sources.
-- Signed builds and the Tauri updater plugin with signed manifests.
+- Signed builds and the Tauri updater plugin with signed manifests, so updates install in place.
 - GitHub notifications inbox and PR review comments inline on the diff.
 
 ## Ideas worth considering
 
 - Session forking: branch a chat at any message into a new Hermes session.
-- Per-folder agent profiles (provider, model, toolsets) so a repo always opens with the right setup.
-- Cost guardrails: a monthly budget that pauses dispatch when exceeded.
 - Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.
+- Offline mode: detect no network and pin a local model automatically, with a clear banner.
+- Team routing policies: shared JSON policy files in a repo, so a team agrees on model choices.
+
+## Competitive notes
+
+[`PARITY.md`](PARITY.md) tracks the capability targets this roadmap is measured against, and what we
+deliberately do differently.
