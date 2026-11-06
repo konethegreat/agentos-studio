@@ -1006,6 +1006,184 @@ impl Vault {
         Ok(format!("Memory note {action}: {}", path.display()))
     }
 
+    /// One page an agent can read instead of every note: purpose, stack, commands, open tasks,
+    /// the last few decisions and the known gotchas.
+    pub fn project_brief(&self, repo: &str) -> Result<String> {
+        let repo = repo.trim();
+        if repo.is_empty() {
+            bail!("repo must not be empty");
+        }
+        let slugish = slug(repo, 60);
+        let note = self.projects().join(format!("{slugish}.md"));
+        let mut out = String::new();
+        out.push_str(&format!("# Brief: {repo}\n\n"));
+
+        let mut root_dir: Option<PathBuf> = None;
+        if note.exists() {
+            let raw = fs::read_to_string(&note)?;
+            let doc = Doc::parse(&raw);
+            let purpose = doc
+                .body
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with('>'))
+                .unwrap_or("No purpose recorded.")
+                .to_string();
+            out.push_str(&format!("## Purpose\n{purpose}\n\n"));
+            for key in ["path", "root", "repo_path"] {
+                if let Some(p) = doc.get(key) {
+                    if Path::new(p).is_dir() {
+                        root_dir = Some(PathBuf::from(p));
+                    }
+                }
+            }
+        } else {
+            out.push_str(&format!("## Purpose\nNo project note at 01_Projects/{slugish}.md yet.\n\n"));
+        }
+
+        let mut stack: Vec<String> = Vec::new();
+        if let Some(dir) = root_dir.as_deref() {
+            for (file, label) in [
+                ("Cargo.toml", "Rust"),
+                ("package.json", "Node / TypeScript"),
+                ("pyproject.toml", "Python"),
+                ("go.mod", "Go"),
+                ("src-tauri", "Tauri desktop"),
+            ] {
+                if dir.join(file).exists() {
+                    stack.push(label.to_string());
+                }
+            }
+            let readme = dir.join("README.md");
+            if let Ok(text) = fs::read_to_string(readme) {
+                let mut in_commands = false;
+                let mut cmds: Vec<String> = Vec::new();
+                for line in text.lines() {
+                    let low = line.to_lowercase();
+                    if line.starts_with("## ") {
+                        in_commands = low.contains("command") || low.contains("development") || low.contains("usage");
+                    } else if in_commands && line.trim_start().starts_with("```") {
+                        continue;
+                    } else if in_commands && !line.trim().is_empty() && cmds.len() < 6 {
+                        cmds.push(line.trim().to_string());
+                    }
+                }
+                if !cmds.is_empty() {
+                    out.push_str("## Commands\n");
+                    for c in cmds {
+                        out.push_str(&format!("- `{c}`\n"));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        out.push_str(&format!(
+            "## Stack\n{}\n\n",
+            if stack.is_empty() {
+                "Not detected. Add `path:` to the project note.".to_string()
+            } else {
+                stack.join(", ")
+            }
+        ));
+
+        let open: Vec<crate::vault::Task> = self
+            .fetch_pending_tasks("all")?
+            .into_iter()
+            .filter(|t| {
+                let p = t.project.to_lowercase();
+                let r = repo.to_lowercase();
+                p == r || p.contains(&r) || r.contains(&p)
+            })
+            .collect();
+        out.push_str("## Open tasks\n");
+        if open.is_empty() {
+            out.push_str("- None on the bus for this project.\n\n");
+        } else {
+            for t in open {
+                out.push_str(&format!(
+                    "- {} [{}] {} ({})\n",
+                    t.id, t.status, t.title, t.assigned_to
+                ));
+            }
+            out.push('\n');
+        }
+
+        let mut decisions: Vec<String> = Vec::new();
+        if let Ok(log) = fs::read_to_string(self.decision_log()) {
+            let mut block = String::new();
+            for line in log.lines() {
+                if line.starts_with("### ") {
+                    if !block.is_empty() && block.to_lowercase().contains(&repo.to_lowercase()) {
+                        decisions.push(block.trim().to_string());
+                    }
+                    block = line.to_string();
+                } else {
+                    block.push('\n');
+                    block.push_str(line);
+                }
+            }
+            if !block.is_empty() && block.to_lowercase().contains(&repo.to_lowercase()) {
+                decisions.push(block.trim().to_string());
+            }
+        }
+        out.push_str("## Recent decisions\n");
+        if decisions.is_empty() {
+            out.push_str("- None recorded for this project.\n\n");
+        } else {
+            for d in decisions.iter().rev().take(5) {
+                let head = d.lines().next().unwrap_or("").trim_start_matches("### ").to_string();
+                out.push_str(&format!("- {head}\n"));
+            }
+            out.push('\n');
+        }
+
+        out.push_str("## Gotchas\n");
+        let mut gotchas = 0usize;
+        if let Ok(entries) = fs::read_dir(self.memory()) {
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.extension().and_then(|x| x.to_str()) != Some("md") {
+                    continue;
+                }
+                let Ok(raw) = fs::read_to_string(&p) else { continue };
+                let doc = Doc::parse(&raw);
+                if MemKind::parse(doc.get("type").unwrap_or("")) != MemKind::Gotcha {
+                    continue;
+                }
+                let repo_match = doc
+                    .get("repo")
+                    .map(|r| r.to_lowercase().contains(&repo.to_lowercase()))
+                    .unwrap_or(true);
+                if !repo_match {
+                    continue;
+                }
+                let first = doc
+                    .body
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .last()
+                    .unwrap_or("")
+                    .chars()
+                    .take(200)
+                    .collect::<String>();
+                let stem = p
+                    .file_stem()
+                    .map(|x| x.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                out.push_str(&format!("- [[{stem}]]: {first}\n"));
+                gotchas += 1;
+                if gotchas >= 5 {
+                    break;
+                }
+            }
+        }
+        if gotchas == 0 {
+            out.push_str("- None recorded.\n");
+        }
+        Ok(out)
+    }
+
     pub fn search_shared_memory(&self, query: &str) -> Result<Vec<SearchHit>> {
         let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
         if terms.is_empty() {
