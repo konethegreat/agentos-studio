@@ -28,7 +28,24 @@ phase before it, so nothing is scheduled that cannot be built yet.
 - **Deferred startup loads:** stack status, fleet scan and the board wait for the checks, so the
   window is responsive immediately.
 
-## v0.4.0: memory, transparency, design language
+## v0.4.0: projects, session branches and skills (shipped)
+
+Hermes stays the source of truth; Studio connects to what it already owns.
+
+- **Projects** (Hermes `projects.db`): a named workspace over one or more folders, with every chat
+  that ran inside those folders, matched by the same longest-prefix rule Hermes uses. Create,
+  rename, add a folder, archive and restore, all through `hermes project`.
+- **Session branches**: a chat can be spun off from another one ("deal with separate things"),
+  recorded in `studio.db` as a link from the child session to its parent. The child is a real Hermes
+  session in the project's folder; Studio only remembers the relationship, so nothing is invented.
+- **Skills**: the installed skills tree (name, description, category, version, tags) read from
+  `SKILL.md` frontmatter, the full body rendered in-app, hub search and install through
+  `hermes skills search|install`, removal and update. Any skill can be attached to a chat, which
+  passes `-s name` to Hermes on every turn, so the agent loads it deliberately rather than by luck.
+- **Chat header**: selected skills are visible and editable mid-conversation; a branch indicator
+  shows when the next turn will be recorded as a child session.
+
+## v0.4.1: memory, transparency, design language
 
 - **Memory:** vault-first browser with wikilinks and frontmatter, and a "memory ledger" on every
   chat turn listing exactly which notes were read and written (assembled from `tool_use` events of
@@ -43,8 +60,8 @@ phase before it, so nothing is scheduled that cannot be built yet.
 - **Guidance:** first-run onboarding, contextual guides, searchable help center built from the docs
   folder.
 
-Why here: the memory ledger and the cost panel produce the per-turn outcome data that the model
-router in v0.6.0 needs. Building the router first would mean guessing.
+Why after v0.4.0: the memory ledger and cost panel produce the per-turn outcome data the model
+router needs, and the design tokens are needed by every later screen, so both stay ahead of v0.5.0.
 
 ## v0.5.0: model layer, full parity and live freshness
 

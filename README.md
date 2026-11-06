@@ -196,6 +196,20 @@ The chat sidebar is a tree: **workspaces > folders > sub-folders > chats**, plus
 - **Attach files** to a chat or a folder. When you send a message, the attached paths of the chat and every parent folder are listed at the top of the prompt for the agent, and the chat shows which files were included. Files are referenced, never copied.
 - Deleting a folder or workspace never deletes chats; they return to Unfiled. Hermes sessions stay in Hermes's `state.db`; placement lives in Studio's `studio.db`.
 
+## Projects, branches and skills
+
+- **Projects** are Hermes projects: a named workspace over one or more folders (`hermes project`).
+  The Projects view lists each project with its folders and every chat that ran inside them,
+  matched with the same longest-prefix rule Hermes uses. Create, rename, add a folder, archive or
+  restore, and start a new chat directly in the project folder.
+- **Session branches.** Any chat in a project can spin off a separate one with its own parent link,
+  so "one chat per concern" does not mean losing where it came from. The child is a real Hermes
+  session in the same folder; Studio records the relationship in `studio.db` and nothing else.
+- **Skills.** The Skills view reads the installed skills tree (`SKILL.md` frontmatter plus the full
+  body), searches the registries and installs through `hermes skills`, and removes or updates them.
+  **Use in a chat** attaches a skill to the conversation, which passes `-s <skill>` to Hermes on
+  every turn, so the agent loads it on purpose instead of hoping it notices.
+
 ## GitHub
 
 The GitHub view works through your `gh` login (Studio never sees the token). Pick a repository (local clones found by the fleet scan are marked) and use the tabs:
