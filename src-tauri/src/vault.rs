@@ -1038,7 +1038,9 @@ impl Vault {
                 }
             }
         } else {
-            out.push_str(&format!("## Purpose\nNo project note at 01_Projects/{slugish}.md yet.\n\n"));
+            out.push_str(&format!(
+                "## Purpose\nNo project note at 01_Projects/{slugish}.md yet.\n\n"
+            ));
         }
 
         let mut stack: Vec<String> = Vec::new();
@@ -1061,7 +1063,9 @@ impl Vault {
                 for line in text.lines() {
                     let low = line.to_lowercase();
                     if line.starts_with("## ") {
-                        in_commands = low.contains("command") || low.contains("development") || low.contains("usage");
+                        in_commands = low.contains("command")
+                            || low.contains("development")
+                            || low.contains("usage");
                     } else if in_commands && line.trim_start().starts_with("```") {
                         continue;
                     } else if in_commands && !line.trim().is_empty() && cmds.len() < 6 {
@@ -1131,7 +1135,12 @@ impl Vault {
             out.push_str("- None recorded for this project.\n\n");
         } else {
             for d in decisions.iter().rev().take(5) {
-                let head = d.lines().next().unwrap_or("").trim_start_matches("### ").to_string();
+                let head = d
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim_start_matches("### ")
+                    .to_string();
                 out.push_str(&format!("- {head}\n"));
             }
             out.push('\n');
@@ -1145,7 +1154,9 @@ impl Vault {
                 if p.extension().and_then(|x| x.to_str()) != Some("md") {
                     continue;
                 }
-                let Ok(raw) = fs::read_to_string(&p) else { continue };
+                let Ok(raw) = fs::read_to_string(&p) else {
+                    continue;
+                };
                 let doc = Doc::parse(&raw);
                 if MemKind::parse(doc.get("type").unwrap_or("")) != MemKind::Gotcha {
                     continue;
@@ -1160,9 +1171,9 @@ impl Vault {
                 let first = doc
                     .body
                     .lines()
+                    .rev()
                     .map(str::trim)
-                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
-                    .last()
+                    .find(|l| !l.is_empty() && !l.starts_with('#'))
                     .unwrap_or("")
                     .chars()
                     .take(200)

@@ -205,14 +205,22 @@ pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Valu
                 .unwrap_or("architecture");
             let meta = crate::vault::MemMeta {
                 kind: Some(crate::vault::MemKind::parse(
-                    args.get("type").and_then(Value::as_str).unwrap_or("decision"),
+                    args.get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("decision"),
                 )),
-                supersedes: args.get("supersedes").and_then(Value::as_str).map(str::to_string),
+                supersedes: args
+                    .get("supersedes")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 source_session: args
                     .get("source_session")
                     .and_then(Value::as_str)
                     .map(str::to_string),
-                agent: args.get("agent").and_then(Value::as_str).map(str::to_string),
+                agent: args
+                    .get("agent")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 repo: args.get("repo").and_then(Value::as_str).map(str::to_string),
             };
             Ok(json!(vault.write_typed_memory(
@@ -247,18 +255,26 @@ pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Valu
                 .ok_or_else(|| anyhow::anyhow!("missing required string argument 'type'"))?;
             let meta = crate::vault::MemMeta {
                 kind: Some(crate::vault::MemKind::parse(kind)),
-                supersedes: args.get("supersedes").and_then(Value::as_str).map(str::to_string),
+                supersedes: args
+                    .get("supersedes")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 source_session: args
                     .get("source_session")
                     .and_then(Value::as_str)
                     .map(str::to_string),
-                agent: args.get("agent").and_then(Value::as_str).map(str::to_string),
+                agent: args
+                    .get("agent")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 repo: args.get("repo").and_then(Value::as_str).map(str::to_string),
             };
             Ok(json!(vault.write_typed_memory(
                 str_arg(args, "topic")?,
                 str_arg(args, "content")?,
-                args.get("category").and_then(Value::as_str).unwrap_or("architecture"),
+                args.get("category")
+                    .and_then(Value::as_str)
+                    .unwrap_or("architecture"),
                 &meta
             )?))
         }
@@ -467,7 +483,10 @@ mod tests {
             json!({"name": "recall", "arguments": {"query": "port docker", "k": 3}}),
         );
         let text = found["result"]["content"][0]["text"].as_str().unwrap_or("");
-        assert!(text.contains("Port_Clash"), "recall returns the note: {text}");
+        assert!(
+            text.contains("Port_Clash"),
+            "recall returns the note: {text}"
+        );
 
         let brief = call(
             &v,
