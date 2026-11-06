@@ -56,6 +56,42 @@ flowchart LR
     Core --> Store[("studio.db<br/>workspaces, folders, chat_meta,<br/>tags, attachments, permissions,<br/>audit, kv")]
 ```
 
+## Startup (`boot.rs`, `single.rs`)
+
+Every launch runs a fixed sequence before the app shows data, because the most common support
+question is "it did not start" and the honest answer is usually one specific check.
+
+| Step | What it does | If it fails |
+|---|---|---|
+| `dirs` | Creates the app's config, log and backup folders | Reported, boot continues |
+| `path` | Repairs this process's PATH from the persisted user PATH plus known bin folders | Reported |
+| `settings` | Loads `settings.json`, resolves the vault | Warning with the folder it used |
+| `store` | Opens `studio.db` and applies migrations | Failed, boot continues read-only |
+| `vault` | Checks the vault structure, creates missing folders only | Repaired or failed |
+| `tools` | Probes git, node, gh, hermes and claude in parallel with a timeout each | Warning, names the missing tool |
+| `hermes` | Parses `config.yaml`, reads provider, model and MCP counts | Failed with a pointer to the repair screen |
+| `mcp` | Checks that `agentos-hub` is registered in Hermes and Claude Code | Warning with a pointer to sync |
+
+Rules:
+
+- **Only safe repairs run automatically.** Creating folders, applying migrations and fixing the
+  PATH are idempotent and cannot destroy anything. Writing another tool's configuration,
+  installing software and signing in are reported with a view to fix them, never done silently.
+- **Every step is bounded.** Tool probes use a 4 second cap and run in parallel, so a missing tool
+  costs one timeout, not five.
+- **The report is streamed and cached.** Steps arrive on `agentos://boot` as they finish; the
+  finished report is cached to `boot-snapshot.json` so the next launch paints instantly, and
+  appended to `logs/boot.log` (last 400 runs).
+- **Panics are logged.** `install_panic_hook` writes `logs/crash.log` with a message, location and
+  backtrace, and the next launch shows the most recent entry on the boot screen. A GUI app with no
+  console would otherwise die silently.
+- **One instance only.** `single.rs` binds `127.0.0.1:47823`. A second launch asks the running
+  instance to focus its window and exits, so a double click never produces a second heartbeat, a
+  second vault watcher or a second fleet scan. No native dependency.
+
+The UI defers its heavy loads (stack status, fleet scan, board) until the boot report says done, so
+the first paint is never competing with a full probe.
+
 ## Components
 
 | Module | Responsibility |

@@ -159,6 +159,24 @@ The home screen. Pick a working directory (any of your repositories, or any fold
 - Hermes and Claude Code are changed through their CLIs (`hermes mcp add/remove`, `claude mcp add/remove`). Qoder and Antigravity JSON files are merged in place with a one-time backup and their original line endings.
 - If any agent still runs `agentos-hub` from the old Python server, one button points all four at this binary.
 
+## Startup and diagnostics
+
+Every launch runs eight bounded checks and shows them on a boot screen: app folders, the tool
+search path, settings, `studio.db`, the vault structure, the connected tools (git, node, gh, hermes,
+claude), the Hermes configuration, and whether `agentos-hub` is registered with the agents.
+
+- Safe repairs run automatically: missing folders, database migrations, PATH entries, and missing
+  vault folders. Anything that writes another tool's configuration, installs software or signs in
+  is listed with a **Fix** button instead of being changed behind your back.
+- **Diagnostics** (sidebar) shows every check with its duration, the boot log, the crash log, and a
+  **Re-run checks** button. Panics are written to `logs/crash.log` with a backtrace, and the next
+  launch surfaces them, so nothing dies silently.
+- **One instance only:** launching again focuses the window you already have instead of starting a
+  second copy of the app and all its background work.
+
+Logs live in `%APPDATA%\agentos-studio\logs` (`boot.log`, `crash.log`); the **Logs folder** button
+opens them.
+
 ## Terminal
 
 Press **Terminal** in the status bar (or `` Ctrl+` ``) for the panel docked under the app. It has two kinds of tabs:
