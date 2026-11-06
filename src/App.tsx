@@ -1,24 +1,17 @@
 import {
-  Activity,
-  ArrowUpCircle,
+  Brain,
   Bot,
   FolderGit2,
-  FolderKanban,
   GitPullRequest,
   LayoutDashboard,
   MessageSquarePlus,
   MessagesSquare,
-  PlugZap,
   RefreshCw,
-  ScrollText,
-  Search,
-  ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
   SquareTerminal,
   TerminalSquare,
 } from "lucide-react";
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, } from "react";
 import {
   api,
   errorText,
@@ -35,13 +28,13 @@ import {
   type WorkerEvent,
   type WorkerInfo,
 } from "./lib/api";
-import { basename } from "./lib/format";
 import { ApprovalProvider } from "./components/ApprovalProvider";
 import { BootSplash } from "./components/BootSplash";
 import { CliDock, CliProvider, useCli } from "./components/CliDrawer";
 import { CommandBar } from "./components/CommandBar";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { StatusBar } from "./components/StatusBar";
+import { NavRail, type RailGroup, type RailView } from "./components/NavRail";
 import { ToastProvider, useToast } from "./components/Toasts";
 import { UpdateBanner, UpdatesProvider, useUpdates } from "./components/Updates";
 import { WorkerDrawer } from "./components/WorkerDrawer";
@@ -61,19 +54,55 @@ const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ defaul
 
 type View = "chat" | "projects" | "skills" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup" | "diagnostics";
 
-const NAV: { id: View; label: string; icon: ReactNode; hint: string; keys?: string }[] = [
-  { id: "chat", label: "Hermes Chat Studio", icon: <MessagesSquare className="size-4" />, hint: "Chat with Hermes or Claude Code, organised in workspaces and folders", keys: "Alt+1" },
-  { id: "projects", label: "Projects", icon: <FolderKanban className="size-4" />, hint: "Hermes projects, their folders, and the chats that ran inside them" },
-  { id: "skills", label: "Skills", icon: <Sparkles className="size-4" />, hint: "What Hermes can load, plus hub search and install" },
-  { id: "github", label: "GitHub", icon: <GitPullRequest className="size-4" />, hint: "Pull requests, issues, Actions, branches and commits through gh", keys: "Alt+2" },
-  { id: "mission", label: "Mission Control", icon: <LayoutDashboard className="size-4" />, hint: "The Agent Bus board: dispatch and track tasks", keys: "Alt+3" },
-  { id: "control", label: "MCP and Providers", icon: <SlidersHorizontal className="size-4" />, hint: "Switch providers and manage MCP servers in every agent", keys: "Alt+4" },
-  { id: "fleet", label: "Fleet Repositories", icon: <FolderGit2 className="size-4" />, hint: "Every local repository and its rule-file sync state", keys: "Alt+5" },
-  { id: "constitution", label: "Constitution and Memory", icon: <ScrollText className="size-4" />, hint: "Edit and broadcast the agent constitution, browse shared memory", keys: "Alt+6" },
-  { id: "updates", label: "Updates", icon: <ArrowUpCircle className="size-4" />, hint: "Hermes, Claude Code and Studio versions, changelogs, backups and rollback", keys: "Alt+7" },
-  { id: "safety", label: "Safety", icon: <ShieldCheck className="size-4" />, hint: "Permission policies and the audit log", keys: "Alt+8" },
-  { id: "setup", label: "Setup and Integrations", icon: <PlugZap className="size-4" />, hint: "Install, sign in and repair everything", keys: "Alt+9" },
-  { id: "diagnostics", label: "Diagnostics", icon: <Activity className="size-4" />, hint: "Startup checks, safe repairs, crash log and boot log" },
+const GROUPS: RailGroup[] = [
+  {
+    id: "chat",
+    label: "Chat",
+    icon: <MessagesSquare className="size-4" />,
+    defaultView: "chat",
+    tabs: [{ id: "chat", label: "Chat Studio", hint: "Chat with Hermes or Claude Code, organised in workspaces and folders" }],
+  },
+  {
+    id: "work",
+    label: "Work",
+    icon: <LayoutDashboard className="size-4" />,
+    defaultView: "projects",
+    tabs: [
+      { id: "projects", label: "Projects", hint: "Hermes projects, their folders, and the chats that ran inside them" },
+      { id: "mission", label: "Mission Control", hint: "The Agent Bus board: dispatch and track tasks" },
+      { id: "fleet", label: "Fleet", hint: "Every local repository and its rule-file sync state" },
+    ],
+  },
+  {
+    id: "brain",
+    label: "Brain",
+    icon: <Brain className="size-4" />,
+    defaultView: "skills",
+    tabs: [
+      { id: "skills", label: "Skills", hint: "What Hermes can load, plus hub search and install" },
+      { id: "constitution", label: "Constitution", hint: "Edit and broadcast the agent constitution, browse shared memory" },
+    ],
+  },
+  {
+    id: "code",
+    label: "Code",
+    icon: <GitPullRequest className="size-4" />,
+    defaultView: "github",
+    tabs: [{ id: "github", label: "GitHub", hint: "Pull requests, issues, Actions, branches and commits through gh" }],
+  },
+  {
+    id: "system",
+    label: "System",
+    icon: <SlidersHorizontal className="size-4" />,
+    defaultView: "control",
+    tabs: [
+      { id: "control", label: "MCP and Providers", hint: "Switch providers and manage MCP servers in every agent" },
+      { id: "updates", label: "Updates", hint: "Hermes, Claude Code and Studio versions, changelogs, backups and rollback" },
+      { id: "safety", label: "Safety", hint: "Permission policies and the audit log" },
+      { id: "setup", label: "Setup", hint: "Install, sign in and repair everything" },
+      { id: "diagnostics", label: "Diagnostics", hint: "Startup checks, safe repairs, crash log and boot log" },
+    ],
+  },
 ];
 
 export default function App() {
@@ -97,6 +126,7 @@ function Studio() {
   const [status, setStatus] = useState<StackStatus | null>(null);
   const [hermes, setHermes] = useState<HermesStatus | null>(null);
   const [board, setBoard] = useState<Board | null>(null);
+  const [ciFailing, setCiFailing] = useState(0);
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -278,11 +308,11 @@ function Studio() {
         e.preventDefault();
         setPalette((p) => !p);
       }
-      if (e.altKey && !e.ctrlKey && /^[1-9]$/.test(e.key)) {
-        const n = NAV[Number(e.key) - 1];
-        if (n) {
+      if (e.altKey && !e.ctrlKey && /^[1-5]$/.test(e.key)) {
+        const g = GROUPS[Number(e.key) - 1];
+        if (g) {
           e.preventDefault();
-          go(n.id);
+          go(g.defaultView as View);
         }
       }
     };
@@ -291,9 +321,43 @@ function Studio() {
   }, [go]);
 
   const runningWorker = drawer ? workers.find((w) => w.task_id === drawer) : undefined;
+  // Failing runs in the folder this machine actually works in, refreshed slowly.
+  useEffect(() => {
+    let stop = false;
+    const load = () =>
+      api
+        .workingDirDefault()
+        .then((d) => api.ciBadge(d.path))
+        .then((n) => {
+          if (!stop) setCiFailing(n);
+        })
+        .catch(() => undefined);
+    void load();
+    const t = window.setInterval(() => void load(), 180_000);
+    return () => {
+      stop = true;
+      window.clearInterval(t);
+    };
+  }, []);
+
+  const railGroups = useMemo<RailGroup[]>(
+    () =>
+      GROUPS.map((g) => ({
+        ...g,
+        badge:
+          g.id === "work"
+            ? (board ? board.pending.length + board.in_progress.length : 0)
+            : g.id === "system"
+              ? updates.alerts.length
+              : g.id === "code"
+                ? ciFailing
+                : 0,
+      })),
+    [board, updates.alerts.length, ciFailing],
+  );
+
   const home = settings?.home ?? "";
 
-  const bootProblems = bootSteps.filter((s) => s.status === "warn" || s.status === "failed").length;
 
   return (
     <CliProvider home={home} repos={repos}>
@@ -314,57 +378,9 @@ function Studio() {
         />
       )}
       <div className="flex h-full">
-        <nav className="flex w-56 shrink-0 flex-col border-r border-line bg-[#0a0e15]" aria-label="Main">
-          <div className="flex items-center gap-2.5 px-5 py-4">
-            <img src="/icon.png" alt="" className="size-8 rounded-lg" />
-            <div>
-              <div className="text-sm font-semibold tracking-tight text-slate-100">AgentOS Studio</div>
-              <div className="text-[11px] text-slate-500">v{settings?.version ?? "0.3.0"}</div>
-            </div>
-          </div>
-          <button
-            onClick={() => setPalette(true)}
-            className="mx-3 mb-2 flex items-center gap-2 whitespace-nowrap rounded-lg bg-white/[0.03] px-3 py-1.5 text-left text-[12px] text-slate-500 ring-1 ring-line hover:text-slate-300"
-            title="Search every command and screen"
-          >
-            <Search className="size-3.5 shrink-0" />
-            <span className="truncate">Search commands</span>
-            <kbd className="ml-auto shrink-0 rounded bg-white/5 px-1 text-[10px]">Ctrl K</kbd>
-          </button>
-          <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-3">
-            {NAV.map((n) => (
-              <button
-                key={n.id}
-                onClick={() => go(n.id)}
-                title={`${n.hint}${n.keys ? ` (${n.keys})` : ""}`}
-                aria-current={view === n.id ? "page" : undefined}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors ${
-                  view === n.id ? "bg-white/[0.07] font-medium text-slate-100" : "text-slate-400 hover:bg-white/[0.03] hover:text-slate-200"
-                }`}
-              >
-                <span className={view === n.id ? "text-emerald-300" : ""}>{n.icon}</span>
-                {n.label}
-                {n.id === "updates" && updates.alerts.length > 0 && <span className="ml-auto rounded-full bg-emerald-500 px-1.5 text-[10px] font-semibold text-emerald-950">{updates.alerts.length}</span>}
-                {n.id === "diagnostics" && bootProblems > 0 && (
-                  <span className="ml-auto rounded-full bg-amber-500/20 px-1.5 text-[10px] font-semibold text-amber-300 ring-1 ring-amber-500/30">{bootProblems}</span>
-                )}
-              </button>
-            ))}
-          </div>
-          <div className="border-t border-line px-5 py-4 text-[11px] leading-relaxed text-slate-500">
-            <div className="font-medium text-slate-400">Vault</div>
-            <div className="truncate" title={settings?.vault}>
-              {settings ? basename(settings.vault) : "loading"}
-            </div>
-            <div className="mt-2 flex gap-3">
-              <span>{board ? board.pending.length + board.in_progress.length : 0} open</span>
-              <span>{repos.length} repos</span>
-              <span>{hermes?.sessions ?? 0} chats</span>
-            </div>
-          </div>
-        </nav>
+        <NavRail groups={railGroups} view={view as RailView} onGo={(v) => go(v as View)} />
         <main className="flex min-w-0 flex-1 flex-col">
-          <StatusBar hermes={hermes} stack={status} onOpenSetup={() => go("setup")} onOpenControl={openControl} onRefresh={() => void loadHermes(true)} />
+          <StatusBar hermes={hermes} stack={status} onOpenDiagnostics={() => go("diagnostics")} onRefresh={() => void loadHermes(true)} />
           <UpdateBanner onOpen={() => go("updates")} />
           <div className="relative min-h-0 flex-1">
             {visited.has("chat") && (
@@ -419,7 +435,9 @@ function PaletteHost({ open, onClose, go, askHermes, onRescan }: { open: boolean
   const commands = useMemo<PaletteCommand[]>(
     () => [
       { id: "new-chat", group: "Chat", label: "New chat", hint: "Start a new Hermes conversation", icon: <MessageSquarePlus className="size-4" />, run: () => askHermes("") },
-      ...NAV.map((n) => ({ id: `go-${n.id}`, group: "Go to", label: n.label, hint: n.hint, keys: n.keys, icon: n.icon, run: () => go(n.id) })),
+      ...GROUPS.flatMap((g) =>
+        g.tabs.map((t) => ({ id: `go-${t.id}`, group: "Go to", label: `${g.label}: ${t.label}`, hint: t.hint, icon: g.icon, run: () => go(t.id as View) })),
+      ),
       { id: "term-toggle", group: "Terminal", label: "Show or hide the terminal", keys: "Ctrl+`", icon: <SquareTerminal className="size-4" />, run: () => cli.setOpen(!cli.open) },
       { id: "term-shell", group: "Terminal", label: "New shell terminal", hint: "PowerShell or your login shell", icon: <TerminalSquare className="size-4" />, run: () => void cli.openPty({ profile: "shell" }) },
       { id: "term-hermes", group: "Terminal", label: "New interactive Hermes terminal", hint: "Live reasoning, slash commands, typed approvals", icon: <Bot className="size-4" />, run: () => void cli.openPty({ profile: "hermes" }) },
