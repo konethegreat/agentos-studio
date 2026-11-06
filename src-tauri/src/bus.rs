@@ -64,6 +64,9 @@ pub fn start_watcher(app: AppHandle, state: &BusState, vault_root: &Path) -> Res
     fs::create_dir_all(&mem)?;
     watcher.watch(&bus, RecursiveMode::Recursive)?;
     watcher.watch(&mem, RecursiveMode::Recursive)?;
+    let projects = vault_root.join("01_Projects");
+    fs::create_dir_all(&projects)?;
+    watcher.watch(&projects, RecursiveMode::Recursive)?;
     let root = vault_root.to_path_buf();
     std::thread::spawn(move || {
         while let Ok(first) = rx.recv() {
@@ -82,7 +85,12 @@ pub fn start_watcher(app: AppHandle, state: &BusState, vault_root: &Path) -> Res
                         .replace('\\', "/")
                 })
                 .collect();
-            let memory = rel.iter().any(|r| r.starts_with("03_Memory"));
+            let memory = rel
+                .iter()
+                .any(|r| r.starts_with("03_Memory") || r.starts_with("01_Projects"));
+            // Keep the FTS index in step with the files. Cheap: unchanged files are skipped by mtime.
+            let v = crate::vault::Vault::new(&root);
+            let _ = crate::memory_index::refresh(&v);
             if app
                 .emit(EV_VAULT, json!({"paths": rel, "memory": memory}))
                 .is_err()

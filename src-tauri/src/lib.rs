@@ -13,6 +13,7 @@ pub mod github;
 pub mod hermes_engine;
 pub mod mcp_manager;
 pub mod mcp_stdio;
+pub mod memory_index;
 pub mod ops;
 pub mod org;
 pub mod permissions;
