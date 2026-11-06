@@ -17,9 +17,11 @@ pub mod ops;
 pub mod org;
 pub mod permissions;
 pub mod procs;
+pub mod projects;
 pub mod pty;
 pub mod settings;
 pub mod single;
+pub mod skills;
 pub mod store;
 pub mod updates;
 pub mod vault;
@@ -218,6 +220,21 @@ pub fn run_gui() {
             commands::boot_logs_dir,
             commands::boot_read_log,
             commands::boot_open_logs,
+            commands::list_projects,
+            commands::project_sessions,
+            commands::create_project,
+            commands::rename_project,
+            commands::archive_project,
+            commands::add_project_folder,
+            commands::link_branch,
+            commands::get_chat_skills,
+            commands::set_chat_skills,
+            commands::list_skills,
+            commands::read_skill,
+            commands::search_skills,
+            commands::install_skill,
+            commands::remove_skill,
+            commands::update_skills,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")

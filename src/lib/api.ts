@@ -387,6 +387,56 @@ export interface BootProgress {
   report?: BootReport;
 }
 
+
+export interface ProjectFolder {
+  path: string;
+  label: string | null;
+  primary: boolean;
+}
+
+export interface Project {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  color: string | null;
+  primary_path: string | null;
+  archived: boolean;
+  folders: ProjectFolder[];
+  session_count: number;
+  last_activity: number;
+}
+
+export interface ProjectSession {
+  id: string;
+  title: string;
+  cwd: string;
+  started_at: number;
+  last_activity: number;
+  message_count: number;
+  parent_session_id: string | null;
+  branch_title: string | null;
+}
+
+export interface Skill {
+  name: string;
+  description: string;
+  category: string;
+  version: string | null;
+  tags: string[];
+  path: string;
+  bytes: number;
+}
+
+export interface HubSkill {
+  name: string;
+  identifier: string;
+  source: string;
+  trust_level: string;
+  description: string;
+}
+
 export const api = {
   getSettings: () => invoke<SettingsView>("get_settings"),
   saveSettings: (vault: string, scanRoots: string[]) => invoke<SettingsView>("save_settings", { vault, scanRoots }),
@@ -451,12 +501,30 @@ export const api = {
     invoke<AgentOutcome[]>("install_catalog_server", { id, values, syncToAllAgents }),
   ghToken: () => invoke<string>("gh_token"),
 
-  sendChat: (sessionId: string | null, prompt: string, workingDir: string, agentBackend: string, model: string | null) =>
-    invoke<ChatStarted>("send_chat_message", { sessionId, prompt, workingDir, agentBackend, model }),
+  sendChat: (sessionId: string | null, prompt: string, workingDir: string, agentBackend: string, model: string | null, skills: string[] = []) =>
+    invoke<ChatStarted>("send_chat_message", { sessionId, prompt, workingDir, agentBackend, model, skills }),
   stopChat: () => invoke<string>("stop_active_chat"),
   activeChat: () => invoke<string | null>("active_chat"),
   applyCode: (workingDir: string, relPath: string, content: string) =>
     invoke<{ path: string; created: boolean; bytes: number }>("apply_code_to_file", { workingDir, relPath, content }),
+  projects: () => invoke<Project[]>("list_projects"),
+  projectSessions: (slug: string) => invoke<ProjectSession[]>("project_sessions", { slug }),
+  createHermesProject: (name: string, folders: string[]) => invoke<string>("create_project", { name, folders }),
+  renameProject: (slug: string, name: string) => invoke<string>("rename_project", { slug, name }),
+  archiveProject: (slug: string, archived: boolean) => invoke<string>("archive_project", { slug, archived }),
+  addProjectFolder: (slug: string, path: string) => invoke<string>("add_project_folder", { slug, path }),
+  linkBranch: (parent: string, projectSlug: string | null, title: string, child: string) =>
+    invoke<void>("link_branch", { parent, projectSlug, title, child }),
+  chatSkills: (sessionId: string) => invoke<string[]>("get_chat_skills", { sessionId }),
+  setChatSkills: (sessionId: string, skills: string[]) => invoke<void>("set_chat_skills", { sessionId, skills }),
+
+  skills: () => invoke<Skill[]>("list_skills"),
+  readSkill: (name: string) => invoke<string>("read_skill", { name }),
+  searchSkills: (query: string, limit = 15) => invoke<HubSkill[]>("search_skills", { query, limit }),
+  installSkill: (identifier: string) => invoke<string>("install_skill", { identifier }),
+  removeSkill: (name: string) => invoke<string>("remove_skill", { name }),
+  updateSkills: () => invoke<string>("update_skills"),
+
   bootSnapshot: () => invoke<BootReport | null>("boot_snapshot"),
   bootRun: () => invoke<BootReport>("boot_run"),
   bootLogsDir: () => invoke<string>("boot_logs_dir"),

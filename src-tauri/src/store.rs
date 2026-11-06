@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -77,6 +77,24 @@ CREATE TABLE IF NOT EXISTS kv (
 );
 ";
 
+/// v0.4: session branches (a chat that Hermes or the user spun off from another) and the
+/// skills attached to a chat. Both are Studio concepts; Hermes keeps the sessions themselves.
+const MIGRATION_2: &str = "
+CREATE TABLE IF NOT EXISTS session_links (
+    child_session_id  TEXT PRIMARY KEY,
+    parent_session_id TEXT,
+    project_slug      TEXT,
+    title             TEXT,
+    created_at        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_links_parent ON session_links(parent_session_id);
+CREATE TABLE IF NOT EXISTS chat_skills (
+    session_id TEXT NOT NULL,
+    skill      TEXT NOT NULL,
+    PRIMARY KEY (session_id, skill)
+);
+";
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
@@ -112,6 +130,9 @@ fn migrate(c: &Connection) -> Result<()> {
     let v: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if v < 1 {
         c.execute_batch(MIGRATION_1)?;
+    }
+    if v < 2 {
+        c.execute_batch(MIGRATION_2)?;
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;

@@ -17,7 +17,9 @@ use crate::hermes_engine::{
     self, ChatMessage, HermesState, HermesStatus, ProviderConfig, ProviderTest, SessionSummary,
 };
 use crate::mcp_manager::{self, AgentOutcome, CatalogEntry, McpServer, ProbeResult, ServerSpec};
+use crate::projects::{Project, ProjectSession};
 use crate::settings::Settings;
+use crate::skills::Skill;
 use crate::vault::{self, Board, NoteInfo, SearchHit, Vault};
 use crate::{bootstrapper, broadcast, fleet};
 
@@ -524,6 +526,7 @@ pub async fn gh_token() -> CmdResult<String> {
 // ---------------------------------------------------------------------------------------------
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn send_chat_message(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -532,6 +535,7 @@ pub async fn send_chat_message(
     working_dir: String,
     agent_backend: String,
     model: Option<String>,
+    skills: Option<Vec<String>>,
 ) -> CmdResult<ChatStarted> {
     chat_stream::send_chat_message(
         app,
@@ -542,6 +546,7 @@ pub async fn send_chat_message(
             working_dir,
             agent_backend,
             model,
+            skills: skills.unwrap_or_default(),
         },
     )
     .map_err(err)
@@ -641,4 +646,92 @@ pub fn boot_open_logs() -> CmdResult<String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(dir.display().to_string())
+}
+
+// ---------------------------------------------------------------------------------------------
+// v0.4: projects, session branches and skills
+// ---------------------------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn list_projects() -> CmdResult<Vec<Project>> {
+    blocking(crate::projects::list).await
+}
+
+#[tauri::command]
+pub async fn project_sessions(slug: String) -> CmdResult<Vec<ProjectSession>> {
+    blocking(move || crate::projects::sessions(&slug)).await
+}
+
+#[tauri::command]
+pub async fn create_project(name: String, folders: Vec<String>) -> CmdResult<String> {
+    blocking(move || crate::projects::create(&name, &folders)).await
+}
+
+#[tauri::command]
+pub async fn rename_project(slug: String, name: String) -> CmdResult<String> {
+    blocking(move || crate::projects::rename(&slug, &name)).await
+}
+
+#[tauri::command]
+pub async fn archive_project(slug: String, archived: bool) -> CmdResult<String> {
+    blocking(move || crate::projects::set_archived(&slug, archived)).await
+}
+
+#[tauri::command]
+pub async fn add_project_folder(slug: String, path: String) -> CmdResult<String> {
+    blocking(move || crate::projects::add_folder(&slug, &path)).await
+}
+
+#[tauri::command]
+pub async fn link_branch(
+    parent: String,
+    project_slug: Option<String>,
+    title: String,
+    child: String,
+) -> CmdResult<()> {
+    blocking(move || crate::projects::link_branch(&parent, project_slug.as_deref(), &title, &child))
+        .await
+}
+
+#[tauri::command]
+pub async fn get_chat_skills(session_id: String) -> CmdResult<Vec<String>> {
+    blocking(move || Ok(crate::projects::chat_skills(&session_id))).await
+}
+
+#[tauri::command]
+pub async fn set_chat_skills(session_id: String, skills: Vec<String>) -> CmdResult<()> {
+    blocking(move || crate::projects::set_chat_skills(&session_id, &skills)).await
+}
+
+#[tauri::command]
+pub async fn list_skills() -> CmdResult<Vec<Skill>> {
+    blocking(|| Ok(crate::skills::list())).await
+}
+
+#[tauri::command]
+pub async fn read_skill(name: String) -> CmdResult<String> {
+    blocking(move || crate::skills::read(&name)).await
+}
+
+#[tauri::command]
+pub async fn search_skills(
+    query: String,
+    limit: Option<usize>,
+) -> CmdResult<Vec<crate::skills::HubSkill>> {
+    blocking(move || crate::skills::search_hub(&query, limit.unwrap_or(15))).await
+}
+
+#[tauri::command]
+pub async fn install_skill(identifier: String) -> CmdResult<String> {
+    blocking(move || crate::skills::install(&identifier)).await
+}
+
+#[tauri::command]
+pub async fn remove_skill(name: String) -> CmdResult<String> {
+    blocking(move || crate::skills::remove(&name)).await
+}
+
+#[tauri::command]
+pub async fn update_skills() -> CmdResult<String> {
+    blocking(crate::skills::update_all).await
 }
