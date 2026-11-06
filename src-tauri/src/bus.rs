@@ -418,6 +418,7 @@ pub fn quick_mission_dispatch(
     prompt: &str,
     project_path: Option<String>,
     target_agent: &str,
+    queue_only: bool,
 ) -> Result<Value> {
     let goal = prompt.trim();
     if goal.is_empty() {
@@ -464,7 +465,7 @@ pub fn quick_mission_dispatch(
         priority: "high".into(),
     })?;
     let id = task["id"].as_str().unwrap_or_default().to_string();
-    let worker = if agent == "hermes" || agent == "claude-code" {
+    let worker = if !queue_only && (agent == "hermes" || agent == "claude-code") {
         vault.claim_task(&id, &agent)?;
         Some(spawn_worker(app, workers, vault, &id, &agent)?)
     } else {

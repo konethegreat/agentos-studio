@@ -1,6 +1,6 @@
 [package]
 name = "agentos-studio"
-version = "0.1.0"
+version = "0.2.0"
 description = "Native control plane and Rust MCP bus for multi-agent engineering fleets"
 authors = ["Kone Tshivhinda"]
 license = "MIT"
@@ -34,6 +34,7 @@ regex = "1"
 which = "7"
 dirs = "6"
 anyhow = "1"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"

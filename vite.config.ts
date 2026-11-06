@@ -14,5 +14,8 @@ export default defineConfig({
   build: {
     target: "es2022",
     sourcemap: false,
+    // The bundle ships inside the desktop binary and loads from disk, so one chunk is fine.
+    // Most of its size is the syntax highlighter's language grammars.
+    chunkSizeWarningLimit: 900,
   },
 });

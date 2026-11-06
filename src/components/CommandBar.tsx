@@ -10,17 +10,7 @@ const AGENTS = [
   { id: "antigravity", label: "Antigravity" },
 ];
 
-export function CommandBar({
-  repos,
-  status,
-  onDispatched,
-  onOpenSetup,
-}: {
-  repos: RepoInfo[];
-  status: StackStatus | null;
-  onDispatched: (taskId: string, hasWorker: boolean) => void;
-  onOpenSetup: () => void;
-}) {
+export function CommandBar({ repos, onDispatched }: { repos: RepoInfo[]; onDispatched: (taskId: string, hasWorker: boolean) => void }) {
   const toast = useToast();
   const [prompt, setPrompt] = useState("");
   const [repo, setRepo] = useState("");
@@ -64,7 +54,6 @@ export function CommandBar({
           {busy ? <Loader2 className="size-4 animate-spin" /> : <Rocket className="size-4" />}
           Dispatch Mission
         </button>
-        <HealthPill status={status} onOpenSetup={onOpenSetup} />
       </div>
       <div className="mt-2 flex items-center gap-3 pl-1">
         <div className="flex items-center gap-1.5">
