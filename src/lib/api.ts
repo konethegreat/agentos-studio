@@ -388,7 +388,7 @@ export const api = {
   sessions: (query: string | null, limit = 300) => invoke<SessionSummary[]>("list_hermes_sessions", { query, limit }),
   sessionMessages: (sessionId: string) => invoke<StoredMessage[]>("load_session_messages", { sessionId }),
   renameSession: (sessionId: string, title: string) => invoke<void>("rename_session", { sessionId, title }),
-  deleteSession: (sessionId: string) => invoke<void>("delete_session", { sessionId }),
+  deleteSession: (sessionId: string, approved?: boolean) => invoke<void>("delete_session", { sessionId, approved }),
   exportSession: (sessionId: string) => invoke<string>("export_session_to_obsidian", { sessionId }),
 
   mcpServers: () => invoke<McpServer[]>("get_all_mcp_servers"),

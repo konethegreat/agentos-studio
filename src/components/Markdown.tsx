@@ -5,7 +5,7 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { api, errorText } from "../lib/api";
 import { useToast } from "./Toasts";
-import { Button, Field, Modal, inputClass } from "./ui";
+import { Button, ExternalLink, Field, Modal, inputClass } from "./ui";
 
 interface HastNode {
   type: string;
@@ -116,11 +116,7 @@ export const Markdown = memo(function Markdown({ text, workingDir }: { text: str
               {children}
             </CodeBlock>
           ),
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="text-emerald-300 underline decoration-emerald-500/40 underline-offset-2 hover:text-emerald-200">
-              {children}
-            </a>
-          ),
+          a: ({ href, children }) => <ExternalLink href={href}>{children}</ExternalLink>,
           table: ({ children }) => (
             <div className="my-3 overflow-x-auto rounded-lg border border-line">
               <table>{children}</table>

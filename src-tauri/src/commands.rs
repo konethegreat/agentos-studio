@@ -26,6 +26,7 @@ pub struct AppState {
     pub hermes: Arc<HermesState>,
     pub chat: ChatState,
     pub cli: CliState,
+    pub pty: crate::pty::PtyState,
 }
 
 type CmdResult<T> = Result<T, String>;
@@ -390,8 +391,19 @@ pub async fn rename_session(session_id: String, title: String) -> CmdResult<()> 
 }
 
 #[tauri::command]
-pub async fn delete_session(session_id: String) -> CmdResult<()> {
-    blocking(move || hermes_engine::delete_session(&session_id)).await
+pub async fn delete_session(session_id: String, approved: Option<bool>) -> CmdResult<()> {
+    blocking(move || {
+        crate::permissions::run_guarded(
+            "session.delete",
+            &session_id,
+            &format!(
+                "Permanently delete Hermes session {session_id} (hermes sessions delete --yes)"
+            ),
+            approved.unwrap_or(false),
+            || hermes_engine::delete_session(&session_id),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
