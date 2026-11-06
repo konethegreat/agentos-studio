@@ -13,7 +13,7 @@ fn skills_tree_reads_real_skills() {
             "  {:<28} {:<24} {}",
             s.name,
             s.category,
-            &s.description.chars().take(60).collect::<String>()
+            s.description.chars().take(60).collect::<String>()
         );
     }
     assert!(all.len() > 5, "expected the bundled skills to be visible");
