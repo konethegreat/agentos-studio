@@ -46,7 +46,7 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 | Safety | Ad-hoc confirms | Permission policies enforced in Rust, approval modal, audit log |
 | Navigation | Sidebar | Command palette (Ctrl+K), Alt+1 to Alt+9, tooltips on every new control |
 
-Design docs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (diagram, components, data model), [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/adr/0001-v0.3-stack.md](docs/adr/0001-v0.3-stack.md) (stack changes and what was refused).
+Design docs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (diagram, components, data model), [docs/ROADMAP.md](docs/ROADMAP.md) (phases, and what each depends on), [docs/PARITY.md](docs/PARITY.md) (capability scorecard against the tools users compare us to), [docs/MODEL-ROUTER.md](docs/MODEL-ROUTER.md) (design for automatic model selection in v0.6.0) and [docs/adr/0001-v0.3-stack.md](docs/adr/0001-v0.3-stack.md) (stack changes and what was refused).
 
 ## What is new in v0.2.0
 
@@ -294,7 +294,7 @@ src-tauri/src/
   constitution.rs         Managed blocks, law toggles, line-ending safe writes
   broadcast.rs            Save and Broadcast
 src-tauri/tests/          Native MCP probe against the real binary, plus opt-in live tests
-docs/                     Architecture, roadmap and ADRs
+docs/                     Architecture, roadmap, parity and ADRs
 templates/CONSTITUTION.md Default constitution bundled into the binary
 ```
 
