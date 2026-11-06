@@ -3,6 +3,7 @@ import {
   ArrowUpCircle,
   Bot,
   FolderGit2,
+  FolderKanban,
   GitPullRequest,
   LayoutDashboard,
   MessageSquarePlus,
@@ -13,6 +14,7 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   SquareTerminal,
   TerminalSquare,
 } from "lucide-react";
@@ -25,6 +27,7 @@ import {
   type BootReport,
   type BootStep,
   type HermesStatus,
+  type ProjectSession,
   type RepoInfo,
   type SettingsView,
   type SetupEvent,
@@ -42,22 +45,26 @@ import { StatusBar } from "./components/StatusBar";
 import { ToastProvider, useToast } from "./components/Toasts";
 import { UpdateBanner, UpdatesProvider, useUpdates } from "./components/Updates";
 import { WorkerDrawer } from "./components/WorkerDrawer";
-import { ChatStudio } from "./views/ChatStudio";
+import { ChatStudio, type ChatIntent } from "./views/ChatStudio";
 import { ConstitutionStudio } from "./views/ConstitutionStudio";
 import { ControlPlane } from "./views/ControlPlane";
 import { Diagnostics } from "./views/Diagnostics";
 import { FleetManager } from "./views/FleetManager";
 import { MissionControl } from "./views/MissionControl";
+import { Projects } from "./views/Projects";
 import { SafetyCenter } from "./views/SafetyCenter";
 import { SetupWizard } from "./views/SetupWizard";
+import { Skills } from "./views/Skills";
 import { UpdateCenter } from "./views/UpdateCenter";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 
-type View = "chat" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup" | "diagnostics";
+type View = "chat" | "projects" | "skills" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup" | "diagnostics";
 
 const NAV: { id: View; label: string; icon: ReactNode; hint: string; keys?: string }[] = [
   { id: "chat", label: "Hermes Chat Studio", icon: <MessagesSquare className="size-4" />, hint: "Chat with Hermes or Claude Code, organised in workspaces and folders", keys: "Alt+1" },
+  { id: "projects", label: "Projects", icon: <FolderKanban className="size-4" />, hint: "Hermes projects, their folders, and the chats that ran inside them" },
+  { id: "skills", label: "Skills", icon: <Sparkles className="size-4" />, hint: "What Hermes can load, plus hub search and install" },
   { id: "github", label: "GitHub", icon: <GitPullRequest className="size-4" />, hint: "Pull requests, issues, Actions, branches and commits through gh", keys: "Alt+2" },
   { id: "mission", label: "Mission Control", icon: <LayoutDashboard className="size-4" />, hint: "The Agent Bus board: dispatch and track tasks", keys: "Alt+3" },
   { id: "control", label: "MCP and Providers", icon: <SlidersHorizontal className="size-4" />, hint: "Switch providers and manage MCP servers in every agent", keys: "Alt+4" },
@@ -100,6 +107,7 @@ function Studio() {
   const [memoryTick, setMemoryTick] = useState(0);
   const [visited, setVisited] = useState<Set<View>>(() => new Set<View>(["chat"]));
   const [incoming, setIncoming] = useState<{ text: string; cwd?: string; nonce: number } | null>(null);
+  const [chatIntent, setChatIntent] = useState<ChatIntent | null>(null);
   const [palette, setPalette] = useState(false);
   const [bootSteps, setBootSteps] = useState<BootStep[]>([]);
   const [bootReport, setBootReport] = useState<BootReport | null>(null);
@@ -127,6 +135,31 @@ function Studio() {
       go("chat");
     },
     [go],
+  );
+
+  const openSessionInChat = useCallback(
+    (s: ProjectSession) => {
+      setChatIntent({ kind: "open", id: s.id, cwd: s.cwd, title: s.title, nonce: Date.now() });
+      go("chat");
+    },
+    [go],
+  );
+
+  const newSessionInProject = useCallback(
+    (cwd: string, projectSlug: string | null, parent: string | null) => {
+      setChatIntent({ kind: "new", cwd, projectSlug, parent, nonce: Date.now() });
+      go("chat");
+    },
+    [go],
+  );
+
+  const useSkillInChat = useCallback(
+    (name: string) => {
+      window.dispatchEvent(new CustomEvent("agentos:use-skill", { detail: name }));
+      toast("ok", `${name} will load on your next message`);
+      go("chat");
+    },
+    [go, toast],
   );
 
   const loadBoard = useCallback(async () => {
@@ -298,7 +331,7 @@ function Studio() {
             <span className="truncate">Search commands</span>
             <kbd className="ml-auto shrink-0 rounded bg-white/5 px-1 text-[10px]">Ctrl K</kbd>
           </button>
-          <div className="flex-1 space-y-0.5 px-3">
+          <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-3">
             {NAV.map((n) => (
               <button
                 key={n.id}
@@ -336,7 +369,7 @@ function Studio() {
           <div className="relative min-h-0 flex-1">
             {visited.has("chat") && (
               <div className={view === "chat" ? "h-full" : "hidden"}>
-                <ChatStudio repos={repos} hermes={hermes} home={home} onStatusChanged={() => void loadHermes()} onOpenControl={openControl} incoming={incoming} />
+                <ChatStudio repos={repos} hermes={hermes} home={home} intent={chatIntent} onStatusChanged={() => void loadHermes()} onOpenControl={openControl} incoming={incoming} />
               </div>
             )}
             {visited.has("github") && (
@@ -367,6 +400,8 @@ function Studio() {
             {view === "updates" && <UpdateCenter />}
             {view === "safety" && <SafetyCenter />}
             {view === "diagnostics" && <Diagnostics onFix={(v) => go(v as View)} />}
+            {view === "projects" && <Projects onOpenSession={openSessionInChat} onNewSession={newSessionInProject} />}
+            {view === "skills" && <Skills onUseSkill={useSkillInChat} />}
           </div>
           <CliDock />
         </main>

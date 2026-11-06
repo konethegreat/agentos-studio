@@ -1,7 +1,7 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { ArrowUp, Brain, ChevronRight, Cloud, FolderOpen, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Square, SquareTerminal, Stethoscope, Workflow } from "lucide-react";
+import { ArrowUp, Brain, ChevronRight, Cloud, FolderOpen, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { api, errorText, events, type HermesStatus, type RepoInfo } from "../lib/api";
+import { api, errorText, events, type HermesStatus, type RepoInfo, type Skill } from "../lib/api";
 import { studio, type Folder, type OrgSnapshot, type PlacedChat } from "../lib/studio";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
 import { WorkspaceTree } from "../components/WorkspaceTree";
@@ -11,6 +11,7 @@ import { useCli } from "../components/CliDrawer";
 import { Markdown } from "../components/Markdown";
 import { ProviderSwitcher } from "../components/ProviderSwitcher";
 import { ToolCard } from "../components/ToolCard";
+import { Modal } from "../components/ui";
 import { useToast } from "../components/Toasts";
 
 type Backend = "hermes" | "claude-code";
@@ -48,10 +49,15 @@ function ls<T>(key: string, fallback: T): T {
   }
 }
 
+export type ChatIntent =
+  | { kind: "open"; id: string; cwd: string; title: string; nonce: number }
+  | { kind: "new"; cwd: string; projectSlug: string | null; parent: string | null; nonce: number };
+
 export function ChatStudio({
   repos,
   hermes,
   home,
+  intent,
   onStatusChanged,
   onOpenControl,
   incoming,
@@ -59,6 +65,8 @@ export function ChatStudio({
   repos: RepoInfo[];
   hermes: HermesStatus | null;
   home: string;
+  /** Open a session, or start a branch with a known parent, from Projects. */
+  intent: ChatIntent | null;
   onStatusChanged: () => void;
   onOpenControl: (tab: "providers" | "mcp") => void;
   /** A hand-off from another view: start a new chat with this draft (and folder). */
@@ -79,6 +87,10 @@ export function ChatStudio({
   const [backend, setBackend] = useState<Backend>(() => ls<Backend>("chat-backend", "hermes"));
   const [workingDir, setWorkingDir] = useState<string>(() => ls("chat-cwd", ""));
   const [draft, setDraft] = useState("");
+  const [skills, setSkills] = useState<string[]>(() => ls<string[]>("chat-skills", []));
+  const [skillList, setSkillList] = useState<Skill[] | null>(null);
+  const [skillPicker, setSkillPicker] = useState(false);
+  const [pendingBranch, setPendingBranch] = useState<{ parent: string; projectSlug: string | null; title: string } | null>(null);
   const pendingFolder = useRef<Folder | null>(null);
   const runRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
@@ -89,6 +101,7 @@ export function ChatStudio({
   const cwd = workingDir || home;
   useEffect(() => localStorage.setItem("chat-backend", JSON.stringify(backend)), [backend]);
   useEffect(() => localStorage.setItem("chat-cwd", JSON.stringify(workingDir)), [workingDir]);
+  useEffect(() => localStorage.setItem("chat-skills", JSON.stringify(skills)), [skills]);
 
   const loadSessions = useCallback(
     async (q = query) => {
@@ -111,6 +124,12 @@ export function ChatStudio({
 
   const backendRef = useRef(backend);
   backendRef.current = backend;
+  const pendingRef = useRef(pendingBranch);
+  pendingRef.current = pendingBranch;
+  const pendingBranchRef = useRef(pendingBranch);
+  pendingBranchRef.current = pendingBranch;
+  const skillsRef = useRef(skills);
+  skillsRef.current = skills;
   const reloadRef = useRef(loadSessions);
   reloadRef.current = loadSessions;
 
@@ -141,6 +160,15 @@ export function ChatStudio({
             pendingFolder.current = null;
             void studio.org.placeChat(e.session_id, f.id, null).catch(() => undefined);
           }
+          const branch = pendingBranchRef.current;
+          if (branch) {
+            pendingBranchRef.current = null;
+            void api
+              .linkBranch(branch.parent, branch.projectSlug, branch.title || "Branch", e.session_id)
+              .catch(() => undefined);
+            setPendingBranch(null);
+          }
+          void api.setChatSkills(e.session_id, skillsRef.current).catch(() => undefined);
         } else setClaudeSession(e.session_id);
       }
       setItems((prev) => applyEvent(prev, e));
@@ -199,6 +227,43 @@ export function ChatStudio({
     // Only a new nonce starts a hand-off.
   }, [incoming?.nonce]);
 
+  useEffect(() => {
+    const onUse = (e: Event) => {
+      const name = (e as CustomEvent<string>).detail;
+      if (name) setSkills((cur) => (cur.includes(name) ? cur : [...cur, name]));
+    };
+    window.addEventListener("agentos:use-skill", onUse);
+    return () => window.removeEventListener("agentos:use-skill", onUse);
+  }, []);
+
+  // Intents from Projects: open a session, or start a branch with a known parent.
+  useEffect(() => {
+    if (!intent) return;
+    if (intent.kind === "open") {
+      setWorkingDir(intent.cwd);
+      setBackend("hermes");
+      setCurrent(intent.id);
+      setClaudeSession(null);
+      setLoadingHistory(true);
+      setStatusLine("");
+      api
+        .sessionMessages(intent.id)
+        .then((m) => setItems(fromHistory(m)))
+        .catch((e) => toast("error", errorText(e)))
+        .finally(() => setLoadingHistory(false));
+    } else {
+      setWorkingDir(intent.cwd);
+      setBackend("hermes");
+      setCurrent(null);
+      setClaudeSession(null);
+      setItems([]);
+      setStatusLine("");
+      setPendingBranch(intent.parent ? { parent: intent.parent, projectSlug: intent.projectSlug, title: "" } : null);
+      textarea.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intent?.nonce]);
+
   function newChat(folder: Folder | null = null) {
     if (streaming) return toast("info", "Wait for the reply to finish or press Stop");
     pendingFolder.current = folder;
@@ -242,7 +307,7 @@ export function ChatStudio({
     setStreaming(true);
     setStatusLine(backend === "hermes" ? "Starting Hermes" : "Starting Claude Code");
     try {
-      const started = await api.sendChat(backend === "hermes" ? current : claudeSession, full, cwd, backend, null);
+      const started = await api.sendChat(backend === "hermes" ? current : claudeSession, full, cwd, backend, null, skills);
       runRef.current = started.run_id;
     } catch (e) {
       streamingRef.current = false;
@@ -419,6 +484,21 @@ export function ChatStudio({
               <span className="truncate">{cwd}</span>
             </div>
           </div>
+          <button
+            onClick={() => {
+              setSkillPicker(true);
+              if (!skillList) void api.skills().then(setSkillList).catch((e) => toast("error", errorText(e)));
+            }}
+            title="Skills preloaded on the next turn"
+            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11.5px] ring-1 ${skills.length ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30" : "bg-white/[0.04] text-slate-400 ring-line hover:text-slate-200"}`}
+          >
+            <Sparkles className="size-3.5" /> Skills {skills.length || ""}
+          </button>
+          {pendingBranch && (
+            <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-sky-500/10 px-3 text-[11.5px] text-sky-300 ring-1 ring-sky-500/30" title="This chat will be recorded as a branch of another session">
+              Branch
+            </span>
+          )}
           <div className="flex rounded-full bg-white/[0.04] p-0.5 ring-1 ring-line">
             {(["hermes", "claude-code"] as Backend[]).map((b) => (
               <button
@@ -565,6 +645,46 @@ export function ChatStudio({
           </div>
         </div>
       </section>
+      {skillPicker && (
+        <Modal
+          title="Skills for this chat"
+          onClose={() => setSkillPicker(false)}
+          footer={
+            <>
+              <button onClick={() => setSkills([])} className="mr-auto text-[11.5px] text-slate-500 hover:text-slate-300">
+                Clear all
+              </button>
+              <button onClick={() => setSkillPicker(false)} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400">
+                Done
+              </button>
+            </>
+          }
+        >
+          <p className="mb-3 text-[11.5px] leading-relaxed text-slate-500">
+            Selected skills are passed to Hermes as <span className="font-mono">-s</span> on every turn in this chat, so the agent starts with that knowledge loaded.
+          </p>
+          {!skillList && <Loader2 className="mx-auto size-4 animate-spin text-slate-500" />}
+          <div className="max-h-72 space-y-0.5 overflow-y-auto">
+            {(skillList ?? []).map((sk) => {
+              const on = skills.includes(sk.name);
+              return (
+                <label key={sk.name} className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-white/[0.04]">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) => setSkills((cur) => (e.target.checked ? [...cur, sk.name] : cur.filter((x) => x !== sk.name)))}
+                    className="mt-0.5 accent-emerald-500"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[12.5px] text-slate-200">{sk.name}</span>
+                    <span className="block line-clamp-1 text-[10.5px] text-slate-500">{sk.description || sk.category}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
