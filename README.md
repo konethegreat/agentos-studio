@@ -6,7 +6,8 @@
 
 <p align="center">
   <b>Stop copy-pasting prompts between terminals and IDEs.</b><br />
-  Turn Hermes, your Claude subscription, Qoder, Antigravity, Obsidian and Notion into one autonomous engineering fleet.
+  Turn Hermes, your Claude subscription, Qoder, Antigravity, Obsidian and Notion into one autonomous engineering fleet.<br />
+  A sovereign AI workstation: chat, providers, MCP and the CLI in one native app.
 </p>
 
 <p align="center">
@@ -19,44 +20,57 @@
 
 ---
 
-Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OAuth logins, Python virtualenvs and hand-edited JSON in four different config files. Then you still end up pasting prompts from one tool into another.
+Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OAuth logins, Python virtualenvs and hand-edited JSON in four different config files. Then you still end up pasting prompts from one tool into another and opening a terminal for every `hermes` or `claude` command.
 
-**AgentOS Studio replaces all of that with one native desktop app and one Rust binary.**
+**AgentOS Studio replaces all of that with one native desktop app and one Rust binary.** Everything the `hermes` and `claude` CLIs do in a terminal, Studio does in a window.
 
-- **1-click bootstrapper.** Detects and installs or repairs Git, GitHub CLI, Node, Claude Code, Hermes, the Claude subscription plugin, your Obsidian vault, Notion MCP and the IDE connectors. It runs the real installers and opens the real sign-in flows.
-- **Native Rust MCP bus.** The same binary run with `--mcp-stdio` is `agentos-hub`, a stdio MCP server for a shared task queue and shared memory. It has no Python, no Node and no runtime dependencies.
-- **Live Mission Control.** A Kanban board over your vault that updates within milliseconds when any agent claims or finishes work, plus headless Hermes and Claude Code workers whose output streams into the UI.
-- **Fleet manager.** Finds every Git repo on your machine, keeps one constitution synced into each of them, and commits only the rule files. Your own work-in-progress is never staged.
-- **Constitution studio.** Toggle laws, edit `CONSTITUTION.md` and `SYSTEM_CONTEXT.md`, then broadcast to the vault, your global user rules and every repository in one click.
+- **Hermes Chat Studio.** A Claude-Desktop-style chat over Hermes (or Claude Code), bound to any of your repositories. Replies stream in with rendered Markdown, highlighted code blocks with Copy and Apply-to-file, and expandable cards for every MCP and tool call. Your whole Hermes history is in the sidebar, read straight from `state.db`, with rename, delete and export to Obsidian.
+- **Hot-swap provider switchboard.** Run on your Claude Pro or Max subscription today, then move to OpenRouter, Gemini, the Anthropic or OpenAI APIs, DeepSeek, Nous Portal or a local Ollama model from a dropdown. Keys go into Hermes's own `.env`, and every switch can be checked with a live test turn.
+- **Universal MCP router.** One table of every MCP server across Hermes, Claude Code, Qoder and Antigravity: which agent has it, whether it answers, how fast, and every tool it exposes. Add servers from a one-click catalog, sync them to all four agents, toggle them per conversation, or run OAuth sign-in.
+- **Native Rust MCP bus.** The same binary run with `--mcp-stdio` is `agentos-hub`: 6 tools for a shared task queue and shared memory, no Python, a full initialize plus tools/list round trip in about 35 ms.
+- **Built-in terminal.** A docked console for any `hermes`, `claude`, `git`, `gh` or PowerShell command, with one-click quick actions.
+- **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
+
+## What is new in v0.2.0
+
+| Area | v0.1 | v0.2 |
+|---|---|---|
+| Talking to agents | Fire-and-forget missions | Streaming chat with session history, resume, tool cards, code Apply, slash commands |
+| Model choice | Whatever `hermes model` set | Visual switchboard for 8 providers with key storage, model lists and live tests |
+| MCP | Wire `agentos-hub` into four tools | Manage every server in every agent, catalog, native latency and tool inspection |
+| CLI access | External terminal | Terminal drawer inside the app |
+| Status | 6-pillar health pill | Live heartbeat: Hermes version, provider, model, MCP servers |
 
 ## How it fits together
 
 ```mermaid
 flowchart LR
     subgraph Studio["AgentOS Studio (Tauri v2)"]
-        UI["React 19 UI<br/>Mission Control - Setup - Fleet - Constitution"]
-        Core["Rust core<br/>bootstrapper - bus watcher - fleet - broadcast"]
+        UI["React 19 UI<br/>Chat Studio - Mission Control - Control Plane<br/>Fleet - Constitution - Terminal"]
+        Core["Rust core<br/>hermes_engine - chat_stream - mcp_manager<br/>cli_runner - bus - fleet - bootstrapper"]
         UI <-- "invoke / events" --> Core
     end
 
     Hub["agentos-studio --mcp-stdio<br/>(agentos-hub MCP server)"]
     Vault[("Obsidian vault<br/>02_Agent_Bus - 03_Memory - DASHBOARD.md")]
+    HermesHome[("Hermes home<br/>config.yaml - .env - state.db")]
 
+    Core -- "stream-json chat turns" --> Hermes["Hermes"]
+    Core -- "stream-json chat turns" --> Claude["Claude Code"]
+    Core -- "sessions (SQLite), settings" --> HermesHome
+    Core -- "MCP registry + native probes" --> Configs[("~/.claude.json - ~/.qoder/settings.json<br/>~/.gemini/config/mcp_config.json")]
     Core -- "read/write + notify watcher" --> Vault
     Hub -- "tasks + memory" --> Vault
 
-    Hermes["Hermes"] -- "MCP stdio" --> Hub
-    Claude["Claude Code"] -- "MCP stdio" --> Hub
+    Hermes -- "MCP stdio" --> Hub
+    Claude -- "MCP stdio" --> Hub
     Qoder["Qoder"] -- "MCP stdio" --> Hub
     AG["Antigravity"] -- "MCP stdio" --> Hub
-
-    Core -- "headless workers" --> Hermes
-    Core -- "headless workers" --> Claude
+    Hermes -- "provider of your choice" --> LLM[("Claude subscription - OpenRouter - Gemini<br/>Anthropic - OpenAI - DeepSeek - Nous - Ollama")]
     Hermes -- "Notion MCP" --> Notion[("Notion")]
-    Core -- "rule files" --> Repos[("Local Git repos<br/>CLAUDE.md - AGENTS.md - GEMINI.md")]
 ```
 
-The vault is the single source of truth. Every task is a Markdown file with YAML frontmatter that moves `Pending/ -> In_Progress/ -> Completed/`, so humans can read and edit it in Obsidian and every agent sees the same state.
+The vault is the single source of truth for work: every task is a Markdown file with YAML frontmatter that moves `Pending/ -> In_Progress/ -> Completed/`. Hermes stays the source of truth for conversations and settings: Studio reads its files directly and changes them through the `hermes` CLI, so Hermes's own validation always runs.
 
 ## Download
 
@@ -96,6 +110,38 @@ On first launch open **Setup and Integrations** and press **Auto-Setup and Repai
 | 6 | IDE Fleet Connectors | `agentos-hub` in `~/.claude.json`, `~/.qoder/settings.json`, `~/.gemini/config/mcp_config.json` | `claude mcp add` and JSON merges (existing files are backed up once) |
 
 Foundations (Git, GitHub CLI, Node, user `PATH` entries for `~/.local/bin`, npm and Cargo) are checked and repaired the same way. Studio also resolves tools through the persisted user `PATH`, so a freshly installed CLI works without restarting the app.
+
+## Hermes Chat Studio
+
+The home screen. Pick a working directory (any of your repositories, or any folder), choose **Hermes** or **Claude Code**, and type.
+
+- Each message runs one `hermes chat --format stream-json` turn inside that folder (or `claude -p --output-format stream-json --include-partial-messages`). Continuing a conversation resumes the same session, so context carries over.
+- The Rust parser turns the stream into `token`, `tool_start`, `tool_result`, `error` and `complete` events. Tool calls render as cards showing the MCP server, the tool, its input, its result and how long it took. MCP calls that Hermes routes through its `tool_call` wrapper are shown under the real server and tool.
+- Code blocks have **Copy** and **Apply**. Apply writes the block to a file inside the working directory (paths outside it are refused) and keeps the file's line endings.
+- **Stop** ends the turn immediately and keeps the partial reply.
+- The sidebar lists every Hermes conversation from `state.db` with search, and each one can be renamed, deleted or exported to `03_Memory/Hermes_Sessions/` in your vault, where `search_shared_memory` can find it.
+- The header pill switches provider, model and the MCP servers Hermes loads, without leaving the conversation.
+- Slash commands: `/doctor` runs `hermes doctor` in the terminal, `/mcp-test` pings every MCP server, `/delegate-to-kanban <task>` queues a task on the Agent Bus, and `/sync-notion` has Hermes update your AgentOS Command Center page in Notion.
+
+## MCP and provider switchboard
+
+**Providers.** One card per provider: Claude Subscription (DirectSDK), OpenRouter, Google Gemini, Anthropic API, OpenAI API, DeepSeek, Nous Portal and Local (Ollama, llama.cpp or vLLM; Ollama is detected on `localhost:11434`). Each card shows whether it is ready, suggests models from Hermes's model caches or Ollama, accepts an API key, and has **Activate Provider**, **Test connection** and, for subscription and OAuth providers, **Sign in**.
+
+- Switching runs `hermes config set model.provider`, `model.default` and `model.base_url`. Keys are passed to `hermes config set <NAME>_API_KEY`, which stores them in Hermes's `.env`. Studio only ever displays key names, never values.
+- Switching to a provider without a key is refused before anything is written.
+- **Test connection** runs one real turn on that provider and model, reports the reply and latency, then deletes the probe session so your history stays clean.
+
+**MCP Server Hub.** Every server from all four agents in one list, with H, C, Q and A badges for Hermes, Claude Code, Qoder and Antigravity. Amber means that agent points somewhere else, and clicking a missing badge adds the server there.
+
+- Stdio servers are tested by a native Rust MCP client (`initialize`, then every page of `tools/list`). HTTP and OAuth servers are tested through `hermes mcp test`.
+- **Test and Inspect** opens every tool with its JSON schema.
+- **Add from Catalog** installs AgentOS-Hub (Rust), Notion, GitHub, Filesystem, Brave Search, Postgres, SQLite or Playwright, optionally into all four agents at once. The GitHub token can be filled from your `gh` login.
+- Hermes and Claude Code are changed through their CLIs (`hermes mcp add/remove`, `claude mcp add/remove`). Qoder and Antigravity JSON files are merged in place with a one-time backup and their original line endings.
+- If any agent still runs `agentos-hub` from the old Python server, one button points all four at this binary.
+
+## Terminal
+
+Press **Terminal** in the status bar (or `` Ctrl+` ``) for a console docked under the app. Commands run through PowerShell (or `sh`) in the folder you pick, stream stdout and stderr live, and can be stopped. Quick actions cover `hermes doctor`, `hermes mcp list`, `hermes status`, `claude auth status`, `claude mcp list`, `git status` and `gh auth status`. Interactive programs (bare `hermes`, `claude`, `hermes model`) are pointed to the matching Studio screen instead of hanging.
 
 ## The native MCP server
 
@@ -154,18 +200,24 @@ Claude Code workers run with `--permission-mode acceptEdits` and access to the `
 
 ```
 src/                      React 19 + TypeScript + Tailwind 4 UI
-  views/                  MissionControl, SetupWizard, FleetManager, ConstitutionStudio
-  components/             CommandBar, TaskCard, WorkerDrawer, UI kit
+  views/                  ChatStudio, MissionControl, ControlPlane, FleetManager, ConstitutionStudio, SetupWizard
+  components/             StatusBar, ProviderSwitcher, Markdown, ToolCard, CliDrawer, CommandBar, TaskCard, WorkerDrawer, UI kit
   lib/api.ts              Typed bindings for every Rust command and event
+  lib/chat.ts             Stream event reducer and history loader
 src-tauri/src/
   main.rs                 GUI by default, MCP server with --mcp-stdio
-  mcp_stdio.rs            JSON-RPC 2.0 MCP server
+  hermes_engine.rs        Heartbeat, provider switchboard, model discovery, state.db sessions
+  chat_stream.rs          Streaming chat turns for Hermes and Claude Code, event parsers, Apply
+  mcp_manager.rs          MCP registry across four agents, native MCP client, catalog
+  cli_runner.rs           In-app terminal
+  mcp_stdio.rs            JSON-RPC 2.0 MCP server (agentos-hub)
   vault.rs                Task bus, shared memory, dashboard, cross-process lock
   bootstrapper.rs         Stack detection, installers, OAuth launchers, registrations
   bus.rs                  notify watcher, mission dispatch, headless workers
   fleet.rs                Repo scanner, rule sync, rules-only commits, project creator
   constitution.rs         Managed blocks, law toggles, line-ending safe writes
   broadcast.rs            Save and Broadcast
+src-tauri/tests/          Native MCP probe against the real binary, plus opt-in live tests
 templates/CONSTITUTION.md Default constitution bundled into the binary
 ```
 
@@ -177,8 +229,14 @@ npm run check:dashes          # repository-wide em-dash / en-dash gate
 cd src-tauri
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
-cargo test                    # vault, MCP protocol, fleet commits, constitution transforms
+cargo test                    # unit tests plus the native MCP probe
+
+# Opt-in checks against a real Hermes and Claude Code install on this machine
+cargo test --test live_smoke -- --ignored --nocapture
+cargo test --test live_chat -- --ignored --nocapture
 ```
+
+The live tests read your Hermes sessions, providers and MCP servers, run real chat turns on both backends (then delete the session they created), and re-apply your active provider without changing it.
 
 Contributions follow the AgentOS constitution in [`CLAUDE.md`](CLAUDE.md): branch, atomic conventional commits, PR, self-review, squash merge.
 
