@@ -139,7 +139,7 @@ The home screen. Pick a working directory (any of your repositories, or any fold
 - The Rust parser turns the stream into `token`, `tool_start`, `tool_result`, `error` and `complete` events. Tool calls render as cards showing the MCP server, the tool, its input, its result and how long it took. MCP calls that Hermes routes through its `tool_call` wrapper are shown under the real server and tool.
 - Code blocks have **Copy** and **Apply**. Apply writes the block to a file inside the working directory (paths outside it are refused) and keeps the file's line endings.
 - **Stop** ends the turn immediately and keeps the partial reply.
-- The sidebar lists every Hermes conversation from `state.db` with search, and each one can be renamed, deleted or exported to `03_Memory/Hermes_Sessions/` in your vault, where `search_shared_memory` can find it.
+- The chat list shows every Hermes conversation from `state.db` with search, and each one can be renamed, deleted or exported to `03_Memory/Hermes_Sessions/` in your vault, where `search_shared_memory` can find it.
 - The header pill switches provider, model and the MCP servers Hermes loads, without leaving the conversation.
 - Slash commands: `/doctor` runs `hermes doctor` in the terminal, `/mcp-test` pings every MCP server, `/delegate-to-kanban <task>` queues a task on the Agent Bus, and `/sync-notion` has Hermes update your AgentOS Command Center page in Notion.
 
@@ -195,6 +195,18 @@ The chat sidebar is a tree: **workspaces > folders > sub-folders > chats**, plus
 - **Link to a Hermes project**: reuses the Hermes project that already contains the directory, or runs `hermes project create`.
 - **Attach files** to a chat or a folder. When you send a message, the attached paths of the chat and every parent folder are listed at the top of the prompt for the agent, and the chat shows which files were included. Files are referenced, never copied.
 - Deleting a folder or workspace never deletes chats; they return to Unfiled. Hermes sessions stay in Hermes's `state.db`; placement lives in Studio's `studio.db`.
+
+## Navigation
+
+A five-group icon rail replaces the old twelve-item list: **Chat**, **Work** (Projects, Mission
+Control, Fleet), **Brain** (Skills, Constitution), **Code** (GitHub) and **System** (MCP and
+Providers, Updates, Safety, Setup, Diagnostics). The rail is 56 px, expands on hover, and stays open
+if you pin it. Badges count open bus tasks on Work, waiting updates on System and failing CI runs on
+Code. `Alt+1..5` jumps between groups and `Ctrl+K` reaches every tab.
+
+Chats never start in a system folder: the working directory comes from the last folder you used,
+then the active project, then your home directory. Anything under `%WINDIR%` or `System32` is
+rejected.
 
 ## Projects, branches and skills
 

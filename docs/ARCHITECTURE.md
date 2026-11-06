@@ -170,3 +170,41 @@ src-tauri/src/
 docs/
   ARCHITECTURE.md  ROADMAP.md  adr/
 ```
+
+## Navigation shell (v0.4.1)
+
+The twelve-item sidebar is gone. Navigation is a 56 px icon rail that expands to 208 px on hover or
+when pinned, with the pin stored in `studio.db` (`kv.nav.pinned`). Five groups:
+
+| Group | Tabs |
+|---|---|
+| Chat | Chat Studio |
+| Work | Projects, Mission Control, Fleet |
+| Brain | Skills, Constitution (Memory joins in item 7 of the same release) |
+| Code | GitHub |
+| System | MCP and Providers, Updates, Safety, Setup, Diagnostics |
+
+Badges are counts, not decoration: open bus tasks on Work, pending updates on System, failing
+workflow runs on Code (from `gh run list` for the repository bound to the current folder, refreshed
+every three minutes). `Alt+1..5` select a group, `Ctrl+K` still reaches every tab by name.
+
+The top bar no longer repeats provider and model, which belong to the per-chat switcher. It carries
+the Hermes version and a single health chip that opens Diagnostics.
+
+## Working directory resolution
+
+A GUI inherits whatever directory its launcher had, and on Windows that is sometimes
+`C:\Windows\System32`. `workdir.rs` resolves a new chat's folder in this order: last folder used
+(`studio.db` kv `chat.cwd`), the active project root (`projects.db`, falling back to the only
+project when there is exactly one), then the user's home. A candidate is rejected when it is
+relative, missing, under `%WINDIR%`, or any path segment is `system32`. `pick()` is pure so the rule
+is unit tested without touching the environment.
+
+## Typed memory
+
+`03_Memory` notes gain `type` (`decision`, `fact`, `convention`, `episode`, `gotcha`), `status`
+(`active`, `superseded`), and optional `supersedes`, `source_session`, `agent` and `repo`.
+`DECISION_LOG.md` is appended to only by `type: decision`, so the log keeps meaning what it says.
+Notes written before types existed have no `type` and read as `fact` at read time; nothing is
+rewritten. Superseding is the one deliberate write to an older note: it flips that note to
+`status: superseded` and records `superseded_by`.
