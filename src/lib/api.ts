@@ -518,6 +518,13 @@ export const api = {
   chatSkills: (sessionId: string) => invoke<string[]>("get_chat_skills", { sessionId }),
   setChatSkills: (sessionId: string, skills: string[]) => invoke<void>("set_chat_skills", { sessionId, skills }),
 
+  workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
+  ciBadge: (dir?: string) => invoke<number>("ci_badge", { dir: dir ?? null }),
+
+  getPref: (key: string) => invoke<string | null>("get_pref", { key }),
+  setPref: (key: string, value: string) => invoke<void>("set_pref", { key, value }),
+  setWorkingDir: (path: string) => invoke<string>("set_working_dir", { path }),
+
   skills: () => invoke<Skill[]>("list_skills"),
   readSkill: (name: string) => invoke<string>("read_skill", { name }),
   searchSkills: (query: string, limit = 15) => invoke<HubSkill[]>("search_skills", { query, limit }),

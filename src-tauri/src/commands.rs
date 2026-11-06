@@ -652,6 +652,52 @@ pub fn boot_open_logs() -> CmdResult<String> {
 // v0.4: projects, session branches and skills
 // ---------------------------------------------------------------------------------------------
 
+/// Failing workflow runs for whichever repository the given folder belongs to.
+#[tauri::command]
+pub async fn ci_badge(dir: Option<String>) -> CmdResult<u32> {
+    blocking(move || -> anyhow::Result<u32> {
+        let dir = dir
+            .filter(|d| std::path::Path::new(d).is_dir())
+            .unwrap_or_else(|| crate::settings::home().display().to_string());
+        let view = match crate::github::repo_for_dir(&dir) {
+            Ok(v) => v,
+            Err(_) => return Ok(0),
+        };
+        let Some(repo) = view.get("nameWithOwner").and_then(|v| v.as_str()) else {
+            return Ok(0);
+        };
+        let runs = crate::github::runs(repo, None)?;
+        let arr = runs.as_array().cloned().unwrap_or_default();
+        Ok(arr
+            .iter()
+            .filter(|r| r.get("conclusion").and_then(|v| v.as_str()) == Some("failure"))
+            .count() as u32)
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn get_pref(key: String) -> CmdResult<Option<String>> {
+    let c = crate::store::open().map_err(|e| e.to_string())?;
+    crate::store::kv_get(&c, &key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_pref(key: String, value: String) -> CmdResult<()> {
+    let c = crate::store::open().map_err(|e| e.to_string())?;
+    crate::store::kv_set(&c, &key, &value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn working_dir_default() -> crate::workdir::WorkingDir {
+    crate::workdir::resolve()
+}
+
+#[tauri::command]
+pub async fn set_working_dir(path: String) -> CmdResult<String> {
+    blocking(move || crate::workdir::remember(&path)).await
+}
+
 #[tauri::command]
 pub async fn list_projects() -> CmdResult<Vec<Project>> {
     blocking(crate::projects::list).await

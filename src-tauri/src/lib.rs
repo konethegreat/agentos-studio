@@ -25,6 +25,7 @@ pub mod skills;
 pub mod store;
 pub mod updates;
 pub mod vault;
+pub mod workdir;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -235,6 +236,11 @@ pub fn run_gui() {
             commands::install_skill,
             commands::remove_skill,
             commands::update_skills,
+            commands::working_dir_default,
+            commands::set_working_dir,
+            commands::get_pref,
+            commands::set_pref,
+            commands::ci_badge,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")
