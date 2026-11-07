@@ -35,6 +35,7 @@ import { CommandBar } from "./components/CommandBar";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { StatusBar } from "./components/StatusBar";
 import { Memory } from "./views/Memory";
+import { Help } from "./views/Help";
 import { Missions } from "./views/Missions";
 import { NavRail, type RailGroup, type RailView } from "./components/NavRail";
 import { ToastProvider, useToast } from "./components/Toasts";
@@ -54,7 +55,7 @@ import { UpdateCenter } from "./views/UpdateCenter";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 
-type View = "chat" | "projects" | "skills" | "memory" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup" | "diagnostics";
+type View = "chat" | "projects" | "skills" | "memory" | "help" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup" | "diagnostics";
 
 const GROUPS: RailGroup[] = [
   {
@@ -104,6 +105,7 @@ const GROUPS: RailGroup[] = [
       { id: "safety", label: "Safety", hint: "Permission policies and the audit log" },
       { id: "setup", label: "Setup", hint: "Install, sign in and repair everything" },
       { id: "diagnostics", label: "Diagnostics", hint: "Startup checks, safe repairs, crash log and boot log" },
+      { id: "help", label: "Help", hint: "The docs that ship with the build, searchable" },
     ],
   },
 ];
@@ -423,6 +425,7 @@ function Studio() {
             {view === "projects" && <Projects onOpenSession={openSessionInChat} onNewSession={newSessionInProject} />}
             {view === "skills" && <Skills onUseSkill={useSkillInChat} />}
             {view === "memory" && <Memory />}
+            {view === "help" && <Help />}
           </div>
           <CliDock />
         </main>

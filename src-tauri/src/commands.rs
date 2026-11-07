@@ -802,6 +802,12 @@ pub fn hub_tools() -> Vec<String> {
 }
 
 /// Shadow mode: what the router would pick, with the evidence behind it. It changes nothing.
+/// The documentation that ships with the build, for the in-app help view.
+#[tauri::command]
+pub async fn help_docs() -> CmdResult<Vec<crate::help::Doc>> {
+    blocking(crate::help::all).await
+}
+
 /// The committed routing policy for a repository, if it has one.
 #[tauri::command]
 pub fn routing_policy(repo: String) -> CmdResult<Option<serde_json::Value>> {

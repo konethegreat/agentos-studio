@@ -12,6 +12,7 @@ pub mod connect;
 pub mod constitution;
 pub mod fleet;
 pub mod github;
+pub mod help;
 pub mod hermes_engine;
 pub mod mcp_manager;
 pub mod mcp_stdio;
@@ -271,6 +272,7 @@ pub fn run_gui() {
             commands::model_catalog,
             commands::router_suggestions,
             commands::routing_policy,
+            commands::help_docs,
             commands::tool_policies,
             commands::set_tool_policy,
             commands::hub_tools,
