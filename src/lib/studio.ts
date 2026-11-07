@@ -411,6 +411,8 @@ export const studio = {
     moa: () => invoke<Moa>("hermes_moa"),
     setActiveMoa: (preset: string) => invoke<void>("hermes_set_active_moa", { preset }),
     folderModels: () => invoke<FolderModel[]>("folder_models"),
+    changes: () =>
+      invoke<{ new: { provider: string; model: string; first_seen: number }[]; gone: { provider: string; model: string; used_by: string[] }[] }>("model_changes"),
     setFolderModels: (entries: FolderModel[]) => invoke<void>("set_folder_models", { entries }),
   },
   plans: {

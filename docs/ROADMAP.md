@@ -319,6 +319,9 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
 - Fallback chains, credential pools, mixture-of-agents presets and per-folder default models, all
   through Hermes' own commands and config (shipped, Providers > Model layer). Verified by
   `tests/live_model_layer.rs`, which leaves config.yaml byte-identical.
+- New model badges and deprecation warnings (shipped): Studio diffs Hermes' model cache against
+  what it saw before; new models are flagged for a week, and a model that left the catalog is a
+  warning when a mission, folder default or the fallback chain still pins it.
 - Parallel missions on one repository through kanban worktree workspaces (shipped, MCP and
   Providers > Hermes). Verified by `tests/live_kanban_mission.rs`: two missions dispatched in one
   tick, each in `<repo>/.worktrees/<task>` on its own branch, both to Studio review.

@@ -807,3 +807,8 @@ pub async fn missions_parallel_per_repo() -> CmdResult<usize> {
 pub async fn set_missions_parallel_per_repo(n: usize) -> CmdResult<()> {
     blocking(move || crate::kanban::set_parallel_per_repo(n)).await
 }
+
+#[tauri::command]
+pub async fn model_changes() -> CmdResult<crate::model_watch::Changes> {
+    blocking(crate::model_watch::check).await
+}
