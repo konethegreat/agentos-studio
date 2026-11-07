@@ -282,7 +282,7 @@ This completes the design-system bullet listed under v0.4.1, which was never bui
   Python server had, plus recall, remember and project_brief.
 - Verified by `tests/live_hub_cutover.rs` against the real agent configs.
 
-## v0.10: Hermes-native
+## v0.10.0: Hermes-native (shipped)
 
 Principle: Hermes owns execution of Hermes work; Studio owns cross-agent orchestration (Hermes,
 Claude Code, Antigravity), the review and merge policy, the vault and visibility. Do not rebuild a
