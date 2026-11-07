@@ -332,6 +332,26 @@ export interface ChatEvent {
   stopped?: boolean;
 }
 
+export interface Mission {
+  id: string;
+  repo: string;
+  goal: string;
+  acceptance: string;
+  role: string;
+  agent: string;
+  status: "queued" | "running" | "review" | "blocked" | "done" | "failed";
+  provider: string;
+  model: string;
+  budget_usd: number;
+  spent_usd: number;
+  task_id: string | null;
+  reviewer: string | null;
+  review_verdict: "approve" | "reject" | null;
+  review_note: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface MemoryEntry {
   session_id: string;
   turn: number;
@@ -541,6 +561,33 @@ export const api = {
   setChatSkills: (sessionId: string, skills: string[]) => invoke<void>("set_chat_skills", { sessionId, skills }),
 
   workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
+  missions: () => invoke<Mission[]>("list_missions", { limit: 100 }),
+  createMission: (input: {
+    repo: string;
+    goal: string;
+    acceptance: string;
+    role: string;
+    agent: string;
+    provider: string;
+    model: string;
+    budgetUsd: number;
+  }) =>
+    invoke<Mission>("create_mission", {
+      repo: input.repo,
+      goal: input.goal,
+      acceptance: input.acceptance,
+      role: input.role,
+      agent: input.agent,
+      provider: input.provider,
+      model: input.model,
+      budgetUsd: input.budgetUsd,
+    }),
+  dispatchMission: (id: string) => invoke<Mission>("dispatch_mission", { id }),
+  reviewMission: (id: string, reviewer: string, verdict: "approve" | "reject", note: string) =>
+    invoke<Mission>("review_mission", { id, reviewer, verdict, note }),
+  missionBlockers: (id: string, ciGreen: boolean, allowlisted: boolean) =>
+    invoke<string[]>("mission_merge_blockers", { id, ciGreen, allowlisted }),
+
   ciBadge: (dir?: string) => invoke<number>("ci_badge", { dir: dir ?? null }),
 
   getPref: (key: string) => invoke<string | null>("get_pref", { key }),
