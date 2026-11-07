@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { Brain, Cable, CheckCircle2, CircleAlert, Cloud, Cpu, FolderOpen, Layers, RefreshCw, Sparkles, Wrench } from "lucide-react";
+import { Brain, Cable, CheckCircle2, Circle, CircleAlert, Cloud, Cpu, FolderOpen, Layers, RefreshCw, Sparkles, Wrench } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, errorText, type SetupEvent, type SettingsView, type StackStatus } from "../lib/api";
 import { Button, Card, inputClass } from "../components/ui";
@@ -147,14 +147,17 @@ export function SetupWizard({
                   .filter((c) => c.pillar === p.number)
                   .map((c) => (
                     <li key={c.id} className="flex items-center gap-3 px-4 py-2.5">
-                      {c.ok ? <CheckCircle2 className="size-4 shrink-0 text-ok" /> : <CircleAlert className="size-4 shrink-0 text-warn" />}
+                      {c.ok ? <CheckCircle2 className="size-4 shrink-0 text-ok" /> : c.optional ? <Circle className="size-4 shrink-0 text-slate-600" /> : <CircleAlert className="size-4 shrink-0 text-warn" />}
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm text-slate-200">{c.label}</div>
+                        <div className="text-sm text-slate-200">
+                          {c.label}
+                          {c.optional && !c.ok && <span className="ml-2 rounded-full bg-white/5 px-1.5 py-0.5 text-2xs text-slate-400 ring-1 ring-white/10">optional</span>}
+                        </div>
                         <div className="truncate text-label text-muted" title={c.detail}>
                           {c.detail}
                         </div>
                       </div>
-                      <Button size="sm" variant={c.ok ? "ghost" : "primary"} disabled={activeJob !== null} onClick={() => repair(c.id)}>
+                      <Button size="sm" variant={c.ok || c.optional ? "ghost" : "primary"} disabled={activeJob !== null} onClick={() => repair(c.id)}>
                         {c.action}
                       </Button>
                     </li>

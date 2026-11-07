@@ -16,6 +16,8 @@ use crate::vault::Vault;
 
 pub const EV_SETUP: &str = "agentos://setup-progress";
 pub const PLUGIN: &str = "claude-subscription-directsdk";
+/// Antigravity is reached through a community Hermes plugin; it is not in the curated catalog.
+pub const ANTIGRAVITY_PLUGIN_URL: &str = "https://github.com/neerazz/hermes-antigravity-oauth";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Component {
@@ -25,6 +27,9 @@ pub struct Component {
     pub ok: bool,
     pub detail: String,
     pub action: String,
+    /// Not needed to use the app (Notion, an IDE the user does not have). An optional item that
+    /// is not set up never counts against "Healthy".
+    pub optional: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,6 +75,28 @@ fn comp(
         ok,
         detail: detail.into(),
         action: action.into(),
+        optional: false,
+    }
+}
+
+/// Tools the native hub must list in its self-test; kept in step with `mcp_stdio::tool_definitions`.
+pub const HUB_TOOLS: usize = 9;
+
+fn optional(mut c: Component) -> Component {
+    c.optional = true;
+    c
+}
+
+/// An IDE agent counts as present when its config folder exists; Studio only wires agents the
+/// user actually has.
+fn agent_present(agent: &str) -> bool {
+    let h = crate::settings::home();
+    match agent {
+        "qoder" => h.join(".qoder").is_dir(),
+        "antigravity" => {
+            h.join(".gemini").join("antigravity").is_dir() || procs::find("antigravity").is_some()
+        }
+        _ => true,
     }
 }
 
@@ -340,12 +367,12 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
         }),
         std::thread::spawn(move || {
             vec![match bus_selftest(&vault_path) {
-                Ok(9) => comp(
+                Ok(n) if n == HUB_TOOLS => comp(
                     "bus-selftest",
                     "Native MCP server self-test",
                     5,
                     true,
-                    "initialize + tools/list returned all 9 tools",
+                    format!("initialize + tools/list returned all {HUB_TOOLS} tools"),
                     "Run again",
                 ),
                 Ok(n) => comp(
@@ -353,7 +380,7 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
                     "Native MCP server self-test",
                     5,
                     false,
-                    format!("expected 9 tools, got {n}"),
+                    format!("expected {HUB_TOOLS} tools, got {n}"),
                     "Run again",
                 ),
                 Err(e) => comp(
@@ -423,9 +450,9 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
         .join("mcp-tokens")
         .join("notion.json")
         .exists();
-    components.push(comp(
+    components.push(optional(comp(
         "notion",
-        "Notion MCP (via Hermes)",
+        "Notion MCP (via Hermes, optional)",
         4,
         notion_cfg && token,
         match (notion_cfg, token) {
@@ -434,7 +461,7 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
             _ => "Not configured".to_string(),
         },
         if notion_cfg { "Authorize" } else { "Connect" },
-    ));
+    )));
 
     let hermes_reg = servers.get("agentos-hub").and_then(|e| {
         let enabled = e.get("enabled").and_then(|b| b.as_bool()).unwrap_or(true);
@@ -468,24 +495,33 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
         claude_reg.unwrap_or_else(|| "not registered".into()),
         "Wire Config",
     ));
-    let qoder_reg = json_registration(&read_json(&procs::qoder_settings()));
-    components.push(comp(
-        "mcp-qoder",
-        "Qoder",
-        6,
-        qoder_reg.is_some(),
-        qoder_reg.unwrap_or_else(|| "not registered".into()),
-        "Wire Config",
-    ));
-    let ag_reg = json_registration(&read_json(&procs::gemini_mcp_config()));
-    components.push(comp(
-        "mcp-antigravity",
-        "Antigravity",
-        6,
-        ag_reg.is_some(),
-        ag_reg.unwrap_or_else(|| "not registered".into()),
-        "Wire Config",
-    ));
+    for (id, label, agent, path) in [
+        ("mcp-qoder", "Qoder", "qoder", procs::qoder_settings()),
+        (
+            "mcp-antigravity",
+            "Antigravity",
+            "antigravity",
+            procs::gemini_mcp_config(),
+        ),
+    ] {
+        let reg = json_registration(&read_json(&path));
+        let present = agent_present(agent);
+        let c = comp(
+            id,
+            label,
+            6,
+            reg.is_some(),
+            reg.unwrap_or_else(|| {
+                if present {
+                    "not registered".into()
+                } else {
+                    format!("{label} is not installed (optional)")
+                }
+            }),
+            "Wire Config",
+        );
+        components.push(if present { c } else { optional(c) });
+    }
 
     let order = [
         "git",
@@ -512,7 +548,10 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
         .map(|(n, t)| Pillar {
             number: *n,
             title: t.to_string(),
-            ok: components.iter().filter(|c| c.pillar == *n).all(|c| c.ok),
+            ok: components
+                .iter()
+                .filter(|c| c.pillar == *n)
+                .all(|c| c.ok || c.optional),
         })
         .collect();
     let connected = pillars.iter().filter(|p| p.number > 0 && p.ok).count();
@@ -522,7 +561,12 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
         connected,
         total: 6,
         vault: vault.root.display().to_string(),
-        studio_binary: studio_exe().display().to_string(),
+        studio_binary: crate::mcp_manager::hub_binary_for(
+            &crate::mcp_manager::hub_root(),
+            env!("CARGO_PKG_VERSION"),
+        )
+        .display()
+        .to_string(),
         checked_at: crate::vault::now(),
     }
 }
@@ -638,6 +682,11 @@ fn winget(job: &Job, id: &str) -> Result<bool> {
 
 fn os_install(job: &Job, winget_id: &str, brew: &str) -> Result<bool> {
     if cfg!(windows) {
+        if procs::find("winget").is_none() {
+            bail!(
+                "winget is not available. Install \"App Installer\" from the Microsoft Store, or install {winget_id} yourself, then press Re-check"
+            );
+        }
         return winget(job, winget_id);
     }
     if procs::find("brew").is_some() {
@@ -696,95 +745,22 @@ fn fix_path(job: &Job) -> Result<bool> {
     Ok(true)
 }
 
-fn register_json(job: &Job, path: &Path, vault: &Path) -> Result<bool> {
-    let mut data: Value = read_json(path);
-    if path.exists() {
-        let backup = path.with_extension("json.bak-agentos-studio");
-        if !backup.exists() {
-            fs::copy(path, &backup)?;
-            job.emit("out", &format!("Backed up {}", backup.display()));
-        }
-    }
-    if !data.is_object() {
-        data = json!({});
-    }
-    let exe = studio_exe().display().to_string();
-    let v = vault.display().to_string();
-    data["mcpServers"]["agentos-hub"] =
-        json!({"command": exe, "args": ["--mcp-stdio", "--vault", v], "env": {"AGENTOS_VAULT": v}});
-    if let Some(p) = path.parent() {
-        fs::create_dir_all(p)?;
-    }
-    fs::write(path, serde_json::to_string_pretty(&data)? + "\n")?;
-    job.emit("out", &format!("Wrote agentos-hub into {}", path.display()));
-    Ok(true)
-}
-
-fn register_claude(job: &Job, vault: &Path) -> Result<bool> {
-    let exe = studio_exe().display().to_string();
-    let v = vault.display().to_string();
-    let _ = stream(
-        job,
-        "claude",
-        &["mcp", "remove", "agentos-hub", "-s", "user"],
-        None,
-    );
-    let env = format!("AGENTOS_VAULT={v}");
-    let ok = stream(
-        job,
-        "claude",
-        &[
-            "mcp",
-            "add",
-            "agentos-hub",
-            "--scope",
-            "user",
-            "-e",
-            &env,
-            "--",
-            &exe,
-            "--mcp-stdio",
-            "--vault",
-            &v,
-        ],
-        None,
-    )?;
-    if ok {
-        stream(job, "claude", &["mcp", "get", "agentos-hub"], None)?;
+/// Register agentos-hub for one agent, pointing at this version's staged hub binary
+/// (`%LOCALAPPDATA%/AgentOS Hub/<version>/`), never at the app's own install folder: a registered
+/// exe is held open by every agent session, which would block installs and updates.
+fn register_hub(job: &Job, agent: &str, vault: &Path) -> Result<bool> {
+    let exe = crate::mcp_manager::stage_hub_binary()?;
+    job.emit("out", &format!("Hub binary: {}", exe.display()));
+    let spec = crate::mcp_manager::agentos_hub_spec(&exe.display().to_string(), vault);
+    let mut ok = true;
+    for o in crate::mcp_manager::add_mcp_server(&spec, &[agent.to_string()])? {
+        job.emit(
+            if o.ok { "out" } else { "err" },
+            &format!("{}: {}", o.agent, o.detail),
+        );
+        ok &= o.ok;
     }
     Ok(ok)
-}
-
-fn register_hermes(job: &Job, vault: &Path) -> Result<bool> {
-    let exe = studio_exe().display().to_string();
-    let v = vault.display().to_string();
-    let _ = stream(
-        job,
-        "hermes",
-        &["mcp", "remove", "agentos-hub"],
-        Some("y\n"),
-    );
-    let env = format!("AGENTOS_VAULT={v}");
-    stream(
-        job,
-        "hermes",
-        &[
-            "mcp",
-            "add",
-            "agentos-hub",
-            "--connect-timeout",
-            "60",
-            "--env",
-            &env,
-            "--command",
-            &exe,
-            "--args",
-            "--mcp-stdio",
-            "--vault",
-            &v,
-        ],
-        Some("y\n"),
-    )
 }
 
 fn run_component(job: &Job, component: &str, vault: &Vault) -> Result<bool> {
@@ -853,6 +829,25 @@ fn run_component(job: &Job, component: &str, vault: &Vault) -> Result<bool> {
             Some("y\ny\n"),
         ),
         "hermes-model" => interactive_tool(job, "hermes", &["model"]),
+        "antigravity-plugin" => {
+            job.emit(
+                "out",
+                &format!("Installing the community plugin {ANTIGRAVITY_PLUGIN_URL} (not published by Nous Research)"),
+            );
+            if !stream(
+                job,
+                "hermes",
+                &["plugins", "install", ANTIGRAVITY_PLUGIN_URL],
+                Some("y\ny\n"),
+            )? {
+                return Ok(false);
+            }
+            job.emit(
+                "out",
+                "Choose Antigravity in the window that opens and sign in",
+            );
+            interactive_tool(job, "hermes", &["model"])
+        }
         "vault" => {
             let created = vault.scaffold()?;
             if created.is_empty() {
@@ -880,12 +875,12 @@ fn run_component(job: &Job, component: &str, vault: &Vault) -> Result<bool> {
         "bus-selftest" => {
             let n = bus_selftest(&v)?;
             job.emit("out", &format!("tools/list returned {n} tools"));
-            Ok(n == 6)
+            Ok(n == HUB_TOOLS)
         }
-        "mcp-hermes" => register_hermes(job, &v),
-        "mcp-claude" => register_claude(job, &v),
-        "mcp-qoder" => register_json(job, &procs::qoder_settings(), &v),
-        "mcp-antigravity" => register_json(job, &procs::gemini_mcp_config(), &v),
+        "mcp-hermes" => register_hub(job, "hermes", &v),
+        "mcp-claude" => register_hub(job, "claude-code", &v),
+        "mcp-qoder" => register_hub(job, "qoder", &v),
+        "mcp-antigravity" => register_hub(job, "antigravity", &v),
         other => bail!("Unknown component '{other}'"),
     }
 }
@@ -905,7 +900,9 @@ pub fn install_or_repair_component(app: AppHandle, vault: Vault, component: Stri
             let broken: Vec<String> = status
                 .components
                 .iter()
-                .filter(|c| !c.ok)
+                // Optional items (Notion, IDEs that are not installed) are set up one by one, on
+                // purpose; "Auto-Setup and Repair Everything" never opens a login or writes a config for them.
+                .filter(|c| !c.ok && !c.optional)
                 .map(|c| c.id.clone())
                 .collect();
             if broken.is_empty() {
