@@ -23,6 +23,7 @@ pub mod permissions;
 pub mod procs;
 pub mod projects;
 pub mod pty;
+pub mod review_agent;
 pub mod settings;
 pub mod single;
 pub mod skills;
@@ -257,6 +258,8 @@ pub fn run_gui() {
             commands::submit_mission,
             commands::review_mission,
             commands::mission_merge_blockers,
+            commands::review_with_agent,
+            commands::merge_mission,
             commands::automation_status,
             commands::set_automation,
             commands::automation_tick,

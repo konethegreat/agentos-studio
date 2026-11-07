@@ -325,6 +325,39 @@ fn require_text(label: &str, s: &str, max: usize) -> Result<String> {
     Ok(t.to_string())
 }
 
+/// True only when the pull request has checks and every one passed.
+pub fn pr_checks_green(repo: &str, number: u64) -> Result<bool> {
+    let r = repo_arg(repo)?;
+    let v = match gh_json(
+        &[
+            "pr",
+            "checks",
+            &number.to_string(),
+            "-R",
+            r,
+            "--json",
+            "state",
+        ],
+        None,
+    ) {
+        Ok(v) => v,
+        // No checks, or the command failed: not green.
+        Err(_) => return Ok(false),
+    };
+    let Some(arr) = v.as_array() else {
+        return Ok(false);
+    };
+    if arr.is_empty() {
+        return Ok(false);
+    }
+    Ok(arr.iter().all(|c| {
+        matches!(
+            c.get("state").and_then(|s| s.as_str()),
+            Some("SUCCESS") | Some("SKIPPED") | Some("NEUTRAL")
+        )
+    }))
+}
+
 pub fn pr_merge(
     repo: &str,
     number: u64,

@@ -99,6 +99,12 @@ pub fn tick(v: &Vault) -> TickReport {
             continue;
         };
         if v.task_state(task) == Some(State::Completed) {
+            // The worker's summary names its pull request; keep it before the body moves on.
+            if let Some(body) = v.task_body(task) {
+                if let Some(url) = missions::pull_url(&body) {
+                    let _ = missions::set_pr(&m.id, &url);
+                }
+            }
             match missions::submit_for_review(&m.id, 0.0) {
                 Ok(_) => report.moved_to_review.push(m.id.clone()),
                 Err(e) => report.error = Some(e.to_string()),
@@ -189,6 +195,7 @@ mod tests {
             reviewer: None,
             review_verdict: None,
             review_note: None,
+            pr_url: None,
             created_at: 0,
             updated_at: 0,
         }
