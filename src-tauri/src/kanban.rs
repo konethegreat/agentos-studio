@@ -23,6 +23,23 @@ pub const BOARD: &str = "agentos-studio";
 pub const PREFIX: &str = "kanban:";
 /// Per-task runtime cap for Hermes missions, seconds, in `studio.db` kv. Empty means no cap.
 pub const KV_MAX_RUNTIME: &str = "hermes.mission_max_runtime";
+/// How many Hermes missions may run at once in one repository (1 to 4). Above 1, each task gets
+/// its own git worktree (`<repo>/.worktrees/<task>`, branch `<slug>/<task>-...`).
+pub const KV_PARALLEL: &str = "missions.parallel_per_repo";
+
+pub fn parallel_per_repo() -> usize {
+    crate::store::open()
+        .ok()
+        .and_then(|c| crate::store::kv_get(&c, KV_PARALLEL).ok().flatten())
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(1)
+        .clamp(1, 4)
+}
+
+pub fn set_parallel_per_repo(n: usize) -> Result<()> {
+    let c = crate::store::open()?;
+    crate::store::kv_set(&c, KV_PARALLEL, &n.clamp(1, 4).to_string())
+}
 
 pub fn is_kanban(task_id: Option<&str>) -> bool {
     task_id.is_some_and(|t| t.starts_with(PREFIX))
@@ -106,8 +123,16 @@ pub fn create_args(
     body_file: &Path,
     assignee: &str,
     max_runtime: Option<u64>,
+    worktree: bool,
 ) -> Vec<String> {
     let title: String = m.goal.trim().chars().take(90).collect();
+    // A worktree is anchored under the Hermes project's primary repository with its own branch,
+    // so several missions can work in one repository without sharing a checkout.
+    let workspace = if worktree {
+        "worktree".to_string()
+    } else {
+        format!("dir:{}", repo_dir.display())
+    };
     let mut a = board_args(&[
         "create",
         &title,
@@ -116,7 +141,7 @@ pub fn create_args(
         "--assignee",
         assignee,
         "--workspace",
-        &format!("dir:{}", repo_dir.display()),
+        &workspace,
         "--created-by",
         "agentos-studio",
         // One task per attempt: a rework after a rejection gets a new key.
@@ -134,6 +159,9 @@ pub fn create_args(
     }
     if let Some(s) = max_runtime {
         a.extend(["--max-runtime".into(), s.to_string()]);
+    }
+    if worktree {
+        a.extend(["--project".into(), m.repo.trim().into()]);
     }
     a
 }
@@ -166,6 +194,7 @@ pub fn create_task(m: &Mission) -> Result<String> {
         &body_file,
         &assignee,
         max_runtime(),
+        parallel_per_repo() > 1,
     ))?;
     let v: Value = serde_json::from_str(out.trim())
         .map_err(|e| anyhow!("hermes kanban create did not return JSON: {e}"))?;
@@ -195,6 +224,9 @@ pub struct Run {
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct TaskView {
     pub status: String,
+    /// The folder the worker used: the repository, or its worktree.
+    #[serde(default)]
+    pub workspace_path: Option<String>,
     #[serde(default)]
     pub result: Option<String>,
     #[serde(default)]
@@ -214,6 +246,10 @@ pub fn parse_show(json: &str) -> Result<TaskView> {
             .unwrap_or("")
             .to_string(),
         result: task.get("result").and_then(Value::as_str).map(String::from),
+        workspace_path: task
+            .get("workspace_path")
+            .and_then(Value::as_str)
+            .map(String::from),
         runs: v
             .get("runs")
             .cloned()
@@ -335,6 +371,7 @@ mod tests {
             Path::new("C:/b.md"),
             "default",
             Some(1800),
+            false,
         )
         .join(" ");
         assert!(a.starts_with("kanban --board agentos-studio create Add a health endpoint"));
@@ -350,8 +387,23 @@ mod tests {
             Path::new("C:/b.md"),
             "x",
             None,
+            false,
         )
         .join(" ");
+        let w = create_args(
+            &mission(),
+            Path::new("C:/r"),
+            Path::new("C:/b.md"),
+            "x",
+            None,
+            true,
+        )
+        .join(" ");
+        assert!(
+            w.contains("--workspace worktree") && w.contains("--project demo"),
+            "{w}"
+        );
+        assert!(!w.contains("dir:"));
         assert!(
             !b.contains("--model") && !b.contains("--provider") && !b.contains("--max-runtime")
         );
