@@ -123,6 +123,18 @@ after, and the router itself waits for mission scorecards.
   does not stop work in flight: running missions still finish and still go to review.
 - **Rule that never bends:** the scheduler never approves. It only moves work to the reviewer.
 
+## v0.5.2: reviewer session and the gatekeeper (shipped)
+
+- **PR capture:** when a mission's bus task completes, the pull request URL in the worker summary is
+  stored on the mission, so review and merge know exactly what to look at.
+- **Reviewer session:** a second agent runs as a real one-shot session (`claude -p`, or
+  `hermes chat --oneshot`) with the acceptance criteria and the actual `gh pr diff`. It must answer
+  `{"verdict":"approve"|"reject","note":"..."}`; prose, an empty note or an unknown verdict counts as
+  a failure and nothing is approved.
+- **Gatekeeper merge:** merge runs only when the mission is done, the verdict is approve, the
+  reviewer is not the implementer, `gh pr checks` is fully green, spend is inside budget, and the
+  repository is allow-listed. Otherwise it returns the reasons instead of merging.
+
 ## v0.6.0: model layer, full parity and live freshness
 
 Goal: anything Hermes can connect to in a terminal can be chosen in the app, and new models appear

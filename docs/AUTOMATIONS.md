@@ -97,7 +97,7 @@ trust.
    its five conditions, and the Missions board in Mission Control.
 2. **v0.5.1 (shipped):** the scheduler tick, keep-awake, concurrency caps, and automatic advance
    from bus completion to review. The scheduler never approves: it only moves work to the reviewer.
-3. **v0.5.2:** the reviewer as a real second session with a structured verdict, and the
+3. **v0.5.2 (shipped):** the reviewer as a real second session with a structured verdict, and the
    gatekeeper merge path.
 4. **v0.6.0:** the model layer and per-session provider pins, so roles can name a model.
 5. **v0.7.0:** per-tool permissions, keychain, signed builds, updater.
