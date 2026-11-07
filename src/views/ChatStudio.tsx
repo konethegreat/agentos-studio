@@ -1,11 +1,11 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { ArrowUp, Brain, ChevronRight, Cloud, FolderOpen, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Workflow } from "lucide-react";
+import { ArrowUp, Brain, ChevronRight, Cloud, FolderOpen, GitFork, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api, errorText, events, type HermesStatus, type MemoryEntry, type RepoInfo, type Skill } from "../lib/api";
 import { studio, type Folder, type OrgSnapshot, type PlacedChat } from "../lib/studio";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
 import { WorkspaceTree } from "../components/WorkspaceTree";
-import { applyEvent, fromHistory, newId, type ChatItem } from "../lib/chat";
+import { applyEvent, forkPoint, fromHistory, newId, type ChatItem } from "../lib/chat";
 import { basename } from "../lib/format";
 import { useCli } from "../components/CliDrawer";
 import { Markdown } from "../components/Markdown";
@@ -401,6 +401,52 @@ export function ChatStudio({
     }
   }
 
+  // Branch this chat at one message into a new Hermes session (imported through Hermes).
+  const [forking, setForking] = useState(false);
+  async function forkAt(index: number) {
+    if (streaming || forking) return toast("info", "Wait for the reply to finish, then fork");
+    if (backend !== "hermes" || !current) return;
+    const parent = current;
+    setForking(true);
+    try {
+      const at = forkPoint(items, index, await api.sessionMessages(parent));
+      if (at === null) return toast("error", "This message is not stored in Hermes yet, so it cannot be forked");
+      const r = await api.forkSession(parent, at);
+      if (r.cwd) setWorkingDir(r.cwd);
+      if (r.session_id) {
+        setCurrent(r.session_id);
+        setItems(fromHistory(await api.sessionMessages(r.session_id)));
+        setPendingBranch(null);
+        toast("ok", `Forked into "${r.title}" with ${r.turns} turn${r.turns === 1 ? "" : "s"}. The original chat is unchanged.`);
+      } else {
+        setCurrent(null);
+        setItems([]);
+        setPendingBranch({ parent: r.parent_id, projectSlug: null, title: r.title });
+        toast("info", "Nothing came before this message, so the fork starts as a new chat with it as the draft");
+      }
+      setDraft(r.draft ?? "");
+      stick.current = true;
+      void loadSessions();
+      window.setTimeout(() => textarea.current?.focus(), 30);
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setForking(false);
+    }
+  }
+  const canFork = backend === "hermes" && !!current && !streaming && !forking;
+  const forkButton = (index: number, label: string) =>
+    canFork ? (
+      <button
+        onClick={() => void forkAt(index)}
+        title={label}
+        aria-label={label}
+        className="invisible grid size-6 shrink-0 place-items-center rounded-md text-slate-500 ring-1 ring-line hover:bg-white/5 hover:text-slate-200 group-hover:visible focus-visible:visible"
+      >
+        <GitFork className="size-3.5" />
+      </button>
+    ) : null;
+
   async function rename(id: string, title: string) {
     try {
       await api.renameSession(id, title);
@@ -596,11 +642,12 @@ export function ChatStudio({
             )}
             {(() => {
               let turn = 0;
-              return items.map((it) => {
+              return items.map((it, index) => {
               if (it.kind === "user") turn += 1;
               if (it.kind === "user")
                 return (
-                  <div key={it.id} className="my-4 flex justify-end">
+                  <div key={it.id} className="group my-4 flex items-start justify-end gap-2">
+                    {forkButton(index, "Fork here: new session with everything before this message, and this message back in the composer to edit")}
                     <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-emerald-500/10 px-4 py-2.5 text-[13.5px] leading-relaxed text-slate-100 ring-1 ring-emerald-500/20">
                       {it.text}
                     </div>
@@ -608,7 +655,8 @@ export function ChatStudio({
                 );
               if (it.kind === "assistant")
                 return (
-                  <div key={it.id} className="my-3">
+                  <div key={it.id} className="group relative my-3">
+                    {!it.streaming && <div className="absolute right-0 top-0 rounded-md bg-card">{forkButton(index, "Fork here: new session with the conversation up to and including this reply")}</div>}
                     {it.thinking && (
                       <details className="mb-2 rounded-lg bg-white/[0.02] px-3 py-1.5 text-xs text-slate-500 ring-1 ring-white/5">
                         <summary className="cursor-pointer select-none">

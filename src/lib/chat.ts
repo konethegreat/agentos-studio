@@ -4,6 +4,8 @@ export interface UserItem {
   kind: "user";
   id: string;
   text: string;
+  /** Row id in Hermes state.db, present for messages loaded from history. */
+  dbId?: number;
 }
 
 export interface AssistantItem {
@@ -12,6 +14,7 @@ export interface AssistantItem {
   text: string;
   thinking: string;
   streaming: boolean;
+  dbId?: number;
 }
 
 export interface ToolItem {
@@ -25,6 +28,7 @@ export interface ToolItem {
   isError: boolean;
   durationMs: number | null;
   status: "running" | "done" | "error";
+  dbId?: number;
 }
 
 export interface NoticeItem {
@@ -148,9 +152,9 @@ export function fromHistory(messages: StoredMessage[]): ChatItem[] {
   const byCall = new Map<string, number>();
   for (const m of messages) {
     if (m.role === "user" && m.content.trim()) {
-      items.push({ kind: "user", id: `u-${m.id}`, text: m.content });
+      items.push({ kind: "user", id: `u-${m.id}`, text: m.content, dbId: m.id });
     } else if (m.role === "assistant") {
-      if (m.content.trim()) items.push({ kind: "assistant", id: `a-${m.id}`, text: m.content, thinking: "", streaming: false });
+      if (m.content.trim()) items.push({ kind: "assistant", id: `a-${m.id}`, text: m.content, thinking: "", streaming: false, dbId: m.id });
       for (const c of m.tool_calls) {
         const { server, name } = splitTool(c.name);
         byCall.set(c.id, items.length);
@@ -165,6 +169,7 @@ export function fromHistory(messages: StoredMessage[]): ChatItem[] {
           isError: false,
           durationMs: null,
           status: "done",
+          dbId: m.id,
         });
       }
     } else if (m.role === "tool") {
@@ -176,6 +181,28 @@ export function fromHistory(messages: StoredMessage[]): ChatItem[] {
     }
   }
   return items;
+}
+
+/**
+ * The state.db message id to fork at for the item at `index`.
+ *
+ * Items loaded from history carry their row id. Items streamed in this view do not, so they are
+ * matched by turn: a user item maps to the same-numbered user message, and an assistant or tool
+ * item maps to the last stored message of its turn (fork after the whole reply).
+ */
+export function forkPoint(items: ChatItem[], index: number, stored: StoredMessage[]): number | null {
+  const it = items[index];
+  if (!it || it.kind === "notice") return null;
+  if (it.dbId !== undefined && stored.some((m) => m.id === it.dbId)) return it.dbId;
+  const turn = items.slice(0, index + 1).filter((i) => i.kind === "user").length;
+  // Positions in stored (display) order, not ids, so a reordered row cannot shift the turn.
+  const userAt = stored.flatMap((m, i) => (m.role === "user" && m.content.trim() ? [i] : []));
+  if (it.kind === "user") return turn > 0 && userAt[turn - 1] !== undefined ? stored[userAt[turn - 1]].id : null;
+  const from = turn === 0 ? 0 : userAt[turn - 1];
+  if (from === undefined) return null;
+  const to = userAt[turn] ?? stored.length;
+  for (let i = to - 1; i >= from; i--) if (stored[i].role !== "user") return stored[i].id;
+  return null;
 }
 
 export function relativeTime(epochSeconds: number): string {
