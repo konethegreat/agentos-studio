@@ -27,7 +27,13 @@ pub fn db_path_for(vault_root: &Path) -> PathBuf {
         md5_like(vault_root.to_string_lossy().to_lowercase().as_bytes())
     );
     // The index location must not follow AGENTOS_STUDIO_DB, which tests point at a temp store.
-    crate::store::studio_dir().join(format!("memory-{}.db", &digest[..10]))
+    // AGENTOS_STUDIO_MEMORY_DIR keeps test indexes out of the user's app data.
+    let base = std::env::var("AGENTOS_STUDIO_MEMORY_DIR")
+        .ok()
+        .filter(|d| !d.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(crate::store::studio_dir);
+    base.join(format!("memory-{}.db", &digest[..10]))
 }
 
 /// Small stable hash. Not cryptographic; only needs to separate vault paths.
@@ -419,6 +425,8 @@ mod tests {
 
     fn temp_vault() -> (tempfile::TempDir, Vault) {
         let d = tempfile::tempdir().unwrap();
+        // Keep the FTS database inside the test directory, never in %APPDATA%.
+        std::env::set_var("AGENTOS_STUDIO_MEMORY_DIR", d.path());
         let v = Vault::new(d.path());
         v.scaffold().unwrap();
         (d, v)

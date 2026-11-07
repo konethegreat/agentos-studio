@@ -81,6 +81,7 @@ export function NavRail({
               <button
                 type="button"
                 onClick={() => onGo(g.defaultView)}
+                aria-label={g.label}
                 title={`${g.label} (${g.tabs.map((t) => t.label).join(", ")})`}
                 aria-current={active ? "page" : undefined}
                 className={`relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left transition-colors ${
@@ -91,6 +92,7 @@ export function NavRail({
                 {expanded && <span className="truncate text-[12.5px] font-medium">{g.label}</span>}
                 {g.badge ? (
                   <span
+                    aria-hidden="true"
                     className={`${expanded ? "ml-auto" : "absolute right-1.5 top-1.5"} rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold leading-4 text-emerald-950`}
                   >
                     {g.badge > 99 ? "99+" : g.badge}
