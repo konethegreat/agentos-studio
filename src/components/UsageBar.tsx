@@ -76,7 +76,7 @@ export function UsageBar({
   const warn = pct >= 65 && pct < 80;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line/60 bg-white/[0.015] px-4 py-1.5 text-[11px] text-slate-500">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line/60 bg-white/[0.015] px-4 py-1.5 text-label text-slate-500">
       <span className="inline-flex items-center gap-1.5">
         <Gauge className="size-3.5" />
         <span className="text-slate-400">{usage.model ?? "no model"}</span>

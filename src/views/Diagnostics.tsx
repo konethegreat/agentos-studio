@@ -94,11 +94,11 @@ export function Diagnostics({ onFix }: { onFix: (view: string) => void }) {
           <>
             <Card className="mb-4 flex flex-wrap items-center gap-4 px-5 py-4">
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] uppercase tracking-wide text-slate-500">Last run</div>
+                <div className="text-label uppercase tracking-wide text-slate-500">Last run</div>
                 <div className="text-sm font-semibold text-slate-100">
                   v{report.app_version} in {report.elapsed_ms} ms
                 </div>
-                <div className="text-[11px] text-slate-500">
+                <div className="text-label text-slate-500">
                   {report.started_at} · vault {report.vault}
                 </div>
               </div>
@@ -112,13 +112,13 @@ export function Diagnostics({ onFix }: { onFix: (view: string) => void }) {
 
             {report.previous_crash && (
               <Card className="mb-4 border-amber-500/30 px-5 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">Last session ended with an error</div>
-                <div className="mt-1 font-mono text-[11.5px] leading-relaxed text-amber-100/80">{report.previous_crash}</div>
+                <div className="text-label font-semibold uppercase tracking-wide text-amber-300">Last session ended with an error</div>
+                <div className="mt-1 font-mono text-small leading-relaxed text-amber-100/80">{report.previous_crash}</div>
               </Card>
             )}
 
             <Card className="mb-4 overflow-hidden">
-              <div className="border-b border-line px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Startup checks</div>
+              <div className="border-b border-line px-5 py-2.5 text-label font-semibold uppercase tracking-wide text-slate-500">Startup checks</div>
               <div className="divide-y divide-line/60">
                 {steps.map((s) => {
                   const tone = TONE[s.status] ?? TONE.skipped;
@@ -127,12 +127,12 @@ export function Diagnostics({ onFix }: { onFix: (view: string) => void }) {
                       <span className={`mt-0.5 shrink-0 ${tone.text}`}>{tone.icon}</span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-[13px] text-slate-200">{s.label}</span>
+                          <span className="text-body text-slate-200">{s.label}</span>
                           <Badge className={tone.badge}>{s.status}</Badge>
                         </div>
-                        <div className="mt-0.5 break-words text-[11.5px] leading-relaxed text-slate-500">{s.detail}</div>
+                        <div className="mt-0.5 break-words text-small leading-relaxed text-slate-500">{s.detail}</div>
                       </div>
-                      <span className="shrink-0 tabular-nums text-[11px] text-slate-600">{s.ms} ms</span>
+                      <span className="shrink-0 tabular-nums text-label text-slate-600">{s.ms} ms</span>
                       {s.fix_view && (
                         <Button size="sm" variant="ghost" onClick={() => onFix(s.fix_view as string)}>
                           Fix
@@ -145,7 +145,7 @@ export function Diagnostics({ onFix }: { onFix: (view: string) => void }) {
             </Card>
 
             {problems.length > 0 && (
-              <div className="mb-4 rounded-lg bg-amber-500/10 px-4 py-3 text-[12px] text-amber-200 ring-1 ring-amber-500/25">
+              <div className="mb-4 rounded-lg bg-amber-500/10 px-4 py-3 text-ui text-amber-200 ring-1 ring-amber-500/25">
                 Warnings never block startup. Safe repairs (folders, database, PATH, vault structure) run automatically; configuration, installs and sign-ins are left to you.
               </div>
             )}
@@ -162,18 +162,18 @@ export function Diagnostics({ onFix }: { onFix: (view: string) => void }) {
                   setLogName(n);
                   void loadLog(n);
                 }}
-                className={`rounded-md px-2 py-1 font-mono text-[11px] ${logName === n ? "bg-white/[0.07] text-slate-100" : "text-slate-500 hover:text-slate-300"}`}
+                className={`rounded-md px-2 py-1 font-mono text-label ${logName === n ? "bg-white/[0.07] text-slate-100" : "text-slate-500 hover:text-slate-300"}`}
               >
                 {n}
               </button>
             ))}
             <div className="flex-1" />
             {loadingLog && <Loader2 className="size-3.5 animate-spin text-slate-500" />}
-            <button onClick={() => void loadLog(logName)} className="rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/5 hover:text-slate-200">
+            <button onClick={() => void loadLog(logName)} className="rounded-md px-2 py-1 text-label text-slate-400 hover:bg-white/5 hover:text-slate-200">
               Reload
             </button>
           </div>
-          <pre className="max-h-[22rem] overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-mono text-[11px] leading-relaxed text-slate-400">
+          <pre className="max-h-[22rem] overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-mono text-label leading-relaxed text-slate-400">
             {log || "Empty."}
           </pre>
         </Card>

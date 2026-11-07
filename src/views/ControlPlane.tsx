@@ -93,12 +93,12 @@ function Providers({ onStatusChanged }: { onStatusChanged: () => void }) {
           <Zap className="size-5 text-emerald-300" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] uppercase tracking-wide text-slate-500">Hermes is running on</div>
+          <div className="text-label uppercase tracking-wide text-slate-500">Hermes is running on</div>
           <div className="truncate text-sm font-semibold text-slate-100">
             {cfg.active_label} <span className="font-mono text-xs font-normal text-slate-400">{cfg.active.model}</span>
           </div>
         </div>
-        <div className="text-right text-[11px] leading-relaxed text-slate-500">
+        <div className="text-right text-label leading-relaxed text-slate-500">
           <div title={cfg.config_path}>Settings: config.yaml</div>
           <div title={cfg.env_path}>Keys: Hermes .env (names only shown here)</div>
         </div>
@@ -194,14 +194,14 @@ function ProviderCard({ p, onChanged, onReload }: { p: ProviderView; onChanged: 
             <span className="truncate text-sm font-semibold text-slate-100">{p.label}</span>
             {p.active && <Badge className="bg-emerald-500/10 text-emerald-300 ring-emerald-500/30">Active</Badge>}
           </div>
-          <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">{p.blurb}</p>
+          <p className="mt-0.5 text-small leading-relaxed text-slate-500">{p.blurb}</p>
         </div>
-        <span className={`mt-1 inline-flex items-center gap-1 text-[11px] ${p.ready ? "text-emerald-300" : "text-amber-300"}`}>
+        <span className={`mt-1 inline-flex items-center gap-1 text-label ${p.ready ? "text-emerald-300" : "text-amber-300"}`}>
           {p.ready ? <CheckCircle2 className="size-3.5" /> : <CircleAlert className="size-3.5" />}
           {p.ready ? "Ready" : "Setup"}
         </span>
       </div>
-      <div className="mt-1 text-[11px] text-slate-400">{p.detail}</div>
+      <div className="mt-1 text-label text-slate-400">{p.detail}</div>
       <div className="mt-3 space-y-2">
         <div>
           <input
@@ -232,7 +232,7 @@ function ProviderCard({ p, onChanged, onReload }: { p: ProviderView; onChanged: 
         {p.kind === "local" && <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className={`${inputClass} font-mono text-xs`} aria-label="Base URL" />}
       </div>
       {test && (
-        <div className={`mt-3 rounded-lg px-3 py-2 text-[11.5px] ring-1 ${test.ok ? "bg-emerald-500/10 text-emerald-200 ring-emerald-500/25" : "bg-red-500/10 text-red-200 ring-red-500/25"}`}>
+        <div className={`mt-3 rounded-lg px-3 py-2 text-small ring-1 ${test.ok ? "bg-emerald-500/10 text-emerald-200 ring-emerald-500/25" : "bg-red-500/10 text-red-200 ring-red-500/25"}`}>
           {test.ok ? `Connected in ${(test.latency_ms / 1000).toFixed(1)}s. Reply: ${test.reply}` : `Failed: ${test.error || test.reply || "no reply"}`}
         </div>
       )}
@@ -354,7 +354,7 @@ function McpHub({ onStatusChanged }: { onStatusChanged: () => void }) {
                   {s.is_agentos_hub && !s.legacy_python && <Badge className="bg-emerald-500/10 text-emerald-300 ring-emerald-500/25">Rust</Badge>}
                   {s.legacy_python && <Badge className="bg-amber-500/10 text-amber-300 ring-amber-500/25">Python somewhere</Badge>}
                 </div>
-                <div className="mt-0.5 truncate font-mono text-[11px] text-slate-500" title={s.url ?? [s.command, ...s.args].join(" ")}>
+                <div className="mt-0.5 truncate font-mono text-label text-slate-500" title={s.url ?? [s.command, ...s.args].join(" ")}>
                   {s.url ?? [s.command, ...s.args].join(" ")}
                   {s.env_keys.length > 0 && <span className="ml-2 text-slate-600">env: {s.env_keys.join(", ")}</span>}
                 </div>
@@ -378,7 +378,7 @@ function McpHub({ onStatusChanged }: { onStatusChanged: () => void }) {
                       title={title}
                       disabled={Boolean(reg) || busy !== null}
                       onClick={() => void act(`sync-${s.name}`, async () => outcomesText(await api.syncMcpServer(s.name, [a])))}
-                      className={`grid size-7 place-items-center rounded-md text-[11px] font-semibold ring-1 ${tone}`}
+                      className={`grid size-7 place-items-center rounded-md text-label font-semibold ring-1 ${tone}`}
                     >
                       {AGENT_SHORT[a]}
                     </button>
@@ -389,13 +389,13 @@ function McpHub({ onStatusChanged }: { onStatusChanged: () => void }) {
                     title={`Add to ${missing.map((m) => AGENT_LABEL[m]).join(", ")}`}
                     disabled={busy !== null}
                     onClick={() => void act(`sync-${s.name}`, async () => outcomesText(await api.syncMcpServer(s.name, missing)))}
-                    className="ml-1 rounded-md px-1.5 py-1 text-[11px] text-emerald-300 hover:bg-emerald-500/10"
+                    className="ml-1 rounded-md px-1.5 py-1 text-label text-emerald-300 hover:bg-emerald-500/10"
                   >
                     {busy === `sync-${s.name}` ? <Loader2 className="size-3.5 animate-spin" /> : "Sync all"}
                   </button>
                 )}
               </div>
-              <div className="w-36 shrink-0 text-right text-[11.5px]">
+              <div className="w-36 shrink-0 text-right text-small">
                 {pr === "running" || pr === undefined ? (
                   <span className="inline-flex items-center gap-1 text-slate-500">
                     <Loader2 className="size-3 animate-spin" /> testing
@@ -490,7 +490,7 @@ function InspectDrawer({ name, result, onRetest, onClose }: { name: string; resu
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-slate-100">{name}</div>
             {result && result !== "running" && (
-              <div className="text-[11px] text-slate-500">
+              <div className="text-label text-slate-500">
                 {result.ok
                   ? `${result.server_name || name} ${result.server_version} - protocol ${result.protocol || "n/a"} - ${result.latency_ms} ms via ${result.via === "native" ? "native Rust client" : "Hermes"}`
                   : result.error}
@@ -514,9 +514,9 @@ function InspectDrawer({ name, result, onRetest, onClose }: { name: string; resu
             <details key={t.name} className="rounded-lg border border-line bg-canvas/60">
               <summary className="cursor-pointer px-3 py-2">
                 <span className="font-mono text-xs text-slate-100">{t.name}</span>
-                <div className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{t.description.slice(0, 220)}</div>
+                <div className="mt-0.5 text-label leading-relaxed text-slate-500">{t.description.slice(0, 220)}</div>
               </summary>
-              <pre className="max-h-80 overflow-auto border-t border-line p-3 font-mono text-[11px] text-slate-300">
+              <pre className="max-h-80 overflow-auto border-t border-line p-3 font-mono text-label text-slate-300">
                 {t.input_schema ? JSON.stringify(t.input_schema, null, 2) : "Schema not available for servers tested through Hermes"}
               </pre>
             </details>
@@ -601,8 +601,8 @@ function CatalogModal({ installed, onClose, onInstalled }: { installed: Set<stri
                 <Badge className="bg-white/5 text-slate-400 ring-white/10">{c.transport}</Badge>
                 {installed.has(c.id) && <Badge className="bg-emerald-500/10 text-emerald-300 ring-emerald-500/25">installed</Badge>}
               </div>
-              <div className="mt-0.5 text-[11.5px] text-slate-400">{c.description}</div>
-              <div className="mt-1 text-[10.5px] text-slate-600">Needs: {c.requires}</div>
+              <div className="mt-0.5 text-small text-slate-400">{c.description}</div>
+              <div className="mt-1 text-caption text-slate-600">Needs: {c.requires}</div>
             </button>
           ))}
         </div>
@@ -610,7 +610,7 @@ function CatalogModal({ installed, onClose, onInstalled }: { installed: Set<stri
       {pick && (
         <div className="space-y-3">
           <p className="text-xs text-slate-400">{pick.description}</p>
-          <div className="rounded-lg bg-canvas p-2.5 font-mono text-[11px] text-slate-400">{[pick.command_or_url, ...pick.args].join(" ")}</div>
+          <div className="rounded-lg bg-canvas p-2.5 font-mono text-label text-slate-400">{[pick.command_or_url, ...pick.args].join(" ")}</div>
           {pick.params.map((p) => (
             <Field key={p.key} label={p.label} hint={p.env ? `Stored as ${p.key} in each agent's server config` : undefined}>
               <div className="flex gap-2">
@@ -637,7 +637,7 @@ function CatalogModal({ installed, onClose, onInstalled }: { installed: Set<stri
           {result && (
             <div className="space-y-1">
               {result.map((r) => (
-                <div key={r.agent} className={`text-[11.5px] ${r.ok ? "text-emerald-300" : "text-red-300"}`}>
+                <div key={r.agent} className={`text-small ${r.ok ? "text-emerald-300" : "text-red-300"}`}>
                   {AGENT_LABEL[r.agent]}: {r.ok ? "added" : r.detail}
                 </div>
               ))}
@@ -756,7 +756,7 @@ function CustomServerModal({ onClose, onAdded }: { onClose: () => void; onAdded:
         {result && (
           <div className="space-y-1">
             {result.map((r) => (
-              <div key={r.agent} className={`text-[11.5px] ${r.ok ? "text-emerald-300" : "text-red-300"}`}>
+              <div key={r.agent} className={`text-small ${r.ok ? "text-emerald-300" : "text-red-300"}`}>
                 {AGENT_LABEL[r.agent]}: {r.detail}
               </div>
             ))}

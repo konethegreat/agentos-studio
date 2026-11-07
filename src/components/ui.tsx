@@ -6,7 +6,7 @@ type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 const VARIANTS: Record<Variant, string> = {
   primary: "bg-emerald-500 text-emerald-950 hover:bg-emerald-400 shadow-[0_0_0_1px_rgba(16,185,129,0.4)]",
-  secondary: "bg-raised text-slate-200 ring-1 ring-line hover:bg-[#1c2738] hover:ring-slate-600",
+  secondary: "bg-raised text-slate-200 ring-1 ring-line hover:bg-raised-hover hover:ring-slate-600",
   ghost: "text-slate-400 hover:text-slate-100 hover:bg-white/5",
   danger: "bg-red-500/10 text-red-300 ring-1 ring-red-500/30 hover:bg-red-500/20",
 };
@@ -41,7 +41,7 @@ export function Button({
 
 export function Badge({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${className}`}>
+    <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-label font-medium ring-1 ring-inset ${className}`}>
       {children}
     </span>
   );
@@ -61,7 +61,7 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${checked ? "bg-emerald-500" : "bg-slate-700"}`}
     >
-      <span className={`inline-block size-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+      <span className={`inline-block size-4 rounded-full bg-knob shadow transition-transform ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`} />
     </button>
   );
 }
@@ -88,7 +88,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
     <label className="block space-y-1.5">
       <span className="text-xs font-medium text-slate-300">{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-muted">{hint}</span>}
+      {hint && <span className="block text-label text-muted">{hint}</span>}
     </label>
   );
 }
@@ -101,7 +101,7 @@ export function Empty({ icon, title, hint }: { icon: ReactNode; title: string; h
     <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line px-4 py-8 text-center">
       <div className="text-slate-600">{icon}</div>
       <div className="text-xs font-medium text-slate-400">{title}</div>
-      {hint && <div className="text-[11px] text-slate-600">{hint}</div>}
+      {hint && <div className="text-label text-slate-600">{hint}</div>}
     </div>
   );
 }

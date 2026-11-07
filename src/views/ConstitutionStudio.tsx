@@ -96,7 +96,7 @@ export function ConstitutionStudio({ memoryTick }: { memoryTick: number }) {
             <div key={l.number} className="flex items-center justify-between gap-3 bg-card px-4 py-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium text-slate-100">{LAW_HINT[l.number] ?? l.title}</div>
-                <div className="truncate text-[11px] text-muted">
+                <div className="truncate text-label text-muted">
                   Law {l.number}: {l.title}
                 </div>
               </div>
@@ -124,7 +124,7 @@ export function ConstitutionStudio({ memoryTick }: { memoryTick: number }) {
                 </button>
               ))}
             </div>
-            {dirty && <span className="pb-2 text-[11px] text-amber-300">Unsaved changes</span>}
+            {dirty && <span className="pb-2 text-label text-amber-300">Unsaved changes</span>}
           </div>
           <textarea
             spellCheck={false}
@@ -134,11 +134,11 @@ export function ConstitutionStudio({ memoryTick }: { memoryTick: number }) {
               if (tab === "constitution") setText(e.target.value);
               else setSystem(e.target.value);
             }}
-            className="min-h-0 flex-1 resize-none bg-[#0a0e16] p-4 font-mono text-[12.5px] leading-relaxed text-slate-200 outline-none"
+            className="min-h-0 flex-1 resize-none bg-inset p-4 font-mono text-body-sm leading-relaxed text-slate-200 outline-none"
           />
         </Card>
         {report && (
-          <div className="text-[11px] text-muted">
+          <div className="text-label text-muted">
             Last broadcast: {report.vault.length} vault files, {report.global.map(([p, a]) => `${p.split(/[\\/]/).slice(-2).join("/")} ${a}`).join(", ")}
             {report.repos.length > 0 && `, ${report.repos.length} repositories`}
           </div>
@@ -195,12 +195,12 @@ function MemoryPanel({ tick }: { tick: number }) {
       {open ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
-            <span className="truncate font-mono text-[11px] text-slate-400">{open.path}</span>
+            <span className="truncate font-mono text-label text-slate-400">{open.path}</span>
             <Button size="sm" variant="ghost" onClick={() => setOpen(null)}>
               Back
             </Button>
           </div>
-          <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[11.5px] leading-relaxed text-slate-300">{open.text}</pre>
+          <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-small leading-relaxed text-slate-300">{open.text}</pre>
         </div>
       ) : (
         <ul className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
@@ -210,7 +210,7 @@ function MemoryPanel({ tick }: { tick: number }) {
                   <button onClick={() => read(h.relative_path)} className="block w-full px-3 py-2.5 text-left hover:bg-white/[0.03]">
                     <div className="truncate text-xs font-medium text-slate-200">{h.relative_path}</div>
                     {h.matches.slice(0, 2).map((m) => (
-                      <div key={m.line} className="truncate text-[11px] text-muted">
+                      <div key={m.line} className="truncate text-label text-muted">
                         L{m.line}: {m.snippet}
                       </div>
                     ))}
@@ -223,7 +223,7 @@ function MemoryPanel({ tick }: { tick: number }) {
                     <FileText className="size-3.5 shrink-0 text-slate-500" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-xs font-medium text-slate-200">{n.title}</div>
-                      <div className="text-[11px] text-slate-500">{relativeTime(n.modified)}</div>
+                      <div className="text-label text-slate-500">{relativeTime(n.modified)}</div>
                     </div>
                     {n.relative_path.endsWith("DECISION_LOG.md") && <Save className="size-3.5 text-violet-300" />}
                   </button>

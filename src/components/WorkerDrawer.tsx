@@ -61,7 +61,7 @@ export function WorkerDrawer({
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/40" onMouseDown={onClose}>
-      <aside className="animate-slide-in flex h-full w-[min(760px,92vw)] flex-col border-l border-line bg-[#0d121c] shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+      <aside className="animate-slide-in flex h-full w-[min(760px,92vw)] flex-col border-l border-line bg-panel shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
         <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div className="min-w-0">
             <div className="font-mono text-xs text-slate-500">{taskId}</div>
@@ -94,7 +94,7 @@ export function WorkerDrawer({
             </button>
           ))}
         </div>
-        <div className="min-h-0 flex-1 overflow-auto px-5 py-4 font-mono text-[12px] leading-relaxed">
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-4 font-mono text-ui leading-relaxed">
           {tab === "spec" ? (
             <pre className="whitespace-pre-wrap break-words text-slate-300">{markdown}</pre>
           ) : (

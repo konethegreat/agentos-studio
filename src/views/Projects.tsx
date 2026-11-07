@@ -157,14 +157,14 @@ export function Projects({
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="truncate text-sm font-semibold text-slate-100">{p.name}</span>
-                        <span className="shrink-0 font-mono text-[10.5px] text-slate-600">{p.slug}</span>
+                        <span className="shrink-0 font-mono text-caption text-slate-600">{p.slug}</span>
                         {p.archived && <Badge className="bg-white/5 text-slate-400 ring-white/10">archived</Badge>}
                       </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-label text-slate-500">
                         <span>{p.session_count} chat{p.session_count === 1 ? "" : "s"}</span>
                         {p.last_activity > 0 && <span>· last {relativeTime(p.last_activity)}</span>}
                         {p.folders.map((f) => (
-                          <span key={f.path} className="truncate rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10.5px]" title={f.path}>
+                          <span key={f.path} className="truncate rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-caption" title={f.path}>
                             {f.label ?? basename(f.path)}
                             {f.primary ? " *" : ""}
                           </span>
@@ -204,14 +204,14 @@ export function Projects({
                 {expanded && (
                   <div className="border-t border-line px-4 py-2">
                     {busy === `s:${p.slug}` && <Loader2 className="my-2 size-4 animate-spin text-slate-500" />}
-                    {list.length === 0 && busy !== `s:${p.slug}` && <div className="py-2 text-[11.5px] text-slate-600">No sessions in these folders yet.</div>}
+                    {list.length === 0 && busy !== `s:${p.slug}` && <div className="py-2 text-small text-slate-600">No sessions in these folders yet.</div>}
                     <div className="divide-y divide-line/50">
                       {list.map((s) => (
                         <div key={s.id} className="flex items-center gap-2 py-1.5">
-                          {s.parent_session_id && <GitBranch className="ml-4 size-3 shrink-0 text-sky-400/70" />}
+                          {s.parent_session_id && <GitBranch className="ml-4 size-3 shrink-0 text-info/70" />}
                           <button onClick={() => onOpenSession(s)} className="min-w-0 flex-1 text-left">
-                            <div className="truncate text-[12.5px] text-slate-200">{s.title}</div>
-                            <div className="text-[10.5px] text-slate-500">
+                            <div className="truncate text-body-sm text-slate-200">{s.title}</div>
+                            <div className="text-caption text-slate-500">
                               {relativeTime(s.last_activity)} · {s.message_count} msgs
                               {s.branch_title ? ` · branch: ${s.branch_title}` : ""}
                             </div>
@@ -256,7 +256,7 @@ export function Projects({
             <Field label="Folders" hint="The first folder becomes the primary, which Hermes uses for worktrees.">
               <div className="space-y-1.5">
                 {folders.map((f) => (
-                  <div key={f} className="flex items-center gap-2 rounded-lg bg-canvas px-2.5 py-1.5 font-mono text-[11px] text-slate-300">
+                  <div key={f} className="flex items-center gap-2 rounded-lg bg-canvas px-2.5 py-1.5 font-mono text-label text-slate-300">
                     <span className="min-w-0 flex-1 truncate">{f}</span>
                     <button onClick={() => setFolders(folders.filter((x) => x !== f))} className="text-slate-500 hover:text-red-300">
                       remove

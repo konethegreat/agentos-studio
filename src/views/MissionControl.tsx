@@ -29,7 +29,7 @@ export function MissionControl({ board, workers, onOpen }: { board: Board | null
         {columns.map((c) => {
           const tasks = board?.[c.key] ?? [];
           return (
-            <section key={c.key} className="flex min-h-0 flex-col rounded-2xl border border-line bg-[#0e141f]">
+            <section key={c.key} className="flex min-h-0 flex-col rounded-2xl border border-line bg-panel">
               <header className="flex items-center justify-between border-b border-line px-4 py-3">
                 <div className={`flex items-center gap-2 text-sm font-semibold ${c.accent}`}>
                   {c.icon}

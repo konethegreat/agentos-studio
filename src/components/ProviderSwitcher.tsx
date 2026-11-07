@@ -107,7 +107,7 @@ export function ProviderSwitcher({
       {open && (
         <div className="absolute left-0 top-10 z-50 flex w-[44rem] overflow-hidden rounded-2xl border border-line bg-card shadow-2xl">
           <div className="w-56 shrink-0 border-r border-line p-2">
-            <div className="px-2 pb-1.5 pt-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Provider</div>
+            <div className="px-2 pb-1.5 pt-1 text-caption font-semibold uppercase tracking-wide text-slate-500">Provider</div>
             {!cfg && <Loader2 className="m-3 size-4 animate-spin text-slate-500" />}
             {cfg?.providers.map((p) => (
               <button
@@ -120,14 +120,14 @@ export function ProviderSwitcher({
                 {p.active && <Check className="size-3.5 text-emerald-300" />}
               </button>
             ))}
-            <button onClick={onOpenControl} className="mt-2 w-full rounded-lg px-2 py-1.5 text-left text-[11px] text-emerald-300 hover:bg-white/[0.03]">
+            <button onClick={onOpenControl} className="mt-2 w-full rounded-lg px-2 py-1.5 text-left text-label text-emerald-300 hover:bg-white/[0.03]">
               Keys and sign-in in Control Plane
             </button>
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="border-b border-line p-2">
               {current && !current.ready && (
-                <div className="mb-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-200 ring-1 ring-amber-500/25">{current.detail}</div>
+                <div className="mb-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-label text-amber-200 ring-1 ring-amber-500/25">{current.detail}</div>
               )}
               <div className="flex items-center gap-2 rounded-lg bg-canvas px-2 ring-1 ring-line">
                 <Search className="size-3.5 text-slate-500" />
@@ -154,7 +154,7 @@ export function ProviderSwitcher({
                     key={m}
                     disabled={busy !== null}
                     onClick={() => void choose(m)}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-mono text-[11.5px] ${active ? "bg-emerald-500/10 text-emerald-200" : "text-slate-300 hover:bg-white/[0.04]"}`}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-mono text-small ${active ? "bg-emerald-500/10 text-emerald-200" : "text-slate-300 hover:bg-white/[0.04]"}`}
                   >
                     <span className="min-w-0 flex-1 truncate">{m}</span>
                     {busy === m && <Loader2 className="size-3.5 animate-spin" />}
@@ -164,7 +164,7 @@ export function ProviderSwitcher({
               })}
             </div>
             <div className="border-t border-line p-2">
-              <div className="px-1 pb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">MCP servers for Hermes</div>
+              <div className="px-1 pb-1.5 text-caption font-semibold uppercase tracking-wide text-slate-500">MCP servers for Hermes</div>
               <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-1">
                 {servers.map((s) => {
                   const reg = s.agents.find((a) => a.agent === "hermes");
@@ -176,7 +176,7 @@ export function ProviderSwitcher({
                     </label>
                   );
                 })}
-                {servers.length === 0 && <span className="text-[11px] text-slate-500">No MCP servers in Hermes yet</span>}
+                {servers.length === 0 && <span className="text-label text-slate-500">No MCP servers in Hermes yet</span>}
               </div>
             </div>
           </div>

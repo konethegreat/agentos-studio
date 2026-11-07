@@ -118,7 +118,7 @@ export function Guide({ id, action, className = "" }: { id: GuideId; action?: { 
   const g = guideById(id);
   if (!g) return null;
   return (
-    <div role="note" aria-label={`Tip: ${g.title}`} className={`flex items-start gap-2.5 rounded-xl bg-sky-500/[0.07] px-3 py-2.5 text-[12px] ring-1 ring-sky-500/25 ${className}`}>
+    <div role="note" aria-label={`Tip: ${g.title}`} className={`flex items-start gap-2.5 rounded-xl bg-sky-500/[0.07] px-3 py-2.5 text-ui ring-1 ring-sky-500/25 ${className}`}>
       <Lightbulb className="mt-0.5 size-4 shrink-0 text-sky-300" aria-hidden />
       <div className="min-w-0 flex-1">
         <div className="font-medium text-sky-100">{g.title}</div>
@@ -130,17 +130,17 @@ export function Guide({ id, action, className = "" }: { id: GuideId; action?: { 
                 action.run();
                 done(id);
               }}
-              className="text-[11.5px] font-medium text-sky-300 hover:text-sky-200"
+              className="text-small font-medium text-sky-300 hover:text-sky-200"
             >
               {action.label}
             </button>
           )}
           {g.doc && (
-            <button onClick={() => openHelpDoc(g.doc!)} className="inline-flex items-center gap-1 text-[11.5px] text-slate-400 hover:text-slate-200">
+            <button onClick={() => openHelpDoc(g.doc!)} className="inline-flex items-center gap-1 text-small text-slate-400 hover:text-slate-200">
               <BookOpen className="size-3" aria-hidden /> Read more
             </button>
           )}
-          <button onClick={() => dismiss(id)} className="text-[11.5px] text-slate-500 hover:text-slate-300">
+          <button onClick={() => dismiss(id)} className="text-small text-slate-500 hover:text-slate-300">
             Got it
           </button>
         </div>

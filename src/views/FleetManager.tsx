@@ -103,7 +103,7 @@ export function FleetManager({ repos, scanning, onRescan }: { repos: RepoInfo[];
 
       <Card className="overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="border-b border-line bg-white/[0.02] text-left text-[11px] uppercase tracking-wide text-slate-500">
+          <thead className="border-b border-line bg-white/[0.02] text-left text-label uppercase tracking-wide text-slate-500">
             <tr>
               <th className="w-10 px-4 py-2.5">
                 <input
@@ -139,7 +139,7 @@ export function FleetManager({ repos, scanning, onRescan }: { repos: RepoInfo[];
                     <FolderGit2 className="size-4 text-slate-500" />
                     <div className="min-w-0">
                       <div className="font-medium text-slate-100">{r.name}</div>
-                      <div className="max-w-80 truncate text-[11px] text-slate-500" title={r.path}>
+                      <div className="max-w-80 truncate text-label text-slate-500" title={r.path}>
                         {r.remote ? r.remote.replace("https://github.com/", "github: ").replace(/\.git$/, "") : r.path}
                       </div>
                     </div>
@@ -152,11 +152,11 @@ export function FleetManager({ repos, scanning, onRescan }: { repos: RepoInfo[];
                         {s}
                       </Badge>
                     ))}
-                    {r.stack.length > 4 && <span className="text-[11px] text-slate-500">+{r.stack.length - 4}</span>}
+                    {r.stack.length > 4 && <span className="text-label text-slate-500">+{r.stack.length - 4}</span>}
                   </div>
                 </td>
                 <td className="px-2 py-2.5">
-                  <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-400">
+                  <span className="inline-flex items-center gap-1 font-mono text-label text-slate-400">
                     <GitBranch className="size-3" />
                     {r.branch}
                   </span>
@@ -187,7 +187,7 @@ export function FleetManager({ repos, scanning, onRescan }: { repos: RepoInfo[];
       {results && (
         <Card className="mt-4 p-4">
           <div className="mb-2 text-sm font-semibold text-slate-100">Last sync</div>
-          <ul className="space-y-1 font-mono text-[11.5px]">
+          <ul className="space-y-1 font-mono text-small">
             {results.map((r) => (
               <li key={r.path} className={r.error ? "text-red-300" : "text-slate-400"}>
                 {r.name}: {r.error ?? `${r.actions.filter(([, a]) => a !== "unchanged").length} files changed, ${r.commit}`}
@@ -257,7 +257,7 @@ function NewProjectModal({ onClose, onCreated }: { onClose: () => void; onCreate
         <ul className="space-y-1.5 text-sm text-slate-300">
           {steps.map((s) => (
             <li key={s} className="flex items-start gap-2">
-              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-ok" />
               <span className="break-all">{s}</span>
             </li>
           ))}

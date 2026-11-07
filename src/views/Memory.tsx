@@ -104,7 +104,7 @@ export function Memory() {
       <div className="flex items-center gap-3 border-b border-line px-4 py-3">
         <Brain className="size-4 text-emerald-300" />
         <div className="text-sm font-semibold text-slate-100">Memory</div>
-        <span className="text-[11px] text-slate-500">
+        <span className="text-label text-slate-500">
           {notes === null ? "indexing" : `${notes.length} notes in the index`}
         </span>
         <div className="relative ml-auto">
@@ -151,7 +151,7 @@ export function Memory() {
             {["decision", "convention", "gotcha", "episode", "fact"].map((k) => (
               <span
                 key={k}
-                className={`rounded-full px-2 py-0.5 text-[10.5px] font-medium ring-1 ${KIND_STYLE[k]}`}
+                className={`rounded-full px-2 py-0.5 text-caption font-medium ring-1 ${KIND_STYLE[k]}`}
               >
                 {k} {counts[k] ?? 0}
               </span>
@@ -169,20 +169,20 @@ export function Memory() {
                 <li key={n.path} className="px-4 py-2.5 hover:bg-white/[0.02]">
                   <div className="flex items-center gap-2">
                     <FileText className="size-3.5 shrink-0 text-slate-500" />
-                    <span className="truncate text-[12.5px] font-medium text-slate-200">{n.title || n.path}</span>
-                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ${KIND_STYLE[n.kind] ?? KIND_STYLE.fact}`}>
+                    <span className="truncate text-body-sm font-medium text-slate-200">{n.title || n.path}</span>
+                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-2xs font-medium ring-1 ${KIND_STYLE[n.kind] ?? KIND_STYLE.fact}`}>
                       {n.kind}
                     </span>
                     {n.status === "superseded" && (
-                      <span className="shrink-0 rounded-full bg-slate-600/20 px-1.5 py-0.5 text-[10px] text-slate-400 ring-1 ring-slate-500/30">
+                      <span className="shrink-0 rounded-full bg-slate-600/20 px-1.5 py-0.5 text-2xs text-slate-400 ring-1 ring-slate-500/30">
                         superseded
                       </span>
                     )}
-                    <span className="ml-auto shrink-0 text-[10.5px] text-slate-500" title="Notes linking here">
+                    <span className="ml-auto shrink-0 text-caption text-slate-500" title="Notes linking here">
                       {n.in_degree} link{n.in_degree === 1 ? "" : "s"}
                     </span>
                   </div>
-                  <div className="mt-0.5 truncate pl-5 font-mono text-[10.5px] text-slate-500">{n.path}</div>
+                  <div className="mt-0.5 truncate pl-5 font-mono text-caption text-slate-500">{n.path}</div>
                 </li>
               ))}
             </ul>
@@ -190,7 +190,7 @@ export function Memory() {
         </div>
 
         <div className="min-h-0 overflow-y-auto">
-          <div className="flex items-center gap-2 border-b border-line px-4 py-2 text-[11.5px] font-medium text-slate-400">
+          <div className="flex items-center gap-2 border-b border-line px-4 py-2 text-small font-medium text-slate-400">
             <Sparkles className="size-3.5 text-violet-300" /> Recent memory activity
           </div>
           {recent.length === 0 ? (
@@ -200,16 +200,16 @@ export function Memory() {
           ) : (
             <ul className="divide-y divide-line/60">
               {recent.map((e, i) => (
-                <li key={`${e.session_id}-${e.turn}-${i}`} className="px-4 py-2 text-[11.5px]">
+                <li key={`${e.session_id}-${e.turn}-${i}`} className="px-4 py-2 text-small">
                   <div className="flex items-center gap-2">
                     <span className={e.op === "write" ? "text-amber-300" : "text-sky-300"}>{e.op}</span>
                     <span className="text-slate-500">{e.target}</span>
-                    <span className="truncate font-mono text-[10.5px] text-slate-300" title={e.path}>
+                    <span className="truncate font-mono text-caption text-slate-300" title={e.path}>
                       {e.path || e.tool}
                     </span>
-                    <span className="ml-auto shrink-0 text-[10px] text-slate-500">{ago(e.at)}</span>
+                    <span className="ml-auto shrink-0 text-2xs text-slate-500">{ago(e.at)}</span>
                   </div>
-                  <div className="truncate text-[10px] text-slate-600">
+                  <div className="truncate text-2xs text-slate-600">
                     turn {e.turn} in {e.session_id}
                   </div>
                 </li>

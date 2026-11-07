@@ -63,22 +63,22 @@ function CodeBlock({ node, children, workingDir }: { node?: HastNode; children: 
   }
 
   return (
-    <div className="group/code my-3 overflow-hidden rounded-xl border border-line bg-[#0a0e15]">
+    <div className="group/code my-3 overflow-hidden rounded-xl border border-line bg-inset">
       <div className="flex items-center justify-between border-b border-line bg-white/[0.02] px-3 py-1.5">
-        <span className="font-mono text-[11px] text-slate-500">{lang || "text"}</span>
+        <span className="font-mono text-label text-slate-500">{lang || "text"}</span>
         <div className="flex items-center gap-1">
           {workingDir && (
-            <button onClick={() => setApplying(true)} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-slate-400 hover:bg-white/5 hover:text-slate-100">
+            <button onClick={() => setApplying(true)} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-label text-slate-400 hover:bg-white/5 hover:text-slate-100">
               <FileDown className="size-3.5" /> Apply
             </button>
           )}
-          <button onClick={() => void copy()} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-slate-400 hover:bg-white/5 hover:text-slate-100">
-            {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+          <button onClick={() => void copy()} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-label text-slate-400 hover:bg-white/5 hover:text-slate-100">
+            {copied ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
       </div>
-      <pre className="overflow-x-auto p-3.5 font-mono text-[12.5px] leading-relaxed">{children}</pre>
+      <pre className="overflow-x-auto p-3.5 font-mono text-body-sm leading-relaxed">{children}</pre>
       {applying && workingDir && (
         <Modal
           title="Apply code to a file"
@@ -97,7 +97,7 @@ function CodeBlock({ node, children, workingDir }: { node?: HastNode; children: 
           <Field label="File path" hint={`Relative to ${workingDir}. Existing files are overwritten; line endings are kept.`}>
             <input autoFocus className={inputClass} value={path} onChange={(e) => setPath(e.target.value)} placeholder="src/main.rs" />
           </Field>
-          <div className="mt-3 text-[11px] text-muted">{code.split("\n").length} lines</div>
+          <div className="mt-3 text-label text-muted">{code.split("\n").length} lines</div>
         </Modal>
       )}
     </div>

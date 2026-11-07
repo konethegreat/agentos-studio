@@ -97,7 +97,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
             <ShieldAlert className="mt-0.5 size-5 shrink-0 text-amber-300" />
             <div className="min-w-0 space-y-3">
               <p className="text-sm leading-relaxed text-slate-200">{pending.summary}</p>
-              <p className="font-mono text-[11px] text-slate-500">Permission: {pending.action}</p>
+              <p className="font-mono text-label text-slate-500">Permission: {pending.action}</p>
               <label className="flex items-center gap-2 text-xs text-slate-400" title="Sets this action to Allow in Safety. You can change it back there at any time.">
                 <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} className="accent-emerald-500" />
                 Always allow this kind of action

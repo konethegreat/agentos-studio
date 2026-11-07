@@ -139,13 +139,13 @@ export function Skills({ onUseSkill }: { onUseSkill: (name: string) => void }) {
               className={`mb-0.5 block w-full rounded-lg px-2.5 py-2 text-left ${selected === s.name ? "bg-white/[0.07]" : "hover:bg-white/[0.03]"}`}
             >
               <div className="flex items-center gap-1.5">
-                <span className="truncate text-[12.5px] text-slate-200">{s.name}</span>
-                {s.version && <span className="shrink-0 text-[10px] text-slate-600">v{s.version}</span>}
+                <span className="truncate text-body-sm text-slate-200">{s.name}</span>
+                {s.version && <span className="shrink-0 text-2xs text-slate-600">v{s.version}</span>}
               </div>
-              <div className="line-clamp-2 text-[10.5px] leading-relaxed text-slate-500">{s.description || s.category}</div>
+              <div className="line-clamp-2 text-caption leading-relaxed text-slate-500">{s.description || s.category}</div>
             </button>
           ))}
-          {skills && shown.length === 0 && <div className="px-3 py-6 text-center text-[11.5px] text-slate-600">No skills match.</div>}
+          {skills && shown.length === 0 && <div className="px-3 py-6 text-center text-small text-slate-600">No skills match.</div>}
         </div>
       </aside>
 
@@ -153,7 +153,7 @@ export function Skills({ onUseSkill }: { onUseSkill: (name: string) => void }) {
         <div className="flex items-center gap-3 border-b border-line px-5 py-3">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-slate-100">{current?.name ?? "Skills"}</div>
-            <div className="truncate text-[11px] text-slate-500">
+            <div className="truncate text-label text-slate-500">
               {current ? `${current.category} · ${current.path}` : "What Hermes can load. Installed from the skills tree; hub installs go through the Hermes CLI."}
             </div>
           </div>
@@ -206,17 +206,17 @@ export function Skills({ onUseSkill }: { onUseSkill: (name: string) => void }) {
                 </div>
                 {hub && (
                   <div className="mt-3 space-y-1.5">
-                    {hub.length === 0 && <div className="text-[11.5px] text-slate-500">Nothing found.</div>}
+                    {hub.length === 0 && <div className="text-small text-slate-500">Nothing found.</div>}
                     {hub.map((h) => (
                       <div key={h.identifier} className="flex items-start gap-2 rounded-lg bg-canvas/60 px-3 py-2">
                         <Package className="mt-0.5 size-3.5 shrink-0 text-slate-500" />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[12.5px] text-slate-200">{h.name}</span>
+                            <span className="text-body-sm text-slate-200">{h.name}</span>
                             <Badge className="bg-white/5 text-slate-400 ring-white/10">{h.source}</Badge>
                             {h.trust_level && <Badge className="bg-sky-500/10 text-sky-300 ring-sky-500/25">{h.trust_level}</Badge>}
                           </div>
-                          <div className="text-[10.5px] leading-relaxed text-slate-500">{h.description}</div>
+                          <div className="text-caption leading-relaxed text-slate-500">{h.description}</div>
                         </div>
                         <Button size="sm" busy={busy === h.identifier} onClick={() => void install(h.identifier)} icon={<Download className="size-3.5" />}>
                           Install
