@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -22,10 +22,14 @@ pub const EV_PTY_EXIT: &str = "agentos://pty-exit";
 
 /// Bytes of output kept per terminal so a remounted view can replay its screen.
 const SCROLLBACK_BYTES: usize = 512 * 1024;
+/// `type_when_ready` waits for this much silence after the first output, at most READY_TIMEOUT.
+const READY_QUIET: Duration = Duration::from_millis(1500);
+const READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct SpawnRequest {
-    /// `shell`, `hermes`, `hermes-tui`, `hermes-resume`, `claude` or `claude-resume`.
+    /// `shell`, `hermes`, `hermes-tui`, `hermes-resume`, `hermes-tui-resume`, `claude` or
+    /// `claude-resume`.
     pub profile: String,
     #[serde(default)]
     pub session_id: Option<String>,
@@ -35,6 +39,10 @@ pub struct SpawnRequest {
     pub cols: u16,
     #[serde(default = "default_rows")]
     pub rows: u16,
+    /// Typed into the terminal once the program has drawn and gone quiet, for example
+    /// `/rollback` into the Hermes TUI. The user still confirms whatever it opens.
+    #[serde(default)]
+    pub type_when_ready: Option<String>,
 }
 
 fn default_cols() -> u16 {
@@ -132,6 +140,17 @@ pub fn resolve_profile(
         }
         "hermes" => ("hermes".into(), vec![], "Hermes".into()),
         "hermes-tui" => ("hermes".into(), vec!["--tui".into()], "Hermes TUI".into()),
+        // The Ink TUI serves `/rollback` (checkpoint restore), which the gateway refuses for
+        // `hermes chat -q` and ACP clients.
+        "hermes-tui-resume" => {
+            let s = sid()?;
+            let short: String = s.chars().take(8).collect();
+            (
+                "hermes".into(),
+                vec!["--tui".into(), "--resume".into(), s],
+                format!("Hermes TUI {short}"),
+            )
+        }
         "hermes-resume" => {
             let s = sid()?;
             let short: String = s.chars().take(8).collect();
@@ -283,6 +302,7 @@ pub fn spawn_with(sink: Sink, state: &PtyState, req: SpawnRequest) -> Result<Pty
         started_at: crate::store::now(),
     };
     let scrollback = Arc::new(Mutex::new(Scrollback::default()));
+    let last_output: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
     state
         .sessions
         .lock()
@@ -300,7 +320,7 @@ pub fn spawn_with(sink: Sink, state: &PtyState, req: SpawnRequest) -> Result<Pty
 
     // Reader: bytes -> UTF-8 chunks -> UI.
     {
-        let (sink, id, sb) = (sink.clone(), id.clone(), scrollback);
+        let (sink, id, sb, last) = (sink.clone(), id.clone(), scrollback, last_output.clone());
         std::thread::spawn(move || {
             let mut chunk = [0u8; 16 * 1024];
             let mut carry: Vec<u8> = Vec::new();
@@ -308,6 +328,9 @@ pub fn spawn_with(sink: Sink, state: &PtyState, req: SpawnRequest) -> Result<Pty
                 match reader.read(&mut chunk) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
+                        if let Ok(mut l) = last.lock() {
+                            *l = Some(Instant::now());
+                        }
                         let seq = push_scrollback(&sb, &chunk[..n]);
                         carry.extend_from_slice(&chunk[..n]);
                         let text = drain_utf8(&mut carry);
@@ -320,6 +343,30 @@ pub fn spawn_with(sink: Sink, state: &PtyState, req: SpawnRequest) -> Result<Pty
                             sink(EV_PTY_DATA, serde_json::to_value(ev).unwrap_or_default());
                         }
                     }
+                }
+            }
+        });
+    }
+
+    if let Some(text) = req.type_when_ready.filter(|t| !t.trim().is_empty()) {
+        let (sessions, id) = (state.sessions.clone(), id.clone());
+        std::thread::spawn(move || {
+            let deadline = Instant::now() + READY_TIMEOUT;
+            while Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(200));
+                let quiet = last_output
+                    .lock()
+                    .ok()
+                    .and_then(|l| *l)
+                    .is_some_and(|t| t.elapsed() >= READY_QUIET);
+                if quiet {
+                    break;
+                }
+            }
+            if let Ok(mut map) = sessions.lock() {
+                if let Some(s) = map.get_mut(&id) {
+                    let _ = s.writer.write_all(text.as_bytes());
+                    let _ = s.writer.flush();
                 }
             }
         });
