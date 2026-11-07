@@ -59,7 +59,9 @@ where possible. It reads the diff, the test output and the mission acceptance cr
 3. the reviewer is not the implementer,
 4. CI is green on the PR head,
 5. the spend is inside the mission budget,
-6. the repository is on the auto-merge allow list.
+6. the repository is on the auto-merge allow list,
+7. `hermes verify` did not fail in the repository (a repository with no build or test recipe
+   passes this check).
 
 Any one failing means the PR waits for a human. That is the whole safety story and it is
 deliberately boring.
@@ -68,9 +70,24 @@ deliberately boring.
 
 - **Scheduler:** a tick every minute reads due missions and enqueues them, respecting a global
   concurrency cap and a per-repository cap of one running mission.
-- **Worker:** each mission runs as a Hermes session in the repository folder with the role prompt,
-  the mission acceptance criteria and `project_brief` plus `recall` preloaded. Output is a bus task
-  completion with a summary and a PR URL.
+- **Hermes missions run on Hermes' kanban board.** Hermes owns execution: Dispatch runs
+  `hermes kanban --board agentos-studio create` with the goal and acceptance criteria, the repository
+  folder as the workspace (`dir:`), the implementer profile from MCP and Providers > Hermes, the
+  mission's pinned model (set at creation, because the dispatcher claims a task within seconds) and
+  the mission time cap (`--max-runtime`). The dispatcher inside the Hermes gateway runs the worker,
+  so a mission keeps going with Studio closed. When the worker asks for review, kanban runs its own
+  review pass and marks the task done; Studio treats that as "work finished", never as approval.
+  The scheduler then records the metered spend of every Hermes session the task used, runs
+  `hermes verify --json --skip-start` in the repository, and moves the mission to Studio review.
+  A rejection queues the mission again and the next attempt is a new kanban task that carries the
+  reviewer's note. The repository must be a Hermes project: a mission never runs in the home folder.
+- **Claude Code and Antigravity missions** keep the Agent Bus: a bus task completion with a summary
+  and a PR URL moves them to review.
+- **Budgets** count only metered providers: the spend is read from Hermes usage data in `state.db`
+  (worker sessions and Hermes reviewer sessions); subscriptions count zero. A Hermes mission whose
+  metered spend passes its budget is blocked.
+- **Time caps:** a per-task cap for Hermes missions (`--max-runtime`), and Hermes' own
+  `agent.run_budget_seconds` for every Hermes run, set with `hermes config set`.
 - **Review:** a second session, different provider, prompts for a verdict as JSON.
 - **Keep awake:** while any mission is running, the app holds a Windows execution-state request so
   the machine does not sleep, and releases it when the queue drains.

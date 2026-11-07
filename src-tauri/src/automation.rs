@@ -98,6 +98,14 @@ pub fn tick(v: &Vault) -> TickReport {
         let Some(task) = m.task_id.as_deref() else {
             continue;
         };
+        if crate::kanban::is_kanban(Some(task)) {
+            match advance_kanban(m, task) {
+                Ok(true) => report.moved_to_review.push(m.id.clone()),
+                Ok(false) => {}
+                Err(e) => report.error = Some(e.to_string()),
+            }
+            continue;
+        }
         if v.task_state(task) == Some(State::Completed) {
             // The worker's summary names its pull request; keep it before the body moves on.
             if let Some(body) = v.task_body(task) {
@@ -135,6 +143,49 @@ pub fn tick(v: &Vault) -> TickReport {
     keep_awake(report.running > 0);
     report.kept_awake = report.running > 0;
     report
+}
+
+/// A running Hermes mission: read its kanban task. Finished work is measured (metered spend of
+/// every Hermes session it used), checked with `hermes verify`, and sent to Studio's reviewer;
+/// kanban's own review pass is never taken as approval. Returns true when it moved to review.
+fn advance_kanban(m: &Mission, task: &str) -> anyhow::Result<bool> {
+    use crate::kanban::{self, Next};
+    let view = kanban::show(task)?;
+    let spent = crate::usage::metered_cost(&kanban::session_ids(&view));
+    match kanban::next(&view) {
+        Next::Wait => {
+            if over_budget(m, spent) {
+                missions::block(
+                    &m.id,
+                    &format!(
+                        "Stopped: metered spend ${spent:.2} passed the ${:.2} budget",
+                        m.budget_usd
+                    ),
+                    false,
+                )?;
+            }
+            Ok(false)
+        }
+        Next::Block(reason) => {
+            missions::block(&m.id, &format!("Hermes kanban: {reason}"), false)?;
+            Ok(false)
+        }
+        Next::Review(summaries) => {
+            if let Some(url) = missions::pull_url(&summaries) {
+                missions::set_pr(&m.id, &url)?;
+            }
+            if let Some(dir) = crate::review_agent::project_dir(&m.repo).filter(|d| d.is_dir()) {
+                missions::set_verify(&m.id, &kanban::verify(&dir))?;
+            }
+            missions::submit_for_review(&m.id, spent)?;
+            Ok(true)
+        }
+    }
+}
+
+/// A metered budget that this attempt alone has passed. Subscriptions never count. Pure.
+pub fn over_budget(m: &Mission, attempt_spend: f64) -> bool {
+    m.budget_usd > 0.0 && m.spent_usd + attempt_spend > m.budget_usd
 }
 
 /// Prevent the machine from sleeping while missions are in flight.
@@ -198,7 +249,43 @@ mod tests {
             pr_url: None,
             created_at: 0,
             updated_at: 0,
+            verify: None,
         }
+    }
+
+    #[test]
+    fn hermes_missions_use_kanban_and_the_rest_keep_the_bus() {
+        assert!(missions::uses_kanban(&m("M-1", "a", "queued")));
+        for agent in ["claude-code", "antigravity", "qoder"] {
+            let mut x = m("M-2", "a", "queued");
+            x.agent = agent.into();
+            assert!(
+                !missions::uses_kanban(&x),
+                "{agent} keeps the Agent Bus path"
+            );
+        }
+        // Both paths share the scheduler's caps: startable() does not look at the agent.
+        let q = [m("M-1", "a", "queued"), {
+            let mut x = m("M-2", "a", "queued");
+            x.agent = "claude-code".into();
+            x
+        }];
+        let queued: Vec<&Mission> = q.iter().collect();
+        assert_eq!(
+            startable(&queued, &[], 5),
+            vec!["M-1"],
+            "one per repository, any agent"
+        );
+    }
+
+    #[test]
+    fn only_a_metered_overrun_stops_a_mission() {
+        let mut x = m("M-1", "a", "running");
+        assert!(!over_budget(&x, 50.0), "no budget set means no ceiling");
+        x.budget_usd = 1.0;
+        x.spent_usd = 0.4;
+        assert!(!over_budget(&x, 0.5));
+        assert!(over_budget(&x, 0.7));
     }
 
     #[test]

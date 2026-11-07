@@ -17,6 +17,7 @@ pub mod github;
 pub mod help;
 pub mod hermes_engine;
 pub mod hermes_surfaces;
+pub mod kanban;
 pub mod mcp_manager;
 pub mod mcp_stdio;
 pub mod memory_index;
@@ -251,6 +252,8 @@ pub fn run_gui() {
             ops::hermes_set_role_profile,
             ops::hermes_notify_target,
             ops::hermes_set_notify_target,
+            ops::hermes_time_caps,
+            ops::hermes_set_time_caps,
             commands::boot_snapshot,
             commands::boot_run,
             commands::boot_logs_dir,

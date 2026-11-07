@@ -384,6 +384,8 @@ export const studio = {
     setRoleProfile: (role: "implementer" | "reviewer", profile: string) => invoke<void>("hermes_set_role_profile", { role, profile }),
     notifyTarget: () => invoke<string | null>("hermes_notify_target"),
     setNotifyTarget: (target: string, test: boolean) => invoke<string>("hermes_set_notify_target", { target, test }),
+    timeCaps: () => invoke<{ mission_max_runtime: number | null; run_budget_seconds: number | null }>("hermes_time_caps"),
+    setTimeCaps: (missionMaxRuntime: number | null, runBudgetSeconds: number | null) => invoke<void>("hermes_set_time_caps", { missionMaxRuntime, runBudgetSeconds }),
   },
   pty: {
     spawn: (request: PtySpawn) => invoke<PtyInfo>("pty_spawn", { request }),

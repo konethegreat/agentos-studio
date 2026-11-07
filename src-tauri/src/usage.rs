@@ -250,9 +250,59 @@ pub fn credits() -> Vec<Credits> {
     out
 }
 
+/// Subscriptions are flat rate: a session on them costs nothing at the margin, whatever Hermes
+/// estimates. Only metered providers count against a mission budget. Pure.
+pub fn is_flat(provider: &str) -> bool {
+    let p = provider.trim().to_lowercase();
+    p.starts_with("claude-subscription") || p == "antigravity-oauth"
+}
+
+/// Metered spend of Hermes sessions, from `state.db`: each session's `estimated_cost_usd` (or
+/// `actual_cost_usd` when Hermes has one), skipping flat-rate providers. Unknown ids count zero.
+pub fn metered_cost_of(c: &rusqlite::Connection, session_ids: &[String]) -> f64 {
+    let mut total = 0.0;
+    for id in session_ids.iter().filter(|s| !s.trim().is_empty()) {
+        let row: Option<(Option<String>, Option<f64>, Option<f64>)> = c
+            .query_row(
+                "SELECT billing_provider, estimated_cost_usd, actual_cost_usd FROM sessions WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .ok();
+        if let Some((provider, est, actual)) = row {
+            if provider.as_deref().is_some_and(is_flat) {
+                continue;
+            }
+            total += actual.filter(|a| *a > 0.0).or(est).unwrap_or(0.0).max(0.0);
+        }
+    }
+    total
+}
+
+pub fn metered_cost(session_ids: &[String]) -> f64 {
+    crate::hermes_engine::open_ro()
+        .map(|c| metered_cost_of(&c, session_ids))
+        .unwrap_or(0.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_metered_sessions_count_against_a_budget() {
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        c.execute_batch(
+            "CREATE TABLE sessions (id TEXT, billing_provider TEXT, estimated_cost_usd REAL, actual_cost_usd REAL);
+             INSERT INTO sessions VALUES ('a', 'claude-subscription-directsdk-experimental', 4.0, NULL);
+             INSERT INTO sessions VALUES ('b', 'openrouter', 0.25, NULL);
+             INSERT INTO sessions VALUES ('c', 'openrouter', 0.10, 0.30);
+             INSERT INTO sessions VALUES ('d', 'antigravity-oauth', 9.0, NULL);",
+        )
+        .unwrap();
+        let ids: Vec<String> = ["a", "b", "c", "d", "missing"].map(String::from).to_vec();
+        assert!((metered_cost_of(&c, &ids) - 0.55).abs() < 1e-9);
+    }
     use serde_json::json;
 
     #[test]

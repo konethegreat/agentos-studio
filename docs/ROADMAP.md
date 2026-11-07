@@ -295,10 +295,17 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
 - Checkpoints on new Hermes sessions; undo through the Ink TUI `/rollback` (shipped, verified by
   `tests/live_checkpoints.rs`). Resumed turns no longer send creation flags Hermes refuses, and a
   skill picked mid-chat is invoked as `/<skill>`.
-- Hermes missions through `hermes kanban` (daemon keeps them running with the app closed); Claude
-  Code and Antigravity missions keep `automation.rs`. The Studio review gate stays the only merge.
-- Budgets from usage data; time caps through `agent.run_budget_seconds`.
-- `hermes verify --json` as a pre-review check stored on the mission.
+- Hermes missions through `hermes kanban` on the `agentos-studio` board (shipped). The dispatcher now
+  runs inside the Hermes gateway (`hermes kanban daemon` is deprecated), so missions continue with
+  Studio closed. Kanban's own review pass is not approval; Studio's reviewer and `merge_blockers`
+  stay the only route to a merge. Claude Code and Antigravity missions keep the Agent Bus path.
+  Verified by `tests/live_kanban_mission.rs`.
+- Budgets from Hermes usage data, metered providers only (shipped). `--usage-file` only applies to
+  `hermes -z`; the reviewer uses `chat --query-file`, so its cost is read from `state.db` by the
+  session id Hermes prints. Time caps: `--max-runtime` per Hermes mission (per task, so it does not
+  cap chats) plus `agent.run_budget_seconds` through `hermes config set` (shipped).
+- `hermes verify --json` recorded on the mission before review; a failed verify blocks merge
+  (shipped).
 - Hermes built-in memory and `hermes journey` beside the vault in Brain, read-only (shipped). The
   memory ledger records Hermes' `memory` tool as target `hermes`, file MEMORY.md or USER.md.
 - Surface cron, profiles (implementer and reviewer roles), `hermes send` on mission done or failed,
