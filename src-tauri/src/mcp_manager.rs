@@ -522,9 +522,16 @@ fn json_remove(agent: &str, name: &str) -> Result<String> {
 /// Only the command differs: change that one key, so Hermes keeps everything else it stores for
 /// the server (timeouts, enabled state, per-tool settings) instead of a remove and re-add.
 fn only_command_changes(existing: &ServerDef, spec: &ServerSpec) -> bool {
+    // Hermes stores Windows paths with forward slashes; the same path with backslashes is the
+    // same argument, not a change that needs a remove and re-add.
+    let norm = |s: &String| s.replace('\\', "/").to_lowercase();
     existing.transport == "stdio"
         && spec.transport == "stdio"
-        && existing.args == spec.args
+        && existing
+            .args
+            .iter()
+            .map(norm)
+            .eq(spec.args.iter().map(norm))
         && existing.env == spec.env_vars
 }
 
@@ -1296,6 +1303,14 @@ mod tests {
             ..Default::default()
         };
         assert!(only_command_changes(&existing, &spec));
+        let slashes = ServerDef {
+            args: vec!["--mcp-stdio".into(), "--vault".into(), "C:\\vault".into()],
+            ..existing.clone()
+        };
+        assert!(
+            only_command_changes(&slashes, &spec),
+            "same path, other slash style"
+        );
         let other_vault = ServerDef {
             args: vec!["--mcp-stdio".into(), "--vault".into(), "D:/other".into()],
             ..existing.clone()
