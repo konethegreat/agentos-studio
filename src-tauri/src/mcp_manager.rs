@@ -706,6 +706,58 @@ pub fn cutover_agentos_hub(vault: &Path) -> Result<Vec<AgentOutcome>> {
     )
 }
 
+/// Agents whose agentos-hub is a Studio-staged hub (under `root`) but not `want`: what an app
+/// update leaves behind. Agents that point anywhere else (a dev build, a hand-written path) or do
+/// not have the hub are left alone.
+pub fn managed_outdated_agents(
+    sources: &BTreeMap<String, BTreeMap<String, ServerDef>>,
+    root: &Path,
+    want: &Path,
+) -> Vec<String> {
+    let norm = |s: &str| s.replace('\\', "/").to_lowercase();
+    let root = norm(&root.display().to_string());
+    let want = norm(&want.display().to_string());
+    AGENTS
+        .iter()
+        .filter(|a| {
+            sources
+                .get(**a)
+                .and_then(|m| m.get("agentos-hub"))
+                .and_then(|d| d.command.as_deref())
+                .map(norm)
+                .is_some_and(|c| c != want && c.starts_with(&format!("{root}/")))
+        })
+        .map(|a| a.to_string())
+        .collect()
+}
+
+/// After an app update, move agents from the previous staged hub to this version's. Returns the
+/// agents moved (empty when nothing was outdated). Running sessions keep their old binary, which
+/// is never deleted, so this is safe while agents are open.
+pub fn auto_update_hub(vault: &Path) -> Result<Vec<AgentOutcome>> {
+    let root = hub_root();
+    let want = hub_binary_for(&root, env!("CARGO_PKG_VERSION"));
+    let sources = all_sources();
+    let targets = managed_outdated_agents(&sources, &root, &want);
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+    let exe = stage_hub_binary()?.display().to_string();
+    let mut out = Vec::new();
+    for agent in &targets {
+        // Only the binary changes: keep each agent's own arguments (its vault, its flags).
+        let mut spec = agentos_hub_spec(&exe, vault);
+        if let Some(d) = sources.get(agent).and_then(|m| m.get("agentos-hub")) {
+            if d.args.iter().any(|a| a == "--mcp-stdio") {
+                spec.args = d.args.clone();
+            }
+            spec.env_vars = d.env.clone();
+        }
+        out.extend(add_mcp_server(&spec, std::slice::from_ref(agent))?);
+    }
+    Ok(out)
+}
+
 pub fn agentos_hub_spec(exe: &str, vault: &Path) -> ServerSpec {
     ServerSpec {
         name: "agentos-hub".into(),
@@ -1264,6 +1316,40 @@ pub fn gh_token() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_studio_staged_outdated_hubs_are_moved() {
+        let def = |c: &str| ServerDef {
+            transport: "stdio".into(),
+            command: Some(c.into()),
+            args: vec!["--mcp-stdio".into()],
+            ..Default::default()
+        };
+        let mut src: BTreeMap<String, BTreeMap<String, ServerDef>> = BTreeMap::new();
+        let mut put = |a: &str, c: &str| {
+            src.entry(a.into())
+                .or_default()
+                .insert("agentos-hub".into(), def(c));
+        };
+        put(
+            "hermes",
+            "C:\\Users\\u\\AppData\\Local\\AgentOS Hub\\0.9.2\\agentos-studio.exe",
+        );
+        put(
+            "claude-code",
+            "c:/users/u/appdata/local/agentos hub/0.9.3/agentos-studio.exe",
+        );
+        put(
+            "qoder",
+            "C:/dev/agentos-studio/target/release/agentos-studio.exe",
+        );
+        let root = Path::new("C:/Users/u/AppData/Local/AgentOS Hub");
+        let want = hub_binary_for(root, "0.9.3");
+        assert_eq!(
+            managed_outdated_agents(&src, root, &want),
+            vec!["hermes".to_string()]
+        );
+    }
 
     #[test]
     fn hub_binary_is_staged_per_version_and_reused() {
