@@ -58,7 +58,7 @@ pub fn latest_since(cwd: &Path, since: i64) -> Result<Option<Plan>> {
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
-        if m >= since && best.as_ref().is_none_or(|(b, _)| m > *b) {
+        if m >= since && best.as_ref().map_or(true, |(b, _)| m > *b) {
             best = Some((m, p));
         }
     }
