@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Brain, FileText, RefreshCw, Search, Sparkles } from "lucide-react";
+import { Brain, FileText, RefreshCw, Search, Sparkles, Upload } from "lucide-react";
 import { api, errorText, type MemoryEntry, type MemoryNote } from "../lib/api";
 import { useToast } from "../components/Toasts";
 
@@ -26,6 +26,7 @@ export function Memory() {
   const [query, setQuery] = useState("");
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [notion, setNotion] = useState<{ connected: boolean; has_parent: boolean } | null>(null);
 
   async function load() {
     setBusy(true);
@@ -42,8 +43,44 @@ export function Memory() {
 
   useEffect(() => {
     void load();
+    void api.notionStatus().then(setNotion).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function publish() {
+    setBusy(true);
+    try {
+      const r = await api.notionPublish(!r0connected());
+      const changed = r.pages.filter((p) => !p.action.startsWith("unchanged"));
+      toast(
+        r.dry_run ? "info" : r.error ? "error" : "ok",
+        r.dry_run
+          ? `Dry run: ${changed.length} page(s) would change. Set NOTION_API_KEY to publish.`
+          : r.error ?? `Published ${changed.length} page(s) to Notion`,
+      );
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function r0connected() {
+    return notion?.connected ?? false;
+  }
+
+  async function pullInbox() {
+    setBusy(true);
+    try {
+      const n = await api.notionPullInbox();
+      toast("ok", `${n} note(s) pulled into 00_Inbox`);
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const list = notes ?? [];
@@ -74,6 +111,26 @@ export function Memory() {
             placeholder="Filter notes"
             className="h-8 w-56 rounded-lg bg-white/[0.03] pl-7 pr-2 text-xs text-slate-200 outline-none ring-1 ring-line focus:ring-emerald-500/40"
           />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => void publish()}
+            disabled={busy}
+            title={notion?.connected ? "Publish the digest, tasks, missions and fleet" : "No NOTION_API_KEY set: this runs a dry run"}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-slate-300 ring-1 ring-line hover:bg-white/[0.04] disabled:opacity-50"
+          >
+            <Upload className="size-3.5" /> {notion?.connected ? "Publish" : "Dry run"}
+          </button>
+          {notion?.connected && (
+            <button
+              onClick={() => void pullInbox()}
+              disabled={busy}
+              title="Pull the Notion inbox database into 00_Inbox"
+              className="inline-flex h-8 items-center rounded-lg px-2.5 text-xs text-slate-300 ring-1 ring-line hover:bg-white/[0.04]"
+            >
+              Inbox
+            </button>
+          )}
         </div>
         <button
           onClick={() => void load()}
