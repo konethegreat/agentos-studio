@@ -371,7 +371,48 @@ export interface AuditFinding {
   fixed_versions: string[];
 }
 
+export interface Route {
+  provider: string;
+  model: string;
+  base_url?: string;
+}
+
+export interface Credential {
+  provider: string;
+  index: number;
+  label: string;
+  kind: string;
+  id: string;
+  priority: number;
+  source: string;
+  current: boolean;
+  status: string;
+}
+
+export interface Moa {
+  default_preset: string;
+  active_preset: string;
+  presets: { name: string; enabled: boolean; reference_models: Route[]; aggregator: Route | null }[];
+}
+
+export interface FolderModel {
+  folder: string;
+  provider: string;
+  model: string;
+}
+
 export const studio = {
+  models: {
+    fallbackChain: () => invoke<Route[]>("hermes_fallback_chain"),
+    setFallbackChain: (chain: Route[], a: Approved = {}) => invoke<void>("hermes_set_fallback_chain", { chain, ...a }),
+    credentials: () => invoke<Credential[]>("hermes_credentials"),
+    credentialAction: (provider: string, id: string, action: "priority" | "reset" | "remove", priority: number | null, a: Approved = {}) =>
+      invoke<string>("hermes_credential_action", { provider, id, action, priority, ...a }),
+    moa: () => invoke<Moa>("hermes_moa"),
+    setActiveMoa: (preset: string) => invoke<void>("hermes_set_active_moa", { preset }),
+    folderModels: () => invoke<FolderModel[]>("folder_models"),
+    setFolderModels: (entries: FolderModel[]) => invoke<void>("set_folder_models", { entries }),
+  },
   plans: {
     prompt: (task: string, cwd: string) => invoke<string>("plan_prompt", { task, cwd }),
     runPrompt: (path: string) => invoke<string>("plan_run_prompt", { path }),

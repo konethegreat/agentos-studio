@@ -35,6 +35,7 @@ import {
 import { useToast } from "../components/Toasts";
 import { goTo } from "../lib/nav";
 import { HermesPanel } from "./HermesPanel";
+import { ModelLayer } from "./ModelLayer";
 import { Badge, Button, Card, Field, Modal, Toggle, inputClass } from "../components/ui";
 
 type Tab = "providers" | "mcp" | "hermes";
@@ -132,6 +133,7 @@ function Providers({ onStatusChanged }: { onStatusChanged: () => void }) {
           />
         ))}
       </div>
+      <ModelLayer />
     </>
   );
 }
