@@ -582,3 +582,108 @@ mod tests {
         assert!(!external_url_ok("javascript:alert(1)"));
     }
 }
+
+// ------------------------------------------------------------------ Hermes surfaces
+
+use crate::hermes_surfaces::{self, CronJob, CronSpec, HermesMemory, Profile};
+
+#[tauri::command]
+pub async fn hermes_memory_view() -> CmdResult<HermesMemory> {
+    blocking(|| Ok(hermes_surfaces::memory_view())).await
+}
+
+#[tauri::command]
+pub async fn hermes_journey_delete(node: String, approved: Option<bool>) -> CmdResult<String> {
+    blocking(move || {
+        permissions::run_guarded(
+            "hermes.journey.delete",
+            &node,
+            &format!("hermes journey delete {node}"),
+            approved.unwrap_or(false),
+            || hermes_surfaces::journey_delete(&node),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn hermes_insights(days: Option<u32>) -> CmdResult<String> {
+    blocking(move || hermes_surfaces::insights(days.unwrap_or(30))).await
+}
+
+#[tauri::command]
+pub async fn hermes_security_audit() -> CmdResult<Value> {
+    blocking(hermes_surfaces::security_audit).await
+}
+
+#[tauri::command]
+pub async fn hermes_cron_jobs() -> CmdResult<Vec<CronJob>> {
+    blocking(|| Ok(hermes_surfaces::cron_jobs())).await
+}
+
+#[tauri::command]
+pub async fn hermes_cron_action(
+    id: String,
+    action: String,
+    approved: Option<bool>,
+) -> CmdResult<String> {
+    blocking(move || {
+        permissions::run_guarded(
+            "hermes.cron.change",
+            &id,
+            &format!("hermes cron {action} {id}"),
+            approved.unwrap_or(false),
+            || hermes_surfaces::cron_action(&id, &action),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn hermes_cron_create(spec: CronSpec, approved: Option<bool>) -> CmdResult<String> {
+    blocking(move || {
+        let summary = format!("hermes cron create \"{}\": {}", spec.schedule, spec.prompt);
+        permissions::run_guarded(
+            "hermes.cron.change",
+            "new job",
+            &summary,
+            approved.unwrap_or(false),
+            || hermes_surfaces::cron_create(&spec),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn hermes_profiles() -> CmdResult<Vec<Profile>> {
+    blocking(|| Ok(hermes_surfaces::profiles())).await
+}
+
+#[tauri::command]
+pub async fn hermes_set_role_profile(role: String, profile: String) -> CmdResult<()> {
+    blocking(move || hermes_surfaces::set_role_profile(&role, &profile)).await
+}
+
+#[tauri::command]
+pub async fn hermes_notify_target() -> CmdResult<Option<String>> {
+    blocking(|| Ok(hermes_surfaces::notify_target())).await
+}
+
+/// Save the `hermes send` target for mission notices and send a test message to it.
+#[tauri::command]
+pub async fn hermes_set_notify_target(target: String, test: Option<bool>) -> CmdResult<String> {
+    blocking(move || {
+        let t = target.trim().to_string();
+        if !t.is_empty() && test.unwrap_or(false) {
+            hermes_surfaces::send(&t, "AgentOS Studio will send mission notices here.")?;
+        }
+        let c = store::open()?;
+        store::kv_set(&c, hermes_surfaces::NOTIFY_KEY, &t)?;
+        Ok(if t.is_empty() {
+            "Mission notices are off".into()
+        } else {
+            format!("Mission notices go to {t}")
+        })
+    })
+    .await
+}

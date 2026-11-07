@@ -16,6 +16,7 @@ pub mod fork;
 pub mod github;
 pub mod help;
 pub mod hermes_engine;
+pub mod hermes_surfaces;
 pub mod mcp_manager;
 pub mod mcp_stdio;
 pub mod memory_index;
@@ -239,6 +240,17 @@ pub fn run_gui() {
             ops::list_audit,
             ops::open_external,
             ops::reveal_path,
+            ops::hermes_memory_view,
+            ops::hermes_journey_delete,
+            ops::hermes_insights,
+            ops::hermes_security_audit,
+            ops::hermes_cron_jobs,
+            ops::hermes_cron_action,
+            ops::hermes_cron_create,
+            ops::hermes_profiles,
+            ops::hermes_set_role_profile,
+            ops::hermes_notify_target,
+            ops::hermes_set_notify_target,
             commands::boot_snapshot,
             commands::boot_run,
             commands::boot_logs_dir,
