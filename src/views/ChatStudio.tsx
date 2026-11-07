@@ -1,5 +1,5 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { ArrowUp, Brain, ChevronRight, Cloud, FolderOpen, GitFork, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Workflow } from "lucide-react";
+import { ArrowUp, Brain, ChevronRight, Cloud, FolderOpen, GitFork, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Undo2, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api, errorText, events, type HermesStatus, type MemoryEntry, type RepoInfo, type Skill } from "../lib/api";
 import { studio, type Folder, type OrgSnapshot, type PlacedChat } from "../lib/studio";
@@ -509,6 +509,18 @@ export function ChatStudio({
     if (t) toast("ok", `${t.title} is open in the terminal panel. The chat stays here too.`);
   }
 
+  /** Undo through Hermes' own checkpoints: the Ink TUI serves /rollback, the gateway refuses it
+   *  for single-query turns. It opens on this session with the command typed, not sent. */
+  async function undoInTui() {
+    if (backend !== "hermes" || !current) return;
+    const t = await cli.openPty({ profile: "hermes-tui-resume", session_id: current, cwd, type_when_ready: "/rollback" });
+    if (t)
+      toast(
+        "info",
+        "The Hermes TUI is open on this chat with /rollback typed. Press Enter to list checkpoints, then /rollback <number> to restore one. Files and the conversation go back together.",
+      );
+  }
+
   async function browse() {
     const dir = await openDialog({ directory: true, title: "Working directory for this chat" });
     if (typeof dir === "string") setWorkingDir(dir);
@@ -652,6 +664,17 @@ export function ChatStudio({
           >
             <SquareTerminal className="size-3.5" /> Continue in terminal
           </button>
+          {backend === "hermes" && (
+            <button
+              onClick={() => void undoInTui()}
+              disabled={streaming || !current}
+              title="Undo file changes from a turn: opens the Hermes TUI on this chat with /rollback typed in"
+              aria-label="Undo last turn"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-small text-slate-300 ring-1 ring-line hover:bg-white/5 hover:text-slate-100 disabled:opacity-40"
+            >
+              <Undo2 className="size-3.5" /> Undo last turn
+            </button>
+          )}
           <ProviderSwitcher backend={backend} hermes={hermes} onSwitched={onStatusChanged} onOpenControl={() => onOpenControl("providers")} />
         </header>
 
