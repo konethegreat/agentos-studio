@@ -223,9 +223,23 @@ always able to override. Design in [`MODEL-ROUTER.md`](MODEL-ROUTER.md).
 
 Depends on: v0.5 capability metadata, and the cost and outcome data from v0.4.
 
+## v0.9.1: session forking (built, not yet released)
+
+- **Fork at a message:** any message in a Hermes chat can be forked into a new Hermes session.
+  At a reply, the fork keeps everything through that reply; at a user message, it keeps everything
+  before it and returns the message to the composer for editing.
+- **Written by Hermes, not by Studio:** the fork is a Claude Code style transcript imported with
+  `hermes sessions import`, because the Hermes gateway is the only writer of `state.db`. Studio
+  reads the new session back and refuses to report success unless every planned turn is stored.
+- **Linked as a branch** in `session_links`, so Projects shows where it came from.
+- **Rename through Hermes:** chat rename now calls `hermes sessions rename` instead of updating
+  `state.db` directly, for the same reason.
+- Limits, stated: tool outputs, reasoning and the system prompt are not copied; each tool call is
+  kept as a `[ran tool: name]` line. A resumed fork runs on the active model.
+- Verified by `tests/live_fork.rs` against a real session (fork, read back, compare, delete).
+
 ## Ideas worth considering
 
-- Session forking: branch a chat at any message into a new Hermes session.
 - Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.
 - Offline mode: detect no network and pin a local model automatically, with a clear banner.
 - Team routing policies: shared JSON policy files in a repo, so a team agrees on model choices.
