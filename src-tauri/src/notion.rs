@@ -24,10 +24,32 @@ const VERSION: &str = "2022-06-28";
 pub const KV_PARENT: &str = "notion.parent";
 pub const KV_INBOX: &str = "notion.inbox";
 
+/// `KEY=value` from a dotenv file, without a dotenv dependency. Never logged.
+pub fn parse_env(text: &str, key: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#'))
+        .find_map(|l| {
+            let (k, v) = l.split_once('=')?;
+            if k.trim() != key {
+                return None;
+            }
+            let v = v.trim().trim_matches('"').trim_matches('\'').trim();
+            (!v.is_empty()).then(|| v.to_string())
+        })
+}
+
+/// Hermes keeps secrets in `%LOCALAPPDATA%/hermes/.env`; Studio reads it by name, never copies it.
+fn hermes_env(key: &str) -> Option<String> {
+    let path = dirs::data_local_dir()?.join("hermes").join(".env");
+    let text = std::fs::read_to_string(path).ok()?;
+    parse_env(&text, key)
+}
+
 pub fn token() -> Option<String> {
     ["NOTION_API_KEY", "NOTION_TOKEN"]
         .iter()
-        .find_map(|k| std::env::var(k).ok())
+        .find_map(|k| std::env::var(k).ok().or_else(|| hermes_env(k)))
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
 }
@@ -49,6 +71,7 @@ pub fn set_setting(key: &str, value: &str) {
 fn parent_id() -> Option<String> {
     std::env::var("NOTION_PARENT_PAGE")
         .ok()
+        .or_else(|| hermes_env("NOTION_PARENT_PAGE"))
         .filter(|v| !v.trim().is_empty())
         .or_else(|| setting(KV_PARENT))
 }
@@ -409,6 +432,14 @@ fn slug_simple(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn env_files_are_read_by_name_only() {
+        let t = "# comment\nOTHER=1\nNOTION_API_KEY=\"secret\"\n";
+        assert_eq!(parse_env(t, "NOTION_API_KEY").as_deref(), Some("secret"));
+        assert_eq!(parse_env(t, "MISSING"), None);
+        assert_eq!(parse_env("NOTION_API_KEY=\n", "NOTION_API_KEY"), None);
+    }
 
     #[test]
     fn hash_notices_content_changes() {
