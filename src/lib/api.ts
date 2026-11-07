@@ -563,6 +563,10 @@ export const api = {
 
   workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
   missions: () => invoke<Mission[]>("list_missions", { limit: 100 }),
+  providerConnections: () => invoke<{ id: string; label: string; connected: boolean; detail: string; needs: string; env_var: string | null }[]>("provider_connections"),
+  saveProviderKey: (provider: string, key: string) =>
+    invoke<string>("save_provider_key", { provider, key }),
+
   toolPolicies: () => invoke<{ server: string; tool: string; policy: string }[]>("tool_policies"),
   setToolPolicy: (server: string, tool: string, policy: string) =>
     invoke<void>("set_tool_policy", { server, tool, policy }),

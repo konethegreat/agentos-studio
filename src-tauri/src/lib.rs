@@ -8,6 +8,7 @@ pub mod bus;
 pub mod chat_stream;
 pub mod cli_runner;
 pub mod commands;
+pub mod connect;
 pub mod constitution;
 pub mod fleet;
 pub mod github;
@@ -267,6 +268,8 @@ pub fn run_gui() {
             commands::tool_policies,
             commands::set_tool_policy,
             commands::hub_tools,
+            commands::provider_connections,
+            commands::save_provider_key,
             commands::notion_publish,
             commands::notion_pull_inbox,
             commands::notion_status,

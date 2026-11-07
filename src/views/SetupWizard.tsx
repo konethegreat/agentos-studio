@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, errorText, type SetupEvent, type SettingsView, type StackStatus } from "../lib/api";
 import { Button, Card, inputClass } from "../components/ui";
 import { useToast } from "../components/Toasts";
+import { ConnectCard } from "../components/ConnectCard";
 
 const PILLAR_ICON: Record<number, ReactNode> = {
   0: <Layers className="size-5" />,
@@ -86,6 +87,9 @@ export function SetupWizard({
 
   return (
     <div className="h-full overflow-y-auto px-6 pb-10 pt-5">
+      <div className="mb-5">
+        <ConnectCard />
+      </div>
       <div className="mb-5 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">1-Click Setup and Integrations</h1>

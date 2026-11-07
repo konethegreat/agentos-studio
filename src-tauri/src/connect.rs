@@ -1,0 +1,222 @@
+//! Connecting a provider without editing files by hand.
+//!
+//! Three things can be connected here:
+//! - a Claude subscription, which works through the Claude CLI's own login;
+//! - an Antigravity subscription, which works through the Hermes provider plugin;
+//! - an OpenRouter API key, which has to be written to Hermes's env file.
+//!
+//! Keys are written to `%LOCALAPPDATA%/hermes/.env`, because that is where Hermes reads them from.
+//! The app never stores a copy and never displays a value back, only whether one is present.
+
+use std::path::PathBuf;
+use std::process::Command;
+
+use anyhow::{bail, Result};
+use serde::Serialize;
+
+use crate::models;
+use crate::procs;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Connection {
+    pub id: String,
+    pub label: String,
+    pub connected: bool,
+    pub detail: String,
+    pub needs: String,
+    pub env_var: Option<String>,
+}
+
+fn hermes_env() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(crate::settings::home)
+        .join("hermes")
+        .join(".env")
+}
+
+/// Insert or replace `KEY=value` in a dotenv file, preserving every other line.
+/// Returns the new content; the caller writes it.
+pub fn upsert_env(text: &str, key: &str, value: &str) -> String {
+    let line = format!("{key}={value}");
+    let mut out: Vec<String> = Vec::new();
+    let mut replaced = false;
+    for l in text.lines() {
+        if l.trim_start().starts_with(&format!("{key}=")) {
+            if !replaced {
+                out.push(line.clone());
+                replaced = true;
+            }
+            continue;
+        }
+        out.push(l.to_string());
+    }
+    if !replaced {
+        if !out.is_empty() && !out.last().map(|l| l.trim().is_empty()).unwrap_or(true) {
+            out.push(String::new());
+        }
+        out.push(line);
+    }
+    let mut joined = out.join("\n");
+    joined.push('\n');
+    joined
+}
+
+pub fn env_has(key: &str) -> bool {
+    std::fs::read_to_string(hermes_env())
+        .map(|t| {
+            crate::notion::parse_env(&t, key)
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+fn run(cmd: &mut Command) -> Option<String> {
+    let out = cmd.output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    Some(if out.status.success() {
+        "ok".into()
+    } else {
+        text.chars().take(200).collect()
+    })
+}
+
+fn claude_connected() -> (bool, String) {
+    let Some(exe) = procs::find("claude") else {
+        return (false, "Claude Code is not installed".into());
+    };
+    let mut c = Command::new(exe);
+    c.arg("auth").arg("status");
+    c.env("PATH", procs::search_path());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(procs::CREATE_NO_WINDOW);
+    }
+    match run(&mut c) {
+        Some(s) if s == "ok" => (true, "Signed in through the Claude CLI".into()),
+        Some(cli) if cli.to_lowercase().contains("logged") => {
+            (true, "Signed in through the Claude CLI".into())
+        }
+        _ => (
+            false,
+            "Run `claude auth login` once, or use Setup to do it".into(),
+        ),
+    }
+}
+
+fn antigravity_connected() -> (bool, String) {
+    let plugin = dirs::data_local_dir()
+        .unwrap_or_else(crate::settings::home)
+        .join("hermes")
+        .join("plugins")
+        .join("antigravity-oauth");
+    let configured = models::catalog()
+        .active_provider
+        .as_deref()
+        .map(|p| p.contains("antigravity"))
+        .unwrap_or(false);
+    if plugin.exists() || configured {
+        (true, "Antigravity provider is installed in Hermes".into())
+    } else {
+        (
+            false,
+            "Install the antigravity-oauth Hermes plugin, then sign in".into(),
+        )
+    }
+}
+
+pub fn status() -> Vec<Connection> {
+    let (claude, claude_detail) = claude_connected();
+    let (anti, anti_detail) = antigravity_connected();
+    let openrouter = env_has("OPENROUTER_API_KEY");
+    vec![
+        Connection {
+            id: "claude-subscription".into(),
+            label: "Claude subscription".into(),
+            connected: claude,
+            detail: claude_detail,
+            needs: "Your Claude Pro or Max login, through the Claude CLI".into(),
+            env_var: None,
+        },
+        Connection {
+            id: "antigravity-oauth".into(),
+            label: "Antigravity (Argon)".into(),
+            connected: anti,
+            detail: anti_detail,
+            needs: "The antigravity-oauth Hermes plugin and your Antigravity login".into(),
+            env_var: None,
+        },
+        Connection {
+            id: "openrouter".into(),
+            label: "OpenRouter".into(),
+            connected: openrouter,
+            detail: if openrouter {
+                "Key present in the Hermes env file".into()
+            } else {
+                "No key yet".into()
+            },
+            needs: "An OpenRouter API key, metered per token".into(),
+            env_var: Some("OPENROUTER_API_KEY".into()),
+        },
+    ]
+}
+
+/// Save an API key where Hermes reads it. Refuses to write anything that is obviously not a key.
+pub fn save_key(provider: &str, key: &str) -> Result<String> {
+    let var = match provider {
+        "openrouter" => "OPENROUTER_API_KEY",
+        other => bail!("{other} does not take an API key here; it uses its own login"),
+    };
+    let k = key.trim();
+    if k.len() < 20 || k.chars().any(char::is_whitespace) {
+        bail!("that does not look like an API key");
+    }
+    let path = hermes_env();
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let updated = upsert_env(&existing, var, k);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&path, updated)?;
+    // Never echo the value; only the variable name.
+    Ok(format!("{var} saved to the Hermes env file"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upsert_replaces_without_duplicating_or_touching_others() {
+        let start = "A=1\nOPENROUTER_API_KEY=old\nB=2\n";
+        let out = upsert_env(start, "OPENROUTER_API_KEY", "new");
+        assert_eq!(out.matches("OPENROUTER_API_KEY=").count(), 1);
+        assert!(out.contains("OPENROUTER_API_KEY=new"));
+        assert!(out.contains("A=1") && out.contains("B=2"));
+        assert!(!out.contains("old"));
+    }
+
+    #[test]
+    fn upsert_appends_when_missing() {
+        let out = upsert_env("A=1\n", "NOTION_API_KEY", "x");
+        assert!(out.contains("NOTION_API_KEY=x"));
+        assert!(out.contains("A=1"));
+    }
+
+    #[test]
+    fn keys_are_validated_before_writing() {
+        assert!(save_key("claude-subscription", "whatever").is_err());
+        assert!(save_key("openrouter", "short").is_err());
+        assert!(save_key("openrouter", "has spaces in it and is long enough").is_err());
+    }
+
+    #[test]
+    fn status_names_the_three_subscriptions() {
+        let s = status();
+        assert_eq!(s.len(), 3);
+        assert!(s
+            .iter()
+            .any(|c| c.id == "openrouter" && c.env_var.as_deref() == Some("OPENROUTER_API_KEY")));
+    }
+}
