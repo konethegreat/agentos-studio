@@ -1056,7 +1056,7 @@ impl Vault {
 
         let mut root_dir: Option<PathBuf> = None;
         if let Some(note) = note.as_ref().filter(|p| p.exists()) {
-            let raw = fs::read_to_string(&note)?;
+            let raw = fs::read_to_string(note)?;
             let doc = Doc::parse(&raw);
             // Prose, not the frontmatter table or a callout: the first real sentence.
             let purpose = doc
@@ -1086,7 +1086,7 @@ impl Vault {
             }
         } else {
             out.push_str(&format!(
-                "## Purpose\nNo project note at 01_Projects/{slugish}.md yet.\n\n"
+                "## Purpose\nNo project note at 01_Projects/{note_label} yet.\n\n"
             ));
         }
 
