@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 7;
+const SCHEMA_VERSION: i64 = 8;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -166,6 +166,11 @@ CREATE TABLE IF NOT EXISTS tool_policy (
 );
 ";
 
+/// `hermes verify --json` result recorded on a mission before review.
+const MIGRATION_8: &str = "
+ALTER TABLE missions ADD COLUMN verify_json TEXT;
+";
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
@@ -239,6 +244,9 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     if v < 7 {
         c.execute_batch(MIGRATION_7)?;
+    }
+    if v < 8 {
+        let _ = c.execute_batch(MIGRATION_8);
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;

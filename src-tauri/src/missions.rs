@@ -43,6 +43,8 @@ pub struct Mission {
     pub review_note: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    /// `hermes verify --json` output from the mission's repository, recorded before review.
+    pub verify: Option<String>,
 }
 
 fn now() -> i64 {
@@ -108,7 +110,7 @@ pub fn get(id: &str) -> Result<Option<Mission>> {
     Ok(c.query_row(
         "SELECT id, repo, goal, acceptance, role, agent, status, provider, model,
                 budget_usd, spent_usd, task_id, reviewer, review_verdict, review_note,
-                created_at, updated_at, pr_url
+                created_at, updated_at, pr_url, verify_json
          FROM missions WHERE id = ?1",
         params![id],
         row,
@@ -136,6 +138,7 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Mission> {
         review_note: r.get(14)?,
         created_at: r.get(15)?,
         updated_at: r.get(16)?,
+        verify: r.get(18)?,
     })
 }
 
@@ -144,7 +147,7 @@ pub fn list(limit: usize) -> Result<Vec<Mission>> {
     let mut st = c.prepare(
         "SELECT id, repo, goal, acceptance, role, agent, status, provider, model,
                 budget_usd, spent_usd, task_id, reviewer, review_verdict, review_note,
-                created_at, updated_at, pr_url
+                created_at, updated_at, pr_url, verify_json
          FROM missions
          ORDER BY CASE status WHEN 'review' THEN 0 WHEN 'running' THEN 1 WHEN 'queued' THEN 2
                               WHEN 'blocked' THEN 3 ELSE 4 END, updated_at DESC
@@ -176,7 +179,9 @@ fn set_status(c: &Connection, id: &str, from: &[&str], to: &str) -> Result<()> {
     Ok(())
 }
 
-/// Put a queued mission on the Agent Bus: create the task from the mission and start it.
+/// Start a queued mission. The single dispatch path for the board button and the scheduler:
+/// Hermes missions go on Hermes' kanban board (Hermes owns execution); every other agent gets an
+/// Agent Bus task.
 pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
     let m = get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
     if m.status != "queued" && m.status != "blocked" {
@@ -185,6 +190,10 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
             id,
             m.status
         );
+    }
+    if uses_kanban(&m) {
+        let task_id = crate::kanban::create_task(&m)?;
+        return dispatch(id, &task_id);
     }
     let args = crate::vault::DelegateArgs {
         title: m.goal.chars().take(90).collect(),
@@ -205,6 +214,11 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         .map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("the bus did not return a task id"))?;
     dispatch(id, &task_id)
+}
+
+/// Hermes missions run through `hermes kanban`; the rest through the Agent Bus. Pure.
+pub fn uses_kanban(m: &Mission) -> bool {
+    m.agent.trim().eq_ignore_ascii_case("hermes")
 }
 
 /// Attach the bus task that will do the work, and start the mission.
@@ -243,6 +257,55 @@ pub fn pull_url(text: &str) -> Option<String> {
         rest = &tail[end..];
     }
     None
+}
+
+/// Record the `hermes verify --json` result for the mission's repository.
+pub fn set_verify(id: &str, json: &str) -> Result<()> {
+    let c = store::open()?;
+    c.execute(
+        "UPDATE missions SET verify_json = ?1, updated_at = ?2 WHERE id = ?3",
+        params![json, now(), id],
+    )?;
+    Ok(())
+}
+
+/// Replace the measured spend (Hermes usage data is cumulative, so this is a total, not a delta).
+pub fn set_spent(id: &str, total_usd: f64) -> Result<()> {
+    let c = store::open()?;
+    c.execute(
+        "UPDATE missions SET spent_usd = ?1, updated_at = ?2 WHERE id = ?3",
+        params![total_usd.max(0.0), now(), id],
+    )?;
+    Ok(())
+}
+
+/// Why a recorded `hermes verify` result blocks a merge, if it does. A repository Hermes cannot
+/// detect a recipe for (`no-recipe`) is not a failure: there is nothing to run. Pure.
+pub fn verify_failure(json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(json.trim()).ok()?;
+    if v.get("ok").and_then(serde_json::Value::as_bool) != Some(false) {
+        return None;
+    }
+    if v.get("error").and_then(serde_json::Value::as_str) == Some("no-recipe") {
+        return None;
+    }
+    let failed = v
+        .get("phases")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|ps| {
+            ps.iter()
+                .find(|p| p.get("ok").and_then(serde_json::Value::as_bool) == Some(false))
+        })
+        .map(|p| {
+            format!(
+                "{} ({})",
+                p.get("phase").and_then(|x| x.as_str()).unwrap_or("?"),
+                p.get("command").and_then(|x| x.as_str()).unwrap_or("")
+            )
+        })
+        .or_else(|| v.get("error").and_then(|e| e.as_str()).map(String::from))
+        .unwrap_or_else(|| "failed".into());
+    Some(format!("hermes verify failed: {failed}"))
 }
 
 /// The pull request number in a mission URL, if any.
@@ -340,6 +403,9 @@ pub fn merge_blockers(m: &Mission, ci_green: bool, allowlisted: bool) -> Vec<Str
     if !allowlisted {
         out.push("repository is not on the auto-merge allow list".into());
     }
+    if let Some(reason) = m.verify.as_deref().and_then(verify_failure) {
+        out.push(reason);
+    }
     out
 }
 
@@ -368,6 +434,30 @@ mod tests {
             0.0,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_failed_hermes_verify_blocks_merge_and_no_recipe_does_not() {
+        assert_eq!(
+            verify_failure(r#"{"ok": false, "error": "no-recipe"}"#),
+            None
+        );
+        assert_eq!(verify_failure(r#"{"ok": true, "phases": []}"#), None);
+        let failed = r#"{"ok": false, "phases": [{"phase": "build", "command": "npm run build", "ok": true},
+            {"phase": "test", "command": "npm test", "ok": false}]}"#;
+        assert_eq!(
+            verify_failure(failed).as_deref(),
+            Some("hermes verify failed: test (npm test)")
+        );
+        with_db(|| {
+            let mut m = make();
+            m.verify = Some(failed.into());
+            let b = merge_blockers(&m, true, true);
+            assert!(
+                b.iter().any(|r| r.starts_with("hermes verify failed")),
+                "{b:?}"
+            );
+        });
     }
 
     #[test]
