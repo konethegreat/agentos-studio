@@ -37,3 +37,5 @@ and SmartScreen reputation. It does not make updates safer, and it is not needed
 Without it, the first run shows "unknown publisher", which is a trust decision the user makes once.
 
 Mission probe note: the mission pipeline was exercised against this file. Remove at will.
+
+Mission probe 3: exercised the mission loop. Safe to remove.
