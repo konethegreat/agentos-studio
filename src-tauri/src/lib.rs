@@ -11,6 +11,7 @@ pub mod commands;
 pub mod connect;
 pub mod constitution;
 pub mod fleet;
+pub mod fork;
 pub mod github;
 pub mod help;
 pub mod hermes_engine;
@@ -246,6 +247,7 @@ pub fn run_gui() {
             commands::archive_project,
             commands::add_project_folder,
             commands::link_branch,
+            commands::fork_session,
             commands::get_chat_skills,
             commands::set_chat_skills,
             commands::list_skills,
