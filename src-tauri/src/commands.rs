@@ -547,6 +547,7 @@ pub async fn send_chat_message(
             working_dir,
             agent_backend,
             model,
+            provider: None,
             skills: skills.unwrap_or_default(),
             turn,
         },

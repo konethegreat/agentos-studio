@@ -317,7 +317,8 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
 - Plan first in chat (shipped): Hermes `/plan` scoped to the folder, plan shown for approval, run
   on Approve. Verified by `tests/live_plan_mode.rs`.
 - Fallback chains, credential pools, mixture-of-agents presets and per-folder default models, all
-  through Hermes' own commands and config.
+  through Hermes' own commands and config (shipped, Providers > Model layer). Verified by
+  `tests/live_model_layer.rs`, which leaves config.yaml byte-identical.
 - Parallel missions on one repository through kanban worktree workspaces.
 
 ## Ideas worth considering

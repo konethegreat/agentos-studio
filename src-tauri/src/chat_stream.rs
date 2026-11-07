@@ -358,6 +358,9 @@ pub struct ChatRequest {
     pub working_dir: String,
     pub agent_backend: String,
     pub model: Option<String>,
+    /// Provider for `model` (`hermes chat --provider`), set from a folder default.
+    #[serde(default)]
+    pub provider: Option<String>,
     /// Skills preloaded for this turn (`hermes chat -s a,b`).
     #[serde(default)]
     pub skills: Vec<String>,
@@ -479,6 +482,14 @@ pub fn build_args(backend: &str, req: &ChatRequest, query_file: &Path, cwd: &Pat
             a.push("--checkpoints".into());
             if let Some(m) = model {
                 a.extend(["-m".into(), m.into()]);
+                if let Some(p) = req
+                    .provider
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty())
+                {
+                    a.extend(["--provider".into(), p.into()]);
+                }
             }
             let skills: Vec<String> = req
                 .skills
@@ -565,6 +576,22 @@ pub fn send_chat_message(
         .join("chat");
     fs::create_dir_all(&dir)?;
     let query_file = dir.join(format!("{run_id}.md"));
+    // A new Hermes chat with no explicit model takes the folder's default (Providers > Folder
+    // defaults). Resumed chats keep the model they were created with.
+    let mut req = req;
+    if backend == "hermes"
+        && req
+            .session_id
+            .as_deref()
+            .map_or(true, |s| s.trim().is_empty())
+        && req.model.as_deref().map_or(true, |m| m.trim().is_empty())
+    {
+        let defaults = crate::model_layer::folder_models();
+        if let Some(d) = crate::model_layer::folder_default(&defaults, &cwd.display().to_string()) {
+            req.model = Some(d.model.clone());
+            req.provider = Some(d.provider.clone());
+        }
+    }
     let resumed = req.session_id.clone().filter(|s| !s.trim().is_empty());
     let prompt = match (&resumed, backend) {
         (Some(sid), "hermes") => {
@@ -1014,6 +1041,7 @@ mod tests {
             working_dir: "C:/repo".into(),
             agent_backend: "hermes".into(),
             model: Some("claude-opus-5-5[1m]".into()),
+            provider: None,
             skills: vec!["agentos-studio-dev".into(), "obsidian".into()],
         };
         let h = build_args("hermes", &req, Path::new("C:/q.md"), Path::new("C:/repo"));
@@ -1048,6 +1076,7 @@ mod tests {
             "claude-code",
             &ChatRequest {
                 model: None,
+                provider: None,
                 session_id: None,
                 ..req
             },

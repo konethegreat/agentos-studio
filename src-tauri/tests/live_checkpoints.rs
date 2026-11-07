@@ -45,6 +45,7 @@ fn checkpointed_turn_rolls_back_in_the_tui() {
         working_dir: dir.display().to_string(),
         agent_backend: "hermes".into(),
         model: None,
+        provider: None,
         skills: vec![],
         turn: None,
     };

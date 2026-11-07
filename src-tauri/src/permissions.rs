@@ -52,6 +52,22 @@ pub const ACTIONS: &[ActionDef] = &[
         false,
     ),
     def(
+        "hermes.credential.remove",
+        "Hermes",
+        "Remove a pooled credential from Hermes (hermes auth remove)",
+        "high",
+        "ask",
+        false,
+    ),
+    def(
+        "hermes.fallback.change",
+        "Hermes",
+        "Change Hermes' fallback chain (fallback models may be metered)",
+        "medium",
+        "allow",
+        true,
+    ),
+    def(
         "hermes.cron.change",
         "Hermes",
         "Create, pause, resume, run or remove a Hermes cron job",

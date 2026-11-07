@@ -52,6 +52,7 @@ fn hermes_turn_streams_tools_and_resumes() {
         working_dir: cwd.display().to_string(),
         agent_backend: "hermes".into(),
         model: None,
+        provider: None,
         skills: Vec::new(),
     };
     let text = run("hermes", &build_args("hermes", &req, &q, &cwd), &cwd, None);
@@ -142,6 +143,7 @@ fn claude_turn_streams_partial_text_and_tools() {
         working_dir: cwd.display().to_string(),
         agent_backend: "claude-code".into(),
         model: None,
+        provider: None,
         skills: Vec::new(),
     };
     let prompt = "Use the agentos-hub search_shared_memory tool with query fleet, then reply with exactly: HITS <number of results>";
