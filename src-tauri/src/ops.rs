@@ -687,3 +687,16 @@ pub async fn hermes_set_notify_target(target: String, test: Option<bool>) -> Cmd
     })
     .await
 }
+
+#[tauri::command]
+pub async fn hermes_time_caps() -> CmdResult<hermes_surfaces::TimeCaps> {
+    blocking(|| Ok(hermes_surfaces::time_caps())).await
+}
+
+#[tauri::command]
+pub async fn hermes_set_time_caps(
+    mission_max_runtime: Option<u64>,
+    run_budget_seconds: Option<u64>,
+) -> CmdResult<()> {
+    blocking(move || hermes_surfaces::set_time_caps(mission_max_runtime, run_budget_seconds)).await
+}

@@ -334,6 +334,39 @@ pub fn set_role_profile(role: &str, profile: &str) -> Result<()> {
     crate::store::kv_set(&c, key, profile)
 }
 
+// --------------------------------------------------------------------------------- time caps
+
+#[derive(Serialize, Debug, Default)]
+pub struct TimeCaps {
+    /// Per-task cap Studio passes to `hermes kanban create --max-runtime` for Hermes missions.
+    pub mission_max_runtime: Option<u64>,
+    /// Hermes' own `agent.run_budget_seconds` (every Hermes run, not only missions).
+    pub run_budget_seconds: Option<u64>,
+}
+
+pub fn time_caps() -> TimeCaps {
+    TimeCaps {
+        mission_max_runtime: crate::kanban::max_runtime(),
+        run_budget_seconds: hermes(&["config", "get", "agent.run_budget_seconds"])
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .filter(|n| *n > 0),
+    }
+}
+
+/// `None` or 0 clears a cap. The Hermes value is written with `hermes config set` / `unset`.
+pub fn set_time_caps(
+    mission_max_runtime: Option<u64>,
+    run_budget_seconds: Option<u64>,
+) -> Result<()> {
+    crate::kanban::set_max_runtime(mission_max_runtime)?;
+    match run_budget_seconds.filter(|n| *n > 0) {
+        Some(n) => hermes(&["config", "set", "agent.run_budget_seconds", &n.to_string()])?,
+        None => hermes(&["config", "unset", "agent.run_budget_seconds"]).unwrap_or_default(),
+    };
+    Ok(())
+}
+
 // ------------------------------------------------------------------------------------- send
 
 pub const NOTIFY_KEY: &str = "hermes.notify_target";
