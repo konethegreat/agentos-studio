@@ -54,6 +54,7 @@ fn req(profile: &str) -> pty::SpawnRequest {
         cwd: None,
         cols: 120,
         rows: 36,
+        type_when_ready: None,
     }
 }
 

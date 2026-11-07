@@ -5,7 +5,7 @@ import type { SessionSummary } from "./api";
 
 // ---------------------------------------------------------------- terminals
 
-export type PtyProfile = "shell" | "hermes" | "hermes-tui" | "hermes-resume" | "claude" | "claude-resume";
+export type PtyProfile = "shell" | "hermes" | "hermes-tui" | "hermes-resume" | "hermes-tui-resume" | "claude" | "claude-resume";
 
 export interface PtyInfo {
   id: string;
@@ -22,6 +22,8 @@ export interface PtySpawn {
   cwd?: string | null;
   cols?: number;
   rows?: number;
+  /** Typed (not sent) once the program has drawn and gone quiet. */
+  type_when_ready?: string | null;
 }
 
 // ---------------------------------------------------------------- updates
