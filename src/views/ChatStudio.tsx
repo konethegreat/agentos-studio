@@ -11,6 +11,7 @@ import { useCli } from "../components/CliDrawer";
 import { Markdown } from "../components/Markdown";
 import { ProviderSwitcher } from "../components/ProviderSwitcher";
 import { ToolCard } from "../components/ToolCard";
+import { UsageBar } from "../components/UsageBar";
 import { Modal } from "../components/ui";
 import { useToast } from "../components/Toasts";
 
@@ -564,6 +565,7 @@ export function ChatStudio({
           <ProviderSwitcher backend={backend} hermes={hermes} onSwitched={onStatusChanged} onOpenControl={() => onOpenControl("providers")} />
         </header>
 
+        <UsageBar sessionId={current} />
         <div
           ref={scroller}
           onScroll={(e) => {

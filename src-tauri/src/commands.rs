@@ -733,6 +733,16 @@ pub async fn dispatch_mission(
 }
 
 #[tauri::command]
+pub async fn session_usage(session_id: String) -> CmdResult<Option<crate::usage::SessionUsage>> {
+    blocking(move || crate::usage::usage(&session_id)).await
+}
+
+#[tauri::command]
+pub async fn provider_credits() -> CmdResult<Vec<crate::usage::Credits>> {
+    blocking(|| Ok(crate::usage::credits())).await
+}
+
+#[tauri::command]
 pub async fn provider_connections() -> CmdResult<Vec<crate::connect::Connection>> {
     blocking(|| Ok(crate::connect::status())).await
 }
