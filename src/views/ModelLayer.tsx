@@ -23,6 +23,7 @@ export function ModelLayer() {
   return (
     <div className="mt-6 space-y-4">
       <h2 className="text-sm font-semibold text-slate-100">Model layer</h2>
+      <CatalogChanges />
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <FallbackCard catalog={catalog} />
         <FolderDefaultsCard catalog={catalog} />
@@ -336,5 +337,45 @@ function MoaCard() {
         </>
       )}
     </Section>
+  );
+}
+
+/** Models Hermes' catalog gained this week, and pinned models it no longer lists. */
+function CatalogChanges() {
+  const [c, setC] = useState<{ new: { provider: string; model: string; first_seen: number }[]; gone: { provider: string; model: string; used_by: string[] }[] } | null>(null);
+  useEffect(() => {
+    void studio.models
+      .changes()
+      .then(setC)
+      .catch(() => undefined);
+  }, []);
+  if (!c || (c.new.length === 0 && c.gone.length === 0)) return null;
+  const pinnedGone = c.gone.filter((g) => g.used_by.length > 0);
+  return (
+    <Card className="p-4">
+      {pinnedGone.length > 0 && (
+        <div className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-small text-amber-200 ring-1 ring-amber-500/25">
+          <div className="mb-1 font-medium">Pinned models no longer in Hermes&apos; catalog</div>
+          {pinnedGone.map((g) => (
+            <div key={`${g.provider}:${g.model}`}>
+              <span className="font-mono">{g.model}</span> ({g.provider}) is used by {g.used_by.join(", ")}. Pick another model there before it fails.
+            </div>
+          ))}
+        </div>
+      )}
+      {c.new.length > 0 && (
+        <div>
+          <div className="mb-1 text-label font-medium uppercase tracking-wide text-slate-500">New in the last week</div>
+          <div className="flex flex-wrap gap-1.5">
+            {c.new.map((n) => (
+              <Badge key={`${n.provider}:${n.model}`} className="bg-sky-500/10 text-sky-300 ring-sky-500/25">
+                new · {n.model} <span className="text-slate-500">({n.provider})</span>
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+      {c.gone.length > pinnedGone.length && <p className="mt-2 text-label text-slate-500">{c.gone.length - pinnedGone.length} model(s) left the catalog; nothing here uses them.</p>}
+    </Card>
   );
 }
