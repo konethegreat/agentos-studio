@@ -802,6 +802,16 @@ pub fn hub_tools() -> Vec<String> {
 }
 
 /// Shadow mode: what the router would pick, with the evidence behind it. It changes nothing.
+/// The committed routing policy for a repository, if it has one.
+#[tauri::command]
+pub fn routing_policy(repo: String) -> CmdResult<Option<serde_json::Value>> {
+    let dir = crate::review_agent::repo_dir(&repo);
+    let Some(p) = crate::routing::load(&dir) else {
+        return Ok(None);
+    };
+    serde_json::to_value(p).map(Some).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn router_suggestions() -> CmdResult<Vec<crate::router::Suggestion>> {
     blocking(crate::router::suggestions).await
