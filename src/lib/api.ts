@@ -590,6 +590,9 @@ export const api = {
     invoke<void>("set_tool_policy", { server, tool, policy }),
   hubTools: () => invoke<string[]>("hub_tools"),
 
+  offlineStatus: () =>
+    invoke<{ online: boolean; local_models: string[]; note: string }>("offline_status"),
+
   helpDocs: () => invoke<{ title: string; path: string; body: string }[]>("help_docs"),
 
   routingPolicy: (repo: string) =>

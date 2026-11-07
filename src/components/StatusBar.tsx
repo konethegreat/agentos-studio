@@ -36,9 +36,11 @@ export function StatusBar({
   const cli = useCli();
   const [available, setAvailable] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [offline, setOffline] = useState<{ online: boolean; local_models: string[]; note: string } | null>(null);
 
   useEffect(() => {
     void api.studioUpdateCheck().then(setAvailable).catch(() => undefined);
+    void api.offlineStatus().then(setOffline).catch(() => undefined);
   }, []);
 
   async function install() {
@@ -80,6 +82,14 @@ export function StatusBar({
         <RefreshCw className="size-3.5" />
       </button>
       <div className="flex-1" />
+      {offline && !offline.online && (
+        <span
+          title={offline.note}
+          className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 text-[11px] text-amber-300 ring-1 ring-amber-500/25"
+        >
+          Offline{offline.local_models.length > 0 ? ` · ${offline.local_models.length} local` : ""}
+        </span>
+      )}
       {available && (
         <button
           onClick={() => void install()}

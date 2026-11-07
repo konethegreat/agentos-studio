@@ -802,6 +802,12 @@ pub fn hub_tools() -> Vec<String> {
 }
 
 /// Shadow mode: what the router would pick, with the evidence behind it. It changes nothing.
+/// Whether the network is reachable and what can still run locally.
+#[tauri::command]
+pub async fn offline_status() -> CmdResult<crate::offline::OfflineStatus> {
+    blocking(|| Ok(crate::offline::status())).await
+}
+
 /// The documentation that ships with the build, for the in-app help view.
 #[tauri::command]
 pub async fn help_docs() -> CmdResult<Vec<crate::help::Doc>> {

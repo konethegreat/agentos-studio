@@ -21,6 +21,7 @@ pub mod memory_ledger;
 pub mod missions;
 pub mod models;
 pub mod notion;
+pub mod offline;
 pub mod ops;
 pub mod org;
 pub mod permissions;
@@ -273,6 +274,7 @@ pub fn run_gui() {
             commands::router_suggestions,
             commands::routing_policy,
             commands::help_docs,
+            commands::offline_status,
             commands::tool_policies,
             commands::set_tool_policy,
             commands::hub_tools,
