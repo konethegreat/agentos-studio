@@ -974,7 +974,7 @@ pub fn catalog(vault: &Path) -> Vec<CatalogEntry> {
             id: "agentos-hub",
             name: "AgentOS-Hub (Rust)",
             description:
-                "The native Rust Agent Bus and shared memory: 6 tools over your Obsidian vault.",
+                "The native Rust Agent Bus, typed shared memory and ranked recall: 9 tools over your Obsidian vault.",
             transport: "stdio",
             command_or_url: exe,
             args: vec![

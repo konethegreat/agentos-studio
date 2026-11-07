@@ -340,12 +340,12 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
         }),
         std::thread::spawn(move || {
             vec![match bus_selftest(&vault_path) {
-                Ok(6) => comp(
+                Ok(9) => comp(
                     "bus-selftest",
                     "Native MCP server self-test",
                     5,
                     true,
-                    "initialize + tools/list returned all 6 tools",
+                    "initialize + tools/list returned all 9 tools",
                     "Run again",
                 ),
                 Ok(n) => comp(
@@ -353,7 +353,7 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
                     "Native MCP server self-test",
                     5,
                     false,
-                    format!("expected 6 tools, got {n}"),
+                    format!("expected 9 tools, got {n}"),
                     "Run again",
                 ),
                 Err(e) => comp(
