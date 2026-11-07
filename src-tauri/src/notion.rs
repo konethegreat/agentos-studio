@@ -285,13 +285,21 @@ fn replace_children(page: &str, text: &str, tok: &str) -> Result<()> {
 
 /// Publish every artifact. With `dry_run`, or with no token, nothing leaves the machine.
 pub fn publish(v: &Vault, dry_run: bool) -> PublishReport {
+    publish_inner(v, dry_run, token(), parent_id())
+}
+
+/// Split out so tests can prove the no-token path without depending on the machine's env file.
+fn publish_inner(
+    v: &Vault,
+    dry_run: bool,
+    tok: Option<String>,
+    parent: Option<String>,
+) -> PublishReport {
     let mut report = PublishReport {
-        connected: token().is_some() && parent_id().is_some(),
-        dry_run: dry_run || token().is_none() || parent_id().is_none(),
+        connected: tok.is_some() && parent.is_some(),
+        dry_run: dry_run || tok.is_none() || parent.is_none(),
         ..Default::default()
     };
-    let tok = token();
-    let parent = parent_id();
 
     for (title, text) in artifacts(v) {
         let hash_now = hash(&text);
@@ -481,7 +489,7 @@ mod tests {
         std::env::remove_var("NOTION_TOKEN");
         let v = Vault::new(d.path().join("vault"));
         v.scaffold().unwrap();
-        let r = publish(&v, false);
+        let r = publish_inner(&v, false, None, None);
         assert!(r.dry_run);
         assert!(r.pages.iter().all(|p| p.action.contains("dry run")));
         crate::store::set_test_db(None);
