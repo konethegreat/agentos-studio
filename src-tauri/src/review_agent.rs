@@ -88,7 +88,7 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
     } else {
         let mut cmd = Command::new("gh");
         cmd.args(["pr", "diff", &number.to_string()])
-            .current_dir(&repo_dir(&m.repo))
+            .current_dir(repo_dir(&m.repo))
             .env("PATH", procs::search_path());
         #[cfg(windows)]
         {
