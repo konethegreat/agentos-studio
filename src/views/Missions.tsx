@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, ClipboardCheck, Play, Plus, ShieldCheck } from "lucide-react";
+import { ChevronDown, ChevronRight, ClipboardCheck, Play, Plus, ShieldCheck, Zap } from "lucide-react";
 import { api, errorText, type Mission } from "../lib/api";
 import { useToast } from "../components/Toasts";
 
@@ -23,6 +23,7 @@ export function Missions({ repos }: { repos: string[] }) {
   const [rows, setRows] = useState<Mission[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [auto, setAuto] = useState<{ enabled: boolean; max_concurrent: number } | null>(null);
   const [form, setForm] = useState({
     repo: repos[0] ?? "",
     goal: "",
@@ -43,8 +44,38 @@ export function Missions({ repos }: { repos: string[] }) {
 
   useEffect(() => {
     void load();
+    void api.automationStatus().then(setAuto).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // While automations are on, the scheduler runs in Rust; this keeps the board current.
+  useEffect(() => {
+    if (!auto?.enabled) return;
+    const t = window.setInterval(() => void load(), 12_000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto?.enabled]);
+
+  async function toggleAuto() {
+    const next = !(auto?.enabled ?? false);
+    try {
+      setAuto(await api.setAutomation(next, auto?.max_concurrent));
+      toast(next ? "ok" : "info", next ? "Automations on: queued missions start within a minute" : "Automations off: running missions still finish and go to review");
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }
+
+  async function tickNow() {
+    try {
+      const r = await api.automationTick();
+      toast("info", `${r.dispatched.length} started, ${r.moved_to_review.length} moved to review`);
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }
 
   async function create() {
     if (!form.repo.trim() || !form.goal.trim() || !form.acceptance.trim()) {
@@ -115,8 +146,26 @@ export function Missions({ repos }: { repos: string[] }) {
           {rows.length === 0 ? "none yet" : `${rows.filter((r) => r.status !== "done" && r.status !== "failed").length} open`}
         </span>
         <button
+          onClick={() => void toggleAuto()}
+          title="Start queued missions automatically, one per repository"
+          className={`ml-auto inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] ring-1 transition-colors ${
+            auto?.enabled
+              ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
+              : "text-slate-400 ring-line hover:bg-white/[0.04]"
+          }`}
+        >
+          <Zap className="size-3.5" /> Automations {auto?.enabled ? "on" : "off"}
+        </button>
+        <button
+          onClick={() => void tickNow()}
+          title="Run one scheduler pass now"
+          className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] text-slate-300 ring-1 ring-line hover:bg-white/[0.04]"
+        >
+          Run now
+        </button>
+        <button
           onClick={() => setOpen((v) => !v)}
-          className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] text-slate-300 ring-1 ring-line hover:bg-white/[0.04]"
+          className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] text-slate-300 ring-1 ring-line hover:bg-white/[0.04]"
         >
           {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           <Plus className="size-3.5" /> New mission
