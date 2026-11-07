@@ -163,6 +163,16 @@ fn set_status(c: &Connection, id: &str, from: &[&str], to: &str) -> Result<()> {
         "UPDATE missions SET status = ?1, updated_at = ?2 WHERE id = ?3",
         params![to, now(), id],
     )?;
+    // Unit tests use a thread-local store; the notifier's thread would read the real one.
+    if matches!(to, "done" | "failed") && m.status != to && !cfg!(test) {
+        // `hermes send` to the user's messaging target, when one is set; off by default.
+        let title: String = m.goal.chars().take(80).collect();
+        let pr = m.pr_url.clone();
+        let outcome = if to == "done" { "is done" } else { "failed" };
+        std::thread::spawn(move || {
+            crate::hermes_surfaces::notify_mission(&title, outcome, pr.as_deref())
+        });
+    }
     Ok(())
 }
 
