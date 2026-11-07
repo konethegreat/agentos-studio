@@ -1,7 +1,9 @@
-import { CircleCheck, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
+import { CircleCheck, Download, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import type { HermesStatus, StackStatus } from "../lib/api";
 import { useCli } from "./CliDrawer";
+import { api } from "../lib/api";
+import { useEffect, useState } from "react";
 
 function Chip({ children, title, onClick, tone = "" }: { children: ReactNode; title?: string; onClick?: () => void; tone?: string }) {
   return (
@@ -32,6 +34,22 @@ export function StatusBar({
   onRefresh: () => void;
 }) {
   const cli = useCli();
+  const [available, setAvailable] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
+
+  useEffect(() => {
+    void api.studioUpdateCheck().then(setAvailable).catch(() => undefined);
+  }, []);
+
+  async function install() {
+    setInstalling(true);
+    try {
+      await api.studioUpdateInstall();
+      setAvailable(null);
+    } catch {
+      setInstalling(false);
+    }
+  }
   const hermesOk = Boolean(hermes?.installed && hermes.config_ok);
   const systemsOk = Boolean(stack && stack.connected === stack.total);
   const healthy = hermesOk && systemsOk;
@@ -62,6 +80,17 @@ export function StatusBar({
         <RefreshCw className="size-3.5" />
       </button>
       <div className="flex-1" />
+      {available && (
+        <button
+          onClick={() => void install()}
+          disabled={installing}
+          title="Signed update: the signature is checked before anything installs"
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-sky-500/15 px-3 text-xs font-semibold text-sky-200 ring-1 ring-sky-500/30 hover:bg-sky-500/20 disabled:opacity-50"
+        >
+          <Download className="size-3.5" />
+          {installing ? "Installing" : `Update to ${available}`}
+        </button>
+      )}
       <button
         onClick={onOpenDiagnostics}
         title={healthy ? "Every check passed. Open Diagnostics for the report." : `${needs} check${needs === 1 ? "" : "s"} need attention. Open Diagnostics.`}

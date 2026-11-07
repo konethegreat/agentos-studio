@@ -732,6 +732,32 @@ pub async fn dispatch_mission(
     blocking(move || crate::missions::start(&v, &id)).await
 }
 
+/// Ask the signed update channel whether a newer Studio exists.
+#[tauri::command]
+pub async fn studio_update_check(app: tauri::AppHandle) -> CmdResult<Option<String>> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let found = updater.check().await.map_err(|e| e.to_string())?;
+    Ok(found.map(|u| u.version.clone()))
+}
+
+/// Download, verify the signature, install and restart. The signature is checked by the plugin
+/// against the public key baked into the build, so a tampered asset is refused.
+#[tauri::command]
+pub async fn studio_update_install(app: tauri::AppHandle) -> CmdResult<String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
+        return Ok("up to date".into());
+    };
+    let version = update.version.clone();
+    update
+        .download_and_install(|_chunk, _total| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(format!("{version} installed, restart to use it"))
+}
+
 #[tauri::command]
 pub async fn session_usage(session_id: String) -> CmdResult<Option<crate::usage::SessionUsage>> {
     blocking(move || crate::usage::usage(&session_id)).await

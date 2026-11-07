@@ -563,6 +563,9 @@ export const api = {
 
   workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
   missions: () => invoke<Mission[]>("list_missions", { limit: 100 }),
+  studioUpdateCheck: () => invoke<string | null>("studio_update_check"),
+  studioUpdateInstall: () => invoke<string>("studio_update_install"),
+
   sessionUsage: (sessionId: string) =>
     invoke<{
       model: string | null;
