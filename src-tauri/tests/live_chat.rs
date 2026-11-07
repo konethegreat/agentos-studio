@@ -46,6 +46,7 @@ fn hermes_turn_streams_tools_and_resumes() {
     let q = d.path().join("q.md");
     std::fs::write(&q, "Call the agentos-hub tool fetch_pending_tasks with agent_name all, then reply with exactly: OPEN <count>").unwrap();
     let req = ChatRequest {
+        turn: None,
         session_id: None,
         prompt: String::new(),
         working_dir: cwd.display().to_string(),
@@ -135,6 +136,7 @@ fn claude_turn_streams_partial_text_and_tools() {
         .unwrap()
         .to_path_buf();
     let req = ChatRequest {
+        turn: None,
         session_id: None,
         prompt: String::new(),
         working_dir: cwd.display().to_string(),

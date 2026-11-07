@@ -26,10 +26,8 @@ pub fn db_path_for(vault_root: &Path) -> PathBuf {
         "{:x}",
         md5_like(vault_root.to_string_lossy().to_lowercase().as_bytes())
     );
-    crate::store::db_path()
-        .parent()
-        .map(|p| p.join(format!("memory-{}.db", &digest[..10])))
-        .unwrap_or_else(|| PathBuf::from("memory.db"))
+    // The index location must not follow AGENTOS_STUDIO_DB, which tests point at a temp store.
+    crate::store::studio_dir().join(format!("memory-{}.db", &digest[..10]))
 }
 
 /// Small stable hash. Not cryptographic; only needs to separate vault paths.
@@ -69,6 +67,16 @@ pub fn open(vault_root: &Path) -> Result<Connection> {
          );",
     )?;
     Ok(c)
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NoteRow {
+    pub path: String,
+    pub title: String,
+    pub kind: String,
+    pub status: String,
+    pub repo: Option<String>,
+    pub in_degree: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -267,6 +275,28 @@ pub fn refresh(v: &Vault) -> Result<usize> {
     }
     tx.commit()?;
     Ok(touched)
+}
+
+/// Notes in the index with their link in-degree, newest first, for the Memory tab.
+pub fn notes(v: &Vault) -> Result<Vec<NoteRow>> {
+    refresh(v)?;
+    let c = open(&v.root)?;
+    let mut st = c.prepare(
+        "SELECT path, COALESCE(title,''), COALESCE(kind,'fact'), COALESCE(status,'active'),
+                repo, COALESCE(in_degree,0)
+         FROM files ORDER BY mtime DESC LIMIT 500",
+    )?;
+    let rows = st.query_map([], |r| {
+        Ok(NoteRow {
+            path: r.get(0)?,
+            title: r.get(1)?,
+            kind: r.get(2)?,
+            status: r.get(3)?,
+            repo: r.get(4)?,
+            in_degree: r.get(5)?,
+        })
+    })?;
+    Ok(rows.flatten().collect())
 }
 
 /// Full rebuild, used when the database is missing or the schema moved.

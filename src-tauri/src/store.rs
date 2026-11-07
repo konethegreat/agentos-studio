@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -95,6 +95,22 @@ CREATE TABLE IF NOT EXISTS chat_skills (
 );
 ";
 
+/// What each chat turn read from and wrote to memory.
+const MIGRATION_3: &str = "
+CREATE TABLE IF NOT EXISTS memory_ledger (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    turn       INTEGER NOT NULL,
+    op         TEXT NOT NULL,
+    target     TEXT NOT NULL,
+    path       TEXT NOT NULL DEFAULT '',
+    tool       TEXT NOT NULL DEFAULT '',
+    at         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_ledger_session ON memory_ledger(session_id, turn);
+CREATE INDEX IF NOT EXISTS idx_memory_ledger_at ON memory_ledger(at);
+";
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
@@ -133,6 +149,9 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     if v < 2 {
         c.execute_batch(MIGRATION_2)?;
+    }
+    if v < 3 {
+        c.execute_batch(MIGRATION_3)?;
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;

@@ -536,6 +536,7 @@ pub async fn send_chat_message(
     agent_backend: String,
     model: Option<String>,
     skills: Option<Vec<String>>,
+    turn: Option<u32>,
 ) -> CmdResult<ChatStarted> {
     chat_stream::send_chat_message(
         app,
@@ -547,6 +548,7 @@ pub async fn send_chat_message(
             agent_backend,
             model,
             skills: skills.unwrap_or_default(),
+            turn,
         },
     )
     .map_err(err)
@@ -686,6 +688,31 @@ pub fn get_pref(key: String) -> CmdResult<Option<String>> {
 pub fn set_pref(key: String, value: String) -> CmdResult<()> {
     let c = crate::store::open().map_err(|e| e.to_string())?;
     crate::store::kv_set(&c, &key, &value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn memory_ledger(
+    session_id: String,
+    limit: Option<usize>,
+) -> CmdResult<Vec<crate::memory_ledger::Entry>> {
+    blocking(move || crate::memory_ledger::list(&session_id, limit.unwrap_or(400))).await
+}
+
+#[tauri::command]
+pub async fn memory_recent(limit: Option<usize>) -> CmdResult<Vec<crate::memory_ledger::Entry>> {
+    blocking(move || crate::memory_ledger::recent(limit.unwrap_or(50))).await
+}
+
+#[tauri::command]
+pub async fn memory_notes(
+    state: tauri::State<'_, AppState>,
+) -> CmdResult<Vec<crate::memory_index::NoteRow>> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let _ = crate::memory_index::refresh(&v);
+        crate::memory_index::notes(&v)
+    })
+    .await
 }
 
 #[tauri::command]
