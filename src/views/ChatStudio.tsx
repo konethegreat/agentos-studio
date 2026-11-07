@@ -105,19 +105,21 @@ export function ChatStudio({
     if (workingDir) void api.setWorkingDir(workingDir).catch(() => undefined);
   }, [workingDir]);
 
-  // A GUI can inherit System32 as its working directory; ask Rust for a safe default instead.
+  // The stored folder is not trusted: a saved System32 value would bypass the resolver entirely.
+  // Ask Rust on every mount and overwrite whatever the browser remembered.
   useEffect(() => {
-    if (workingDir) return;
     void api
       .workingDirDefault()
       .then((d) => {
-        setWorkingDir(d.path);
-        if (d.forbidden_process_cwd) {
-          toast("info", `Started in ${basename(d.path)}; the inherited working directory was a system folder.`);
+        if (d.path && d.path !== workingDir) {
+          setWorkingDir(d.path);
+          if (d.forbidden_process_cwd && d.source === "home") {
+            toast("info", `Started in ${basename(d.path)}; the saved folder was a system directory.`);
+          }
         }
       })
       .catch(() => undefined);
-    // Only on first mount, when nothing is saved.
+    // First mount only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { localStorage.setItem("chat-skills", JSON.stringify(skills)); }, [skills]);
