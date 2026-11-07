@@ -24,10 +24,32 @@ const VERSION: &str = "2022-06-28";
 pub const KV_PARENT: &str = "notion.parent";
 pub const KV_INBOX: &str = "notion.inbox";
 
+/// `KEY=value` from a dotenv file, without a dotenv dependency. Never logged.
+pub fn parse_env(text: &str, key: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#'))
+        .find_map(|l| {
+            let (k, v) = l.split_once('=')?;
+            if k.trim() != key {
+                return None;
+            }
+            let v = v.trim().trim_matches('"').trim_matches('\'').trim();
+            (!v.is_empty()).then(|| v.to_string())
+        })
+}
+
+/// Hermes keeps secrets in `%LOCALAPPDATA%/hermes/.env`; Studio reads it by name, never copies it.
+fn hermes_env(key: &str) -> Option<String> {
+    let path = dirs::data_local_dir()?.join("hermes").join(".env");
+    let text = std::fs::read_to_string(path).ok()?;
+    parse_env(&text, key)
+}
+
 pub fn token() -> Option<String> {
     ["NOTION_API_KEY", "NOTION_TOKEN"]
         .iter()
-        .find_map(|k| std::env::var(k).ok())
+        .find_map(|k| std::env::var(k).ok().or_else(|| hermes_env(k)))
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
 }
@@ -49,6 +71,7 @@ pub fn set_setting(key: &str, value: &str) {
 fn parent_id() -> Option<String> {
     std::env::var("NOTION_PARENT_PAGE")
         .ok()
+        .or_else(|| hermes_env("NOTION_PARENT_PAGE"))
         .filter(|v| !v.trim().is_empty())
         .or_else(|| setting(KV_PARENT))
 }
@@ -262,13 +285,21 @@ fn replace_children(page: &str, text: &str, tok: &str) -> Result<()> {
 
 /// Publish every artifact. With `dry_run`, or with no token, nothing leaves the machine.
 pub fn publish(v: &Vault, dry_run: bool) -> PublishReport {
+    publish_inner(v, dry_run, token(), parent_id())
+}
+
+/// Split out so tests can prove the no-token path without depending on the machine's env file.
+fn publish_inner(
+    v: &Vault,
+    dry_run: bool,
+    tok: Option<String>,
+    parent: Option<String>,
+) -> PublishReport {
     let mut report = PublishReport {
-        connected: token().is_some() && parent_id().is_some(),
-        dry_run: dry_run || token().is_none() || parent_id().is_none(),
+        connected: tok.is_some() && parent.is_some(),
+        dry_run: dry_run || tok.is_none() || parent.is_none(),
         ..Default::default()
     };
-    let tok = token();
-    let parent = parent_id();
 
     for (title, text) in artifacts(v) {
         let hash_now = hash(&text);
@@ -411,6 +442,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn env_files_are_read_by_name_only() {
+        let t = "# comment\nOTHER=1\nNOTION_API_KEY=\"secret\"\n";
+        assert_eq!(parse_env(t, "NOTION_API_KEY").as_deref(), Some("secret"));
+        assert_eq!(parse_env(t, "MISSING"), None);
+        assert_eq!(parse_env("NOTION_API_KEY=\n", "NOTION_API_KEY"), None);
+    }
+
+    #[test]
     fn hash_notices_content_changes() {
         assert_eq!(hash("abc"), hash("abc"));
         assert_ne!(hash("abc"), hash("abd"));
@@ -450,7 +489,7 @@ mod tests {
         std::env::remove_var("NOTION_TOKEN");
         let v = Vault::new(d.path().join("vault"));
         v.scaffold().unwrap();
-        let r = publish(&v, false);
+        let r = publish_inner(&v, false, None, None);
         assert!(r.dry_run);
         assert!(r.pages.iter().all(|p| p.action.contains("dry run")));
         crate::store::set_test_db(None);
