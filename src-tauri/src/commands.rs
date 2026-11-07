@@ -801,6 +801,12 @@ pub fn hub_tools() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Shadow mode: what the router would pick, with the evidence behind it. It changes nothing.
+#[tauri::command]
+pub async fn router_suggestions() -> CmdResult<Vec<crate::router::Suggestion>> {
+    blocking(crate::router::suggestions).await
+}
+
 #[tauri::command]
 pub fn model_catalog() -> crate::models::Catalog {
     crate::models::catalog()

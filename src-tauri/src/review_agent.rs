@@ -81,7 +81,26 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
     }
     let number = missions::pr_number(&m)
         .ok_or_else(|| anyhow::anyhow!("{} has no pull request to review", m.id))?;
-    let diff = crate::github::pr_diff(&m.repo, number).unwrap_or_default();
+    // A mission stores the project slug. `gh` can resolve the repo from the working folder, so use
+    // that when the value is not `owner/name`.
+    let diff = if m.repo.contains('/') {
+        crate::github::pr_diff(&m.repo, number).unwrap_or_default()
+    } else {
+        let mut cmd = Command::new("gh");
+        cmd.args(["pr", "diff", &number.to_string()])
+            .current_dir(repo_dir(&m.repo))
+            .env("PATH", procs::search_path());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(procs::CREATE_NO_WINDOW);
+        }
+        cmd.output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default()
+    };
     if diff.trim().is_empty() {
         bail!("could not read the diff of {}#{number}", m.repo);
     }
