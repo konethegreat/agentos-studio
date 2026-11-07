@@ -99,7 +99,7 @@ export function ChatStudio({
   const textarea = useRef<HTMLTextAreaElement>(null);
 
   const cwd = workingDir || home;
-  useEffect(() => localStorage.setItem("chat-backend", JSON.stringify(backend)), [backend]);
+  useEffect(() => { localStorage.setItem("chat-backend", JSON.stringify(backend)); }, [backend]);
   useEffect(() => {
     localStorage.setItem("chat-cwd", JSON.stringify(workingDir));
     if (workingDir) void api.setWorkingDir(workingDir).catch(() => undefined);
@@ -120,7 +120,7 @@ export function ChatStudio({
     // Only on first mount, when nothing is saved.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => localStorage.setItem("chat-skills", JSON.stringify(skills)), [skills]);
+  useEffect(() => { localStorage.setItem("chat-skills", JSON.stringify(skills)); }, [skills]);
 
   const loadSessions = useCallback(
     async (q = query) => {

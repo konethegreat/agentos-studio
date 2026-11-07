@@ -36,8 +36,8 @@ export function SetupWizard({
   const [initBusy, setInitBusy] = useState(false);
   const logEnd = useRef<HTMLDivElement>(null);
 
-  useEffect(() => setVaultPath(settings?.vault ?? ""), [settings?.vault]);
-  useEffect(() => logEnd.current?.scrollIntoView({ block: "end" }), [setupLog.length]);
+  useEffect(() => { setVaultPath(settings?.vault ?? ""); }, [settings?.vault]);
+  useEffect(() => { logEnd.current?.scrollIntoView({ block: "end" }); }, [setupLog.length]);
 
   async function refresh() {
     setRefreshing(true);

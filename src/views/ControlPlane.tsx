@@ -84,7 +84,7 @@ function Providers({ onStatusChanged }: { onStatusChanged: () => void }) {
       toast("error", errorText(e));
     }
   }, [toast]);
-  useEffect(() => void load(), [load]);
+  useEffect(() => { void load(); }, [load]);
   if (!cfg) return <Loader2 className="mx-auto mt-10 size-5 animate-spin text-slate-500" />;
   return (
     <>
@@ -129,7 +129,7 @@ function ProviderCard({ p, onChanged, onReload }: { p: ProviderView; onChanged: 
   const [busy, setBusy] = useState<"activate" | "test" | "login" | null>(null);
   const [test, setTest] = useState<ProviderTest | null>(null);
 
-  useEffect(() => setModel(p.default_model), [p.default_model]);
+  useEffect(() => { setModel(p.default_model); }, [p.default_model]);
 
   async function loadModels() {
     if (models) return;
@@ -292,7 +292,7 @@ function McpHub({ onStatusChanged }: { onStatusChanged: () => void }) {
     }
   }, []);
 
-  useEffect(() => void load(), [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const serverNames = servers?.map((s) => s.name).join("|") ?? "";
   useEffect(() => {

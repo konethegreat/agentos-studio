@@ -107,7 +107,7 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
     }
   }, [toast]);
 
-  useEffect(() => void loadAuth(), [loadAuth]);
+  useEffect(() => { void loadAuth(); }, [loadAuth]);
   useEffect(() => {
     if (!repo && all.length) setRepo(all[0].nameWithOwner);
   }, [all, repo]);
@@ -134,8 +134,8 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
     }
   }, [auth?.logged_in, branch, branches.length, repo, state, tab, toast]);
 
-  useEffect(() => void load(), [load]);
-  useEffect(() => setSel(null), [repo, tab]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { setSel(null); }, [repo, tab]);
 
   async function act(p: (a: Approved) => Promise<string>) {
     try {

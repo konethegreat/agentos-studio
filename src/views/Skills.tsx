@@ -30,7 +30,7 @@ export function Skills({ onUseSkill }: { onUseSkill: (name: string) => void }) {
     }
   }, [toast]);
 
-  useEffect(() => void load(), [load]);
+  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
     if (!selected) {
