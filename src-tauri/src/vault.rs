@@ -1006,6 +1006,33 @@ impl Vault {
         Ok(format!("Memory note {action}: {}", path.display()))
     }
 
+    /// The `01_Projects` note for a repository, tolerant of hyphens, underscores and case.
+    fn resolve_project_note(&self, repo: &str) -> Option<PathBuf> {
+        fn norm(s: &str) -> String {
+            s.to_lowercase().replace(['-', '_', ' '], "")
+        }
+        let want = norm(repo);
+        let direct = self.projects().join(format!("{}.md", slug(repo, 60)));
+        if direct.exists() {
+            return Some(direct);
+        }
+        let entries = fs::read_dir(self.projects()).ok()?;
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) != Some("md") {
+                continue;
+            }
+            let stem = p
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if norm(&stem) == want {
+                return Some(p);
+            }
+        }
+        None
+    }
+
     /// One page an agent can read instead of every note: purpose, stack, commands, open tasks,
     /// the last few decisions and the known gotchas.
     pub fn project_brief(&self, repo: &str) -> Result<String> {
@@ -1014,21 +1041,41 @@ impl Vault {
             bail!("repo must not be empty");
         }
         let slugish = slug(repo, 60);
-        let note = self.projects().join(format!("{slugish}.md"));
+        let note = self.resolve_project_note(repo);
+
+        fn norm(s: &str) -> String {
+            s.to_lowercase().replace(['-', '_', ' '], "")
+        }
+        let note_label = note
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| format!("{slugish}.md"));
         let mut out = String::new();
         out.push_str(&format!("# Brief: {repo}\n\n"));
 
         let mut root_dir: Option<PathBuf> = None;
-        if note.exists() {
+        if let Some(note) = note.as_ref().filter(|p| p.exists()) {
             let raw = fs::read_to_string(&note)?;
             let doc = Doc::parse(&raw);
+            // Prose, not the frontmatter table or a callout: the first real sentence.
             let purpose = doc
                 .body
                 .lines()
                 .map(str::trim)
-                .find(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with('>'))
+                .find(|l| {
+                    l.chars().count() > 20
+                        && !l.starts_with('#')
+                        && !l.starts_with('>')
+                        && !l.starts_with('|')
+                        && !l.starts_with('-')
+                        && !l.starts_with('[')
+                        && !l.starts_with("```")
+                })
                 .unwrap_or("No purpose recorded.")
-                .to_string();
+                .chars()
+                .take(400)
+                .collect::<String>();
             out.push_str(&format!("## Purpose\n{purpose}\n\n"));
             for key in ["path", "root", "repo_path"] {
                 if let Some(p) = doc.get(key) {
@@ -1043,10 +1090,27 @@ impl Vault {
             ));
         }
 
+        // Hermes already records which folders a project owns; use it when the note has no path.
+        if root_dir.is_none() {
+            if let Ok(list) = crate::projects::list() {
+                if let Some(p) = list
+                    .iter()
+                    .find(|p| norm(&p.slug) == norm(repo) || norm(&p.name) == norm(repo))
+                {
+                    root_dir = p
+                        .primary_path
+                        .clone()
+                        .or_else(|| p.folders.first().map(|f| f.path.clone()))
+                        .map(PathBuf::from);
+                }
+            }
+        }
+
         let mut stack: Vec<String> = Vec::new();
         if let Some(dir) = root_dir.as_deref() {
             for (file, label) in [
                 ("Cargo.toml", "Rust"),
+                ("src-tauri/Cargo.toml", "Rust (Tauri backend)"),
                 ("package.json", "Node / TypeScript"),
                 ("pyproject.toml", "Python"),
                 ("go.mod", "Go"),
