@@ -47,7 +47,7 @@ export function Projects({
     }
   }, [toast]);
 
-  useEffect(() => void load(), [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const loadSessions = useCallback(
     async (slug: string) => {

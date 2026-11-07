@@ -34,7 +34,7 @@ export function CommandPalette({ commands, open, onClose }: { commands: PaletteC
       window.setTimeout(() => input.current?.focus(), 10);
     }
   }, [open]);
-  useEffect(() => setIdx(0), [q]);
+  useEffect(() => { setIdx(0); }, [q]);
 
   if (!open) return null;
 
