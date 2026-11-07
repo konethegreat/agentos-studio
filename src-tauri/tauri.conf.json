@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AgentOS Studio",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "identifier": "dev.konethegreat.agentos-studio",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -28,13 +28,16 @@
     "active": true,
     "targets": "all",
     "category": "DeveloperTool",
-    "shortDescription": "Control plane and Rust MCP bus for multi-agent engineering fleets",
+    "shortDescription": "Multi-agent control plane by K-ONE IT SOLUTIONS",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "K-ONE IT SOLUTIONS",
+    "copyright": "Copyright 2026 Kone Tshivhinda, K-ONE IT SOLUTIONS",
+    "longDescription": "AgentOS Studio is the native control plane for multi-agent engineering: Hermes, Claude Code, Qoder and Antigravity in one window, with a shared brain, real terminals, projects, skills and a Rust MCP bus. Built by Kone Tshivhinda at K-ONE IT SOLUTIONS."
   }
 }
