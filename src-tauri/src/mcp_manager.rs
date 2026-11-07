@@ -56,6 +56,9 @@ pub struct McpServer {
     pub agents: Vec<AgentReg>,
     pub is_agentos_hub: bool,
     pub legacy_python: bool,
+    /// agentos-hub only: the registration does not point at this app version's staged hub binary,
+    /// so agents run an older hub than the app (see `stage_hub_binary`).
+    pub hub_outdated: bool,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -258,13 +261,94 @@ pub fn merge_registry(sources: &BTreeMap<String, BTreeMap<String, ServerDef>>) -
             agents,
             is_agentos_hub: name == "agentos-hub",
             legacy_python,
+            hub_outdated: false,
         });
     }
     out
 }
 
 pub fn get_all_mcp_servers() -> Vec<McpServer> {
-    merge_registry(&all_sources())
+    let mut servers = merge_registry(&all_sources());
+    mark_hub_outdated(
+        &mut servers,
+        &hub_binary_for(&hub_root(), env!("CARGO_PKG_VERSION")),
+    );
+    servers
+}
+
+/// Flag agentos-hub when any agent's registration is not this version's staged binary.
+pub fn mark_hub_outdated(servers: &mut [McpServer], expected: &Path) {
+    let norm = |s: &str| s.replace('\\', "/").to_lowercase();
+    let want = norm(&expected.display().to_string());
+    let sources = all_sources();
+    for s in servers.iter_mut().filter(|s| s.is_agentos_hub) {
+        s.hub_outdated = AGENTS.iter().any(|a| {
+            sources
+                .get(*a)
+                .and_then(|m| m.get(&s.name))
+                .is_some_and(|d| d.command.as_deref().map(norm) != Some(want.clone()))
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The agentos-hub binary agents run
+// ---------------------------------------------------------------------------------------------
+
+/// Hub binaries live outside both the build tree and the app install folder, one folder per
+/// version: `%LOCALAPPDATA%/AgentOS Hub/<version>/agentos-studio.exe`. Agent sessions hold the hub
+/// exe open for as long as they run, so registering the app's own exe would freeze the app (no
+/// installer or updater could replace it), and a single shared path could never be upgraded
+/// while any session is alive. A new version gets a new folder; old ones stay for the sessions
+/// still using them.
+pub fn hub_root() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(crate::settings::home)
+        .join("AgentOS Hub")
+}
+
+pub fn hub_binary_for(root: &Path, version: &str) -> PathBuf {
+    root.join(version).join("agentos-studio.exe")
+}
+
+fn same_bytes(a: &Path, b: &Path) -> bool {
+    match (fs::metadata(a), fs::metadata(b)) {
+        (Ok(x), Ok(y)) if x.len() == y.len() => fs::read(a).ok() == fs::read(b).ok(),
+        _ => false,
+    }
+}
+
+/// Copy `src` to the versioned hub path under `root`. Idempotent: an identical copy is reused,
+/// and the copy goes through a temporary file so a half-written exe is never registered.
+pub fn stage_hub_binary_at(src: &Path, root: &Path, version: &str) -> Result<PathBuf> {
+    let dst = hub_binary_for(root, version);
+    if same_bytes(src, &dst) {
+        return Ok(dst);
+    }
+    let dir = dst.parent().context("hub path has no folder")?;
+    fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let tmp = dir.join("agentos-studio.exe.partial");
+    fs::copy(src, &tmp)
+        .with_context(|| format!("copying {} to {}", src.display(), tmp.display()))?;
+    if dst.exists() {
+        fs::remove_file(&dst).with_context(|| {
+            format!(
+                "{} differs from this build and is in use; close the agent sessions using it, or bump the version",
+                dst.display()
+            )
+        })?;
+    }
+    fs::rename(&tmp, &dst).with_context(|| format!("placing {}", dst.display()))?;
+    Ok(dst)
+}
+
+/// Stage this running app's exe as the hub for its own version.
+pub fn stage_hub_binary() -> Result<PathBuf> {
+    stage_hub_binary_at(
+        &std::env::current_exe()?,
+        &hub_root(),
+        env!("CARGO_PKG_VERSION"),
+    )
 }
 
 fn find_def(name: &str) -> Result<ServerDef> {
@@ -435,8 +519,27 @@ fn json_remove(agent: &str, name: &str) -> Result<String> {
     Ok(format!("Removed {name} from {}", path.display()))
 }
 
-fn hermes_upsert(spec: &ServerSpec, present: bool) -> Result<String> {
-    if present {
+/// Only the command differs: change that one key, so Hermes keeps everything else it stores for
+/// the server (timeouts, enabled state, per-tool settings) instead of a remove and re-add.
+fn only_command_changes(existing: &ServerDef, spec: &ServerSpec) -> bool {
+    existing.transport == "stdio"
+        && spec.transport == "stdio"
+        && existing.args == spec.args
+        && existing.env == spec.env_vars
+}
+
+fn hermes_upsert(spec: &ServerSpec, existing: Option<&ServerDef>) -> Result<String> {
+    if let Some(def) = existing {
+        if only_command_changes(def, spec) {
+            let key = format!("mcp_servers.{}.command", spec.name);
+            cli(
+                "hermes",
+                &["config", "set", &key, &spec.command_or_url],
+                None,
+                60,
+            )?;
+            return Ok(format!("Pointed {} at {}", spec.name, spec.command_or_url));
+        }
         cli("hermes", &["mcp", "remove", &spec.name], Some("y\n"), 60)?;
     }
     let mut args: Vec<String> = vec!["mcp".into(), "add".into(), spec.name.clone()];
@@ -512,7 +615,7 @@ pub fn add_mcp_server(spec: &ServerSpec, targets: &[String]) -> Result<Vec<Agent
     let mut results = Vec::new();
     for agent in AGENTS.iter().filter(|a| targets.iter().any(|t| t == *a)) {
         let r = match *agent {
-            "hermes" => hermes_upsert(spec, present("hermes")),
+            "hermes" => hermes_upsert(spec, sources.get("hermes").and_then(|m| m.get(&spec.name))),
             "claude-code" => claude_upsert(spec, present("claude-code")),
             other => json_upsert(other, spec),
         };
@@ -585,9 +688,10 @@ pub fn sync_server_to_agents(name: &str, targets: &[String]) -> Result<Vec<Agent
     add_mcp_server(&spec, targets)
 }
 
-/// Point `agentos-hub` in every agent at this Studio binary (`--mcp-stdio --vault <vault>`).
+/// Point `agentos-hub` in every agent at this version's staged hub binary
+/// (`--mcp-stdio --vault <vault>`). Sessions already running keep the binary they started with.
 pub fn cutover_agentos_hub(vault: &Path) -> Result<Vec<AgentOutcome>> {
-    let exe = std::env::current_exe()?.display().to_string();
+    let exe = stage_hub_binary()?.display().to_string();
     let spec = agentos_hub_spec(&exe, vault);
     add_mcp_server(
         &spec,
@@ -1153,6 +1257,56 @@ pub fn gh_token() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hub_binary_is_staged_per_version_and_reused() {
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("build.exe");
+        fs::write(&src, b"hub v1").unwrap();
+        let root = d.path().join("AgentOS Hub");
+        let a = stage_hub_binary_at(&src, &root, "0.9.1").unwrap();
+        assert_eq!(a, root.join("0.9.1").join("agentos-studio.exe"));
+        assert_eq!(fs::read(&a).unwrap(), b"hub v1");
+        assert!(!a.with_file_name("agentos-studio.exe.partial").exists());
+        // Identical bytes: reused, not rewritten.
+        let before = fs::metadata(&a).unwrap().modified().unwrap();
+        assert_eq!(stage_hub_binary_at(&src, &root, "0.9.1").unwrap(), a);
+        assert_eq!(fs::metadata(&a).unwrap().modified().unwrap(), before);
+        // A new version gets its own folder and leaves the old one for running sessions.
+        fs::write(&src, b"hub v2").unwrap();
+        let b = stage_hub_binary_at(&src, &root, "0.9.2").unwrap();
+        assert_ne!(a, b);
+        assert_eq!(fs::read(&a).unwrap(), b"hub v1");
+        assert_eq!(fs::read(&b).unwrap(), b"hub v2");
+        // Same version rebuilt with different bytes replaces an unlocked copy.
+        assert_eq!(
+            fs::read(stage_hub_binary_at(&src, &root, "0.9.1").unwrap()).unwrap(),
+            b"hub v2"
+        );
+    }
+
+    #[test]
+    fn hermes_hub_update_changes_only_the_command() {
+        let spec = agentos_hub_spec("C:/new/agentos-studio.exe", Path::new("C:/vault"));
+        let existing = ServerDef {
+            transport: "stdio".into(),
+            command: Some("C:/old/agentos-studio.exe".into()),
+            args: spec.args.clone(),
+            enabled: true,
+            ..Default::default()
+        };
+        assert!(only_command_changes(&existing, &spec));
+        let other_vault = ServerDef {
+            args: vec!["--mcp-stdio".into(), "--vault".into(), "D:/other".into()],
+            ..existing.clone()
+        };
+        assert!(!only_command_changes(&other_vault, &spec));
+        let python = ServerDef {
+            args: vec!["agent_bus_server.py".into()],
+            ..existing
+        };
+        assert!(!only_command_changes(&python, &spec));
+    }
 
     #[test]
     fn parses_hermes_yaml_servers() {

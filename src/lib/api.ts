@@ -276,6 +276,8 @@ export interface McpServer {
   agents: AgentReg[];
   is_agentos_hub: boolean;
   legacy_python: boolean;
+  /** agentos-hub only: some agent runs a hub binary other than this app version's. */
+  hub_outdated: boolean;
 }
 
 export interface ToolSchema {

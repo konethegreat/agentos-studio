@@ -522,7 +522,17 @@ pub fn run(app: Option<AppHandle>) -> BootReport {
         if claude_ok {
             registered.push("Claude Code");
         }
+        let outdated = crate::mcp_manager::get_all_mcp_servers()
+            .iter()
+            .any(|s| s.is_agentos_hub && s.hub_outdated);
         match registered.len() {
+            2 if outdated => (
+                Status::Warn,
+                format!(
+                    "Agents run an agentos-hub other than v{}. Use Update agentos-hub in MCP and Providers",
+                    env!("CARGO_PKG_VERSION")
+                ),
+            ),
             2 => (
                 Status::Ok,
                 "Registered in Hermes and Claude Code".to_string(),

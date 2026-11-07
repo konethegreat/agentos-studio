@@ -266,6 +266,22 @@ Depends on: v0.5 capability metadata, and the cost and outcome data from v0.4.
 
 This completes the design-system bullet listed under v0.4.1, which was never built at the time.
 
+## v0.9.2: the hub agents run follows the app
+
+- **Versioned hub binaries:** Update agentos-hub copies the app's own exe to
+  `%LOCALAPPDATA%/AgentOS Hub/<version>/agentos-studio.exe` and registers that copy in Hermes,
+  Claude Code, Qoder and Antigravity. The app's install folder is never registered, so the installer
+  and updater can always replace it, and a new version never has to overwrite an exe that running
+  sessions hold open. Older version folders stay for the sessions still using them.
+- **Hermes keeps its settings:** when only the command changes, the registration is updated with a
+  single `hermes config set` instead of a remove and re-add.
+- **Visible drift:** MCP and Providers and the startup checks say when agents run a hub other than
+  this app version, and offer the update.
+- Before this, Hermes and Claude Code ran a 0.4.0 hub from the build folder, and Qoder and
+  Antigravity still ran the Python `agent_bus_server.py`. The Rust hub provides every tool the
+  Python server had, plus recall, remember and project_brief.
+- Verified by `tests/live_hub_cutover.rs` against the real agent configs.
+
 ## Ideas worth considering
 
 - Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.
