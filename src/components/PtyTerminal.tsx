@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 import { studio, studioEvents } from "../lib/studio";
+import { currentTheme, onThemeChange, type Theme } from "../lib/theme";
 
 const THEME = {
   background: "#080b11",
@@ -28,6 +29,34 @@ const THEME = {
   brightWhite: "#f9fafb",
 };
 
+/** The same palette tuned for a light background, so the terminal follows the app theme. */
+const LIGHT_THEME = {
+  // Matches the light "sunken" surface the terminal panel sits on.
+  background: "#eceff4",
+  foreground: "#1f2328",
+  cursor: "#047857",
+  cursorAccent: "#eceff4",
+  selectionBackground: "#10b98140",
+  black: "#24292f",
+  red: "#cf222e",
+  green: "#116329",
+  yellow: "#7d4e00",
+  blue: "#0969da",
+  magenta: "#8250df",
+  cyan: "#1b7c83",
+  white: "#6e7781",
+  brightBlack: "#57606a",
+  brightRed: "#a40e26",
+  brightGreen: "#1a7f37",
+  brightYellow: "#633c01",
+  brightBlue: "#218bff",
+  brightMagenta: "#a475f9",
+  brightCyan: "#3192aa",
+  brightWhite: "#8c959f",
+};
+
+const themeFor = (t: Theme) => (t === "light" ? LIGHT_THEME : THEME);
+
 /** A real terminal bound to a Rust PTY. Stays mounted while hidden so no output is lost. */
 export function PtyTerminal({ id, active, exited }: { id: string; active: boolean; exited: boolean }) {
   const host = useRef<HTMLDivElement>(null);
@@ -43,7 +72,10 @@ export function PtyTerminal({ id, active, exited }: { id: string; active: boolea
       cursorBlink: true,
       scrollback: 10000,
       allowProposedApi: false,
-      theme: THEME,
+      theme: themeFor(currentTheme()),
+    });
+    const unTheme = onThemeChange((th) => {
+      t.options.theme = themeFor(th);
     });
     const f = new FitAddon();
     t.loadAddon(f);
@@ -100,6 +132,7 @@ export function PtyTerminal({ id, active, exited }: { id: string; active: boolea
 
     return () => {
       disposed = true;
+      unTheme();
       ro.disconnect();
       onInput.dispose();
       onResize.dispose();
