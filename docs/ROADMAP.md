@@ -137,7 +137,18 @@ after, and the router itself waits for mission scorecards.
   reviewer is not the implementer, `gh pr checks` is fully green, spend is inside budget, and the
   repository is allow-listed. Otherwise it returns the reasons instead of merging.
 
-## v0.6.0: model layer, full parity and live freshness
+## v0.6.0: model layer, live catalog and per-mission pins (shipped)
+
+- **Catalog from the runtime, not a hardcoded list:** providers and models are read from Hermes's
+  `provider_models_cache.json`, with labels for the ones you use (Claude subscription, Antigravity
+  Argon, OpenRouter, Anthropic, OpenAI, DeepSeek, Gemini, Nous, local). A model that appears in
+  Hermes appears in Studio without a release.
+- **Active provider and model** come from `config.yaml`, so the picker can show what is currently
+  live rather than guessing.
+- **Per-mission pins:** a mission carries a provider and a model. The Missions board offers the real
+  model list for the chosen provider, with "inherit active model" as the default. This is the hook
+  the router will use later; nothing is chosen for you yet.
+
 
 Goal: anything Hermes can connect to in a terminal can be chosen in the app, and new models appear
 without shipping a new Studio release.
