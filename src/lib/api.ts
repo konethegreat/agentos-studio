@@ -237,6 +237,18 @@ export interface ToolCallView {
   arguments: string;
 }
 
+/** A chat branched at one message into a new Hermes session. */
+export interface ForkResult {
+  /** The new session, or null when the fork point was the first message (nothing to carry). */
+  session_id: string | null;
+  parent_id: string;
+  title: string;
+  cwd: string;
+  turns: number;
+  /** The forked-at user message, returned to the composer for editing. */
+  draft: string | null;
+}
+
 export interface StoredMessage {
   id: number;
   role: string;
@@ -558,6 +570,7 @@ export const api = {
   addProjectFolder: (slug: string, path: string) => invoke<string>("add_project_folder", { slug, path }),
   linkBranch: (parent: string, projectSlug: string | null, title: string, child: string) =>
     invoke<void>("link_branch", { parent, projectSlug, title, child }),
+  forkSession: (sessionId: string, atMessageId: number) => invoke<ForkResult>("fork_session", { sessionId, atMessageId }),
   chatSkills: (sessionId: string) => invoke<string[]>("get_chat_skills", { sessionId }),
   setChatSkills: (sessionId: string, skills: string[]) => invoke<void>("set_chat_skills", { sessionId, skills }),
 

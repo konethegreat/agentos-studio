@@ -228,6 +228,13 @@ rejected.
 - **Session branches.** Any chat in a project can spin off a separate one with its own parent link,
   so "one chat per concern" does not mean losing where it came from. The child is a real Hermes
   session in the same folder; Studio records the relationship in `studio.db` and nothing else.
+- **Fork at a message.** Hover any message in a Hermes chat and press the fork icon. Forking at a
+  reply starts a new session with the conversation up to and including that reply; forking at one
+  of your messages keeps everything before it and puts that message back in the composer to edit
+  and resend. The fork is created by `hermes sessions import` (Hermes's gateway is the only writer
+  of `state.db`), read back to check every turn landed, titled "Fork of ...", and linked to its
+  parent as a branch. It carries the text of each turn plus a `[ran tool: name]` line per tool
+  call; tool outputs and reasoning are not copied. The original chat is never changed.
 - **Skills.** The Skills view reads the installed skills tree (`SKILL.md` frontmatter plus the full
   body), searches the registries and installs through `hermes skills`, and removes or updates them.
   **Use in a chat** attaches a skill to the conversation, which passes `-s <skill>` to Hermes on
@@ -370,6 +377,7 @@ cargo test                    # unit tests plus the native MCP probe
 cargo test --test live_smoke -- --ignored --nocapture
 cargo test --test live_chat -- --ignored --nocapture
 cargo test --test live_v3 -- --ignored --nocapture --test-threads 1   # PTY, updates, GitHub
+cargo test --test live_fork -- --ignored --nocapture --test-threads 1 # fork a real session, then delete it
 ```
 
 The live tests read your Hermes sessions, providers and MCP servers, run real chat turns on both backends (then delete the session they created), and re-apply your active provider without changing it. `live_v3` runs PowerShell and interactive Hermes inside a real PTY, checks all three update channels against the network, and reads PRs, diffs, branches, commits, runs and issues of this repository through `gh` (read-only).

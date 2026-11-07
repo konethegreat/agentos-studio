@@ -376,7 +376,7 @@ pub fn get_provider_config() -> Result<ProviderConfig> {
     })
 }
 
-fn hermes_ok(args: &[&str]) -> Result<String> {
+pub(crate) fn hermes_ok(args: &[&str]) -> Result<String> {
     let (code, out, err) =
         procs::run_with_timeout("hermes", args, Some("y\n"), None, Duration::from_secs(90))?;
     let text = format!("{}{}", out, err);
@@ -786,7 +786,7 @@ pub fn state_db() -> PathBuf {
     procs::hermes_home().join("state.db")
 }
 
-fn open_ro() -> Result<Connection> {
+pub(crate) fn open_ro() -> Result<Connection> {
     open_db(&state_db(), true)
 }
 
@@ -1059,36 +1059,22 @@ pub fn load_session_messages(session_id: &str) -> Result<Vec<ChatMessage>> {
     load_messages_in(&c, session_id, 2000)
 }
 
-pub fn rename_session_in(c: &Connection, session_id: &str, title: &str) -> Result<()> {
-    let cols = columns(c, "sessions")?;
-    let n = if cols.contains("title_source") {
-        c.execute(
-            "UPDATE sessions SET title = ?1, title_source = 'user' WHERE id = ?2",
-            params![title, session_id],
-        )?
-    } else {
-        c.execute(
-            "UPDATE sessions SET title = ?1 WHERE id = ?2",
-            params![title, session_id],
-        )?
-    };
-    if n == 0 {
-        bail!("Session {session_id} not found");
-    }
-    Ok(())
-}
-
+/// Renames go through `hermes sessions rename`: the Hermes gateway is the only writer of
+/// `state.db`, and a direct UPDATE would bypass its revision bookkeeping and title uniqueness.
 pub fn rename_session(session_id: &str, title: &str) -> Result<()> {
     let title = title.trim();
     if title.is_empty() {
         bail!("Title cannot be empty");
     }
-    let direct = open_db(&state_db(), false).and_then(|c| rename_session_in(&c, session_id, title));
-    match direct {
-        Ok(()) => Ok(()),
-        Err(e) if e.to_string().contains("not found") => Err(e),
-        Err(_) => hermes_ok(&["sessions", "rename", session_id, title]).map(|_| ()),
+    let exists: Option<String> = open_ro()?
+        .query_row("SELECT id FROM sessions WHERE id = ?1", [session_id], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    if exists.is_none() {
+        bail!("Session {session_id} not found");
     }
+    hermes_ok(&["sessions", "rename", session_id, title]).map(|_| ())
 }
 
 /// Deletion runs through Hermes: sessions are referenced by usage, admission and worker
@@ -1352,23 +1338,13 @@ mod tests {
     }
 
     #[test]
-    fn session_store_loads_active_messages_and_renames() {
+    fn session_store_loads_active_messages() {
         let (_d, c) = fixture_db();
         let msgs = load_messages_in(&c, "s1", 100).unwrap();
         assert_eq!(msgs.len(), 4, "inactive rows are skipped");
         assert_eq!(msgs[1].tool_calls[0].name, "terminal");
         assert_eq!(msgs[2].tool_call_id.as_deref(), Some("c1"));
         assert_eq!(msgs[3].content, "Fixed it.");
-        rename_session_in(&c, "s1", "Auth flow fix").unwrap();
-        let t: (String, String) = c
-            .query_row(
-                "SELECT title, title_source FROM sessions WHERE id='s1'",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(t, ("Auth flow fix".to_string(), "user".to_string()));
-        assert!(rename_session_in(&c, "nope", "x").is_err());
         let summary = list_sessions_in(&c, Some("s1"), 5).unwrap().remove(0);
         let md = session_markdown(&summary, &msgs);
         assert!(md.contains("type: hermes-session"));

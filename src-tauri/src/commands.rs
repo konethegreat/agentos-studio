@@ -1028,6 +1028,15 @@ pub async fn link_branch(
         .await
 }
 
+/// Branch a Hermes chat at one message into a new Hermes session (imported through Hermes).
+#[tauri::command]
+pub async fn fork_session(
+    session_id: String,
+    at_message_id: i64,
+) -> CmdResult<crate::fork::ForkResult> {
+    blocking(move || crate::fork::fork(&session_id, at_message_id)).await
+}
+
 #[tauri::command]
 pub async fn get_chat_skills(session_id: String) -> CmdResult<Vec<String>> {
     blocking(move || Ok(crate::projects::chat_skills(&session_id))).await

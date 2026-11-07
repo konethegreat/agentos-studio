@@ -14,6 +14,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Streaming chat with tool cards | yes | MCP cards show server, tool, input, result, duration | |
 | Session history from disk | yes | Hermes `state.db`, search, rename, delete, export | |
 | Session resume | yes | `hermes --resume`, and continuation from the terminal | |
+| Fork a chat at any message | yes | new Hermes session via `hermes sessions import`, linked as a branch | text and tool-call markers only; tool outputs are not copied |
 | Working-directory scoping per chat | yes | folder picker plus workspace tree | |
 | Real terminal in the app | yes | PTY tabs: shell, Hermes, Hermes TUI, Claude Code | |
 | Hand a chat to the terminal | yes | "Continue in terminal" resumes the session | |
