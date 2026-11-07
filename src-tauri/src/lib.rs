@@ -65,6 +65,7 @@ pub fn run_gui() {
     let pty_for_exit = state.pty.clone();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(state)
         .setup(move |app| {
@@ -269,6 +270,8 @@ pub fn run_gui() {
             commands::tool_policies,
             commands::set_tool_policy,
             commands::hub_tools,
+            commands::studio_update_check,
+            commands::studio_update_install,
             commands::session_usage,
             commands::provider_credits,
             commands::provider_connections,
