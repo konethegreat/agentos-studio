@@ -97,6 +97,7 @@ the first paint is never competing with a full probe.
 | Module | Responsibility |
 |---|---|
 | `chat_stream.rs` | One streaming chat turn per message for Hermes or Claude Code; parses stream-json into UI events. |
+| `acp.rs` (spike, unwired) | Agent Client Protocol client for `hermes acp`: new or loaded session, one streamed turn, permission requests answered through a channel, cancel. Kept to re-run `tests/live_acp_spike.rs` against new Hermes releases; see `ACP-SPIKE.md`. |
 | `pty.rs` (new) | Real terminals: spawn a shell, interactive Hermes, `hermes --resume <id>`, Claude Code or `claude --resume <id>` in a PTY; streams bytes as UTF-8 safe chunks, accepts keystrokes and resizes. |
 | `updates.rs` (new) | Version detection for Hermes, Claude Code and Studio; changelog extraction; skip and snooze state; OS notifications; backup, update and rollback runners. |
 | `org.rs` (new) | `studio.db`: workspaces, nested folders, chat placement, pins, tags, attachments, archive; links folders to Hermes projects through `hermes project`. |
@@ -116,6 +117,15 @@ Sensitive commands take an `approved: bool` argument. `permissions::guard(action
 - `allow`, or `ask` and approved: runs, audited as `ok` or `error` with the error text.
 
 The check lives in Rust, so a UI bug cannot skip it.
+
+### Who owns what with Hermes
+
+Hermes owns execution of Hermes work: sessions, tools, approvals of dangerous commands, checkpoints
+and its own memory. Studio owns cross-agent policy: orchestration across Hermes, Claude Code and
+Antigravity, the mission review gate and merge, the vault, and visibility. Studio talks to Hermes
+through its CLI (`hermes chat -q`, `hermes sessions`, `hermes config set`, ...). The Agent Client
+Protocol was evaluated as the chat transport and deferred (`ACP-SPIKE.md`): Hermes approvals in
+Studio chat are therefore still denied by `approvals.single_query_mode`.
 
 ## Data model (`studio.db`)
 

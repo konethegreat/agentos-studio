@@ -282,6 +282,24 @@ This completes the design-system bullet listed under v0.4.1, which was never bui
   Python server had, plus recall, remember and project_brief.
 - Verified by `tests/live_hub_cutover.rs` against the real agent configs.
 
+## v0.10: Hermes-native
+
+Principle: Hermes owns execution of Hermes work; Studio owns cross-agent orchestration (Hermes,
+Claude Code, Antigravity), the review and merge policy, the vault and visibility. Do not rebuild a
+Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
+
+- ACP spike (done, verdict not yet): `acp.rs` plus `tests/live_acp_spike.rs`. Approvals, cancel and
+  resume work; skills preload, creation-time model and checkpoints, the `gui` source tag and
+  structured tool cards do not. Chat stays on `hermes chat -q`. See [ACP spike](ACP-SPIKE.md).
+- ACP as the chat transport with chat -q as fallback: deferred until the spike passes.
+- Checkpoints on new Hermes sessions; undo through the Ink TUI `/rollback`.
+- Hermes missions through `hermes kanban` (daemon keeps them running with the app closed); Claude
+  Code and Antigravity missions keep `automation.rs`. The Studio review gate stays the only merge.
+- Budgets from usage data; time caps through `agent.run_budget_seconds`.
+- `hermes verify --json` as a pre-review check stored on the mission.
+- Hermes built-in memory and `hermes journey` beside the vault in Brain, read-only.
+- Surface cron, profiles, `hermes send`, `hermes security` and `hermes insights`.
+
 ## Ideas worth considering
 
 - Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.

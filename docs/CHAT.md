@@ -33,6 +33,18 @@ The fork is created by `hermes sessions import`, read back to check every turn l
 `[ran tool: name]` line per tool call. Tool outputs, reasoning and the system prompt are not copied.
 The original chat is never changed.
 
+## Approvals for dangerous commands
+
+Studio sends each Hermes turn with `hermes chat -q`, a single-query turn. Hermes resolves a
+dangerous-command approval in that mode with `approvals.single_query_mode`, which defaults to
+**deny**: the command is refused and the agent is told so, and no prompt appears in Studio. When a
+reply says a command was blocked, run that step in the terminal (Continue in terminal), where
+Hermes asks you directly.
+
+The Agent Client Protocol (`hermes acp`) can route these approvals to a Studio dialog and stop a
+running turn. It was tested and is not used yet, because it cannot preload skills or fix the model
+and checkpoints at session creation. See [ACP spike](ACP-SPIKE.md).
+
 ## Continue in terminal
 
 Continue in terminal opens the same conversation with `hermes --resume` (or `claude --resume`) in
