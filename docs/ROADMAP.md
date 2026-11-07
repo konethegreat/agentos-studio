@@ -292,7 +292,9 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
   resume work; skills preload, creation-time model and checkpoints, the `gui` source tag and
   structured tool cards do not. Chat stays on `hermes chat -q`. See [ACP spike](ACP-SPIKE.md).
 - ACP as the chat transport with chat -q as fallback: deferred until the spike passes.
-- Checkpoints on new Hermes sessions; undo through the Ink TUI `/rollback`.
+- Checkpoints on new Hermes sessions; undo through the Ink TUI `/rollback` (shipped, verified by
+  `tests/live_checkpoints.rs`). Resumed turns no longer send creation flags Hermes refuses, and a
+  skill picked mid-chat is invoked as `/<skill>`.
 - Hermes missions through `hermes kanban` (daemon keeps them running with the app closed); Claude
   Code and Antigravity missions keep `automation.rs`. The Studio review gate stays the only merge.
 - Budgets from usage data; time caps through `agent.run_budget_seconds`.

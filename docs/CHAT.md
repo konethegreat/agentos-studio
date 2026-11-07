@@ -51,7 +51,18 @@ Continue in terminal opens the same conversation with `hermes --resume` (or `cla
 the terminal panel. Reasoning streams live there and interactive prompts can be answered directly.
 The chat in this view keeps working too.
 
+## Undo last turn (checkpoints)
+
+New Hermes chats are created with `--checkpoints`: before a tool writes or deletes files, Hermes
+snapshots the folder in its own checkpoint store. **Undo last turn** opens the Hermes TUI on this
+chat in the terminal panel with `/rollback` typed in. Press Enter to list the checkpoints, then
+`/rollback <number>` to restore one; Hermes restores the files and rewinds the conversation to that
+point. The TUI is used because Hermes serves `/rollback` there and refuses it for single-query
+turns. Chats created before checkpoints were on have nothing to restore.
+
 ## Skills
 
-The Skills button preloads skills on every turn of the chat (`-s <skill>`), so the agent starts with
-that knowledge loaded rather than finding it by chance.
+The Skills button preloads skills when a chat is created (`-s <skill>`), so the agent starts with
+that knowledge loaded rather than finding it by chance. Hermes fixes a session's skills at creation
+and refuses a resume that changes them, so a skill picked after the first message is invoked on the
+next message as `/<skill> <your message>`, one skill per message.

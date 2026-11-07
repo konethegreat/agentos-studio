@@ -30,7 +30,7 @@ Run it: `cargo test --test live_acp_spike -- --ignored --nocapture --test-thread
 | Checkpoints at creation | **no** | not a `session/new` field |
 | `/rollback` | **refused** | "not available on the shared gateway yet"; the parity table lists Ink (`rollback.restore`) as the only surface. `/undo` (conversation rewind) is served over ACP |
 | `/reasoning`, `/yolo` | yes | answered by the gateway as per-session settings |
-| Source tag | **differs** | ACP sessions are stored with source `local`; Studio cannot tag them `gui` |
+| Source tag | same | ACP sessions are stored with source `local`, and so are `chat -q --source gui` sessions (`created_source` desktop); Studio's session list does not filter on source |
 | Tool cards and memory ledger | **partial** | built-in tools arrive as `title: "terminal: rm -rf keep-me"`, `kind`, `status`, text content; `name` and `raw_input` are empty, so there is no structured input and no duration |
 | Reasoning stream | **not observed** | zero `AgentThoughtChunk` with Claude Sonnet (reasoning high) and DeepSeek v4.1 flash (high), although Hermes asks the owner for `show_reasoning` |
 
@@ -49,7 +49,7 @@ slower than chat -q.
 ## Decision
 
 ACP cannot carry Studio chat today without losing skills preload, creation-time model and
-checkpoints, the `gui` source tag and structured tool cards. Step 2 (ACP as the chat transport) is
+checkpoints, and structured tool cards. Step 2 (ACP as the chat transport) is
 not started. Re-run the spike when Hermes adds creation policy to `session/new` (skills, model,
 checkpoints) or serves `/rollback` on the gateway.
 
