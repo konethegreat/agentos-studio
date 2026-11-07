@@ -274,9 +274,9 @@ mod tests {
     fn with_db<T>(f: impl FnOnce() -> T) -> T {
         let _g = crate::store::test_env_lock();
         let d = tempfile::tempdir().unwrap();
-        std::env::set_var("AGENTOS_STUDIO_DB", d.path().join("studio.db"));
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
         let out = f();
-        std::env::remove_var("AGENTOS_STUDIO_DB");
+        crate::store::set_test_db(None);
         out
     }
 

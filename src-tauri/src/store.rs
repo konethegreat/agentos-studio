@@ -148,7 +148,26 @@ pub fn studio_dir() -> PathBuf {
         .join("agentos-studio")
 }
 
+// Test override, thread-local so parallel tests cannot see each other's store.
+#[cfg(test)]
+thread_local! {
+    static TEST_DB: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub fn set_test_db(path: Option<PathBuf>) {
+    TEST_DB.with(|c| *c.borrow_mut() = path);
+}
+
 pub fn db_path() -> PathBuf {
+    #[cfg(test)]
+    {
+        let mut found = None;
+        TEST_DB.with(|c| found = c.borrow().clone());
+        if let Some(p) = found {
+            return p;
+        }
+    }
     if let Ok(p) = std::env::var("AGENTOS_STUDIO_DB") {
         if !p.trim().is_empty() {
             return PathBuf::from(p);
