@@ -733,6 +733,11 @@ pub async fn dispatch_mission(
 }
 
 #[tauri::command]
+pub fn model_catalog() -> crate::models::Catalog {
+    crate::models::catalog()
+}
+
+#[tauri::command]
 pub async fn notion_publish(
     state: State<'_, AppState>,
     dry_run: Option<bool>,
