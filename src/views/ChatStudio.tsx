@@ -1,5 +1,5 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { ArrowUp, Brain, ChevronRight, Cloud, FolderOpen, GitFork, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Undo2, Workflow } from "lucide-react";
+import { ArrowUp, Brain, ChevronRight, ClipboardList, Cloud, FolderOpen, GitFork, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Undo2, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api, errorText, events, type HermesStatus, type MemoryEntry, type RepoInfo, type Skill } from "../lib/api";
 import { studio, type Folder, type OrgSnapshot, type PlacedChat } from "../lib/studio";
@@ -96,6 +96,15 @@ export function ChatStudio({
   const [items, setItems] = useState<ChatItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  // Plan mode: the turn runs as Hermes' /plan (read-only, writes .hermes/plans/), and the plan
+  // only runs after the user approves it.
+  const [planFirst, setPlanFirst] = useState<boolean>(() => ls<boolean>("chat-plan-first", false));
+  const [plan, setPlan] = useState<{ path: string; body: string } | null>(null);
+  const planTurn = useRef<{ since: number; cwd: string } | null>(null);
+  const forceRun = useRef(false);
+  useEffect(() => {
+    localStorage.setItem("chat-plan-first", JSON.stringify(planFirst));
+  }, [planFirst]);
   const [statusLine, setStatusLine] = useState("");
   const [backend, setBackend] = useState<Backend>(() => ls<Backend>("chat-backend", "hermes"));
   const [workingDir, setWorkingDir] = useState<string>(() => ls("chat-cwd", ""));
@@ -228,6 +237,13 @@ export function ChatStudio({
         setStreaming(false);
         setStatusLine(e.stopped ? "Stopped" : e.duration_ms ? `Done in ${(e.duration_ms / 1000).toFixed(1)}s` : "Done");
         void reloadRef.current();
+        const pt = planTurn.current;
+        planTurn.current = null;
+        if (pt && !e.stopped)
+          void studio.plans
+            .latest(pt.cwd, pt.since)
+            .then((p) => (p ? setPlan({ path: p.path, body: p.body }) : setStatusLine("No plan file was written; the reply above is the answer")))
+            .catch(() => undefined);
       }
     });
     return () => void un.then((f) => f());
@@ -363,11 +379,18 @@ export function ChatStudio({
         // attachments are optional context
       }
     }
+    const planning = backend === "hermes" && planFirst && !forceRun.current && !prompt.startsWith("/");
+    forceRun.current = false;
+    if (planning) {
+      full = await studio.plans.prompt(full, cwd);
+      planTurn.current = { since: Math.floor(Date.now() / 1000) - 2, cwd };
+      setPlan(null);
+    }
     stick.current = true;
     streamingRef.current = true;
     runRef.current = null;
     setStreaming(true);
-    setStatusLine(backend === "hermes" ? "Starting Hermes" : "Starting Claude Code");
+    setStatusLine(planning ? "Planning (read-only)" : backend === "hermes" ? "Starting Hermes" : "Starting Claude Code");
     try {
       const turn = items.filter((i) => i.kind === "user").length + 1;
       const started = await api.sendChat(backend === "hermes" ? current : claudeSession, full, cwd, backend, null, skills, turn);
@@ -768,6 +791,46 @@ export function ChatStudio({
             <Guide id="chat.long-turn" className="mb-2" action={{ label: "Continue in terminal", run: () => void continueInTerminal() }} />
             <Guide id="chat.pick-folder" className="mb-2" action={{ label: "Pick a folder", run: () => void browse() }} />
             <Guide id="chat.fork" className="mb-2" />
+            {plan && (
+              <div className="mb-2 rounded-xl border border-sky-500/30 bg-sky-500/[0.05]">
+                <div className="flex items-center gap-2 border-b border-sky-500/20 px-3 py-2">
+                  <ClipboardList className="size-4 text-sky-300" />
+                  <span className="text-small font-medium text-slate-100">Plan ready for approval</span>
+                  <span className="truncate font-mono text-caption text-slate-500" title={plan.path}>
+                    {plan.path.split(/[\\/]/).pop()}
+                  </span>
+                  <div className="ml-auto flex gap-1.5">
+                    <button
+                      onClick={() => {
+                        const p = plan.path;
+                        setPlan(null);
+                        forceRun.current = true;
+                        void studio.plans.runPrompt(p).then((t) => send(t));
+                      }}
+                      disabled={streaming}
+                      className="h-7 rounded-lg bg-emerald-500 px-2.5 text-label font-medium text-emerald-950 hover:bg-emerald-400 disabled:opacity-40"
+                    >
+                      Approve and run
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDraft("Revise the plan: ");
+                        textarea.current?.focus();
+                      }}
+                      className="h-7 rounded-lg px-2.5 text-label text-slate-300 ring-1 ring-line hover:bg-white/5"
+                    >
+                      Revise
+                    </button>
+                    <button onClick={() => setPlan(null)} className="h-7 rounded-lg px-2.5 text-label text-slate-500 hover:text-slate-300">
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-72 overflow-y-auto px-4 py-2 text-small">
+                  <Markdown text={plan.body} workingDir={cwd} />
+                </div>
+              </div>
+            )}
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
               {SLASH.map((s) => (
                 <button
@@ -780,6 +843,16 @@ export function ChatStudio({
                   <s.icon className="size-3" />/{s.label}
                 </button>
               ))}
+              {backend === "hermes" && (
+                <button
+                  onClick={() => setPlanFirst((v) => !v)}
+                  aria-pressed={planFirst}
+                  title="Plan first: Hermes writes a plan without changing files (/plan); you approve it before anything runs"
+                  className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-label ring-1 ${planFirst ? "bg-sky-500/15 text-sky-300 ring-sky-500/30" : "bg-white/[0.04] text-slate-400 ring-white/5 hover:text-slate-100"}`}
+                >
+                  <ClipboardList className="size-3" /> Plan first {planFirst ? "on" : "off"}
+                </button>
+              )}
               <span className="ml-auto truncate text-label text-slate-500">
                 {streaming && <Loader2 className="mr-1 inline size-3 animate-spin" />}
                 {statusLine}

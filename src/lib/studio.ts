@@ -372,6 +372,11 @@ export interface AuditFinding {
 }
 
 export const studio = {
+  plans: {
+    prompt: (task: string, cwd: string) => invoke<string>("plan_prompt", { task, cwd }),
+    runPrompt: (path: string) => invoke<string>("plan_run_prompt", { path }),
+    latest: (cwd: string, since: number) => invoke<{ path: string; body: string; modified: number } | null>("latest_plan", { cwd, since }),
+  },
   hermes: {
     memory: () => invoke<HermesMemory>("hermes_memory_view"),
     journeyDelete: (node: string, a: Approved = {}) => invoke<string>("hermes_journey_delete", { node, ...a }),
