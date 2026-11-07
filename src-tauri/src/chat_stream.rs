@@ -393,6 +393,50 @@ pub fn normalize_backend(b: &str) -> Result<&'static str> {
     }
 }
 
+fn launch_skills_key(session_id: &str) -> String {
+    format!("chat.launch_skills.{session_id}")
+}
+
+/// Skills a Hermes session was created with (`-s`), as Studio recorded them. `None` for a session
+/// Studio did not create, which is treated as having every requested skill already.
+pub fn launch_skills(session_id: &str) -> Option<Vec<String>> {
+    let c = crate::store::open().ok()?;
+    let raw = crate::store::kv_get(&c, &launch_skills_key(session_id)).ok()??;
+    serde_json::from_str(&raw).ok()
+}
+
+fn save_launch_skills(session_id: &str, skills: &[String]) {
+    if let (Ok(c), Ok(v)) = (crate::store::open(), serde_json::to_string(skills)) {
+        let _ = crate::store::kv_set(&c, &launch_skills_key(session_id), &v);
+    }
+}
+
+/// A resumed Hermes turn cannot add `-s` (Hermes refuses changed creation flags), so a skill
+/// picked after the chat started is invoked the way Hermes documents: `/<skill> <message>`.
+/// One skill per turn; the rest follow on the next turns. Returns the prompt to send and the
+/// skill set the session will have loaded afterwards. Pure, so it is unit tested.
+pub fn hermes_resume_prompt(
+    prompt: &str,
+    requested: &[String],
+    launched: Option<&[String]>,
+) -> (String, Vec<String>) {
+    let Some(launched) = launched else {
+        return (prompt.to_string(), requested.to_vec());
+    };
+    let mut loaded = launched.to_vec();
+    match requested
+        .iter()
+        .map(|s| s.trim())
+        .find(|s| !s.is_empty() && !launched.iter().any(|l| l == s))
+    {
+        Some(new) if !prompt.trim_start().starts_with('/') => {
+            loaded.push(new.to_string());
+            (format!("/{new} {prompt}"), loaded)
+        }
+        _ => (prompt.to_string(), loaded),
+    }
+}
+
 /// Build the argument list for one chat turn.
 pub fn build_args(backend: &str, req: &ChatRequest, query_file: &Path, cwd: &Path) -> Vec<String> {
     let mut a: Vec<String> = Vec::new();
@@ -423,21 +467,28 @@ pub fn build_args(backend: &str, req: &ChatRequest, query_file: &Path, cwd: &Pat
         a.push(query_file.display().to_string());
         a.push("--in".into());
         a.push(cwd.display().to_string());
-        // A resumed session keeps the working directory it was created in (Hermes gateway rule).
         if let Some(sid) = session {
+            // A resumed session keeps the policy it was created with: Hermes refuses a resume
+            // whose -m, -s or --checkpoints differ ("creation overrides are unsupported on
+            // resume"). Model and skill changes go through slash commands instead
+            // (`hermes_resume_prompt`). It also keeps its original working directory.
             a.extend(["--resume".into(), sid.into()]);
-        }
-        if let Some(m) = model {
-            a.extend(["-m".into(), m.into()]);
-        }
-        let skills: Vec<String> = req
-            .skills
-            .iter()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if !skills.is_empty() {
-            a.extend(["-s".into(), skills.join(",")]);
+        } else {
+            // New Hermes chats snapshot files before edits, so a turn can be undone with
+            // /rollback in the Hermes TUI.
+            a.push("--checkpoints".into());
+            if let Some(m) = model {
+                a.extend(["-m".into(), m.into()]);
+            }
+            let skills: Vec<String> = req
+                .skills
+                .iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !skills.is_empty() {
+                a.extend(["-s".into(), skills.join(",")]);
+            }
         }
     } else {
         a.extend(
@@ -514,8 +565,21 @@ pub fn send_chat_message(
         .join("chat");
     fs::create_dir_all(&dir)?;
     let query_file = dir.join(format!("{run_id}.md"));
-    fs::write(&query_file, &req.prompt)?;
+    let resumed = req.session_id.clone().filter(|s| !s.trim().is_empty());
+    let prompt = match (&resumed, backend) {
+        (Some(sid), "hermes") => {
+            let launched = launch_skills(sid);
+            let (p, loaded) = hermes_resume_prompt(&req.prompt, &req.skills, launched.as_deref());
+            if launched.is_some() {
+                save_launch_skills(sid, &loaded);
+            }
+            p
+        }
+        _ => req.prompt.clone(),
+    };
+    fs::write(&query_file, &prompt)?;
     let args = build_args(backend, &req, &query_file, &cwd);
+    let new_hermes_skills = (resumed.is_none() && backend == "hermes").then(|| req.skills.clone());
     let tool = if backend == "hermes" {
         "hermes"
     } else {
@@ -615,6 +679,11 @@ pub fn send_chat_message(
                     }
                     if let Some(sid) = e.session_id.clone() {
                         if let Ok(mut s) = session_seen.lock() {
+                            if s.is_none() {
+                                if let Some(skills) = &new_hermes_skills {
+                                    save_launch_skills(&sid, skills);
+                                }
+                            }
                             *s = Some(sid);
                         }
                     }
@@ -956,11 +1025,25 @@ mod tests {
             "the gateway rejects it"
         );
         assert!(joined.contains("--in C:/repo"));
-        assert!(joined.contains("-m claude-opus-5-5[1m]"));
-        assert!(
-            joined.contains("-s agentos-studio-dev,obsidian"),
-            "{joined}"
-        );
+        for refused in ["-m ", "-s ", "--checkpoints"] {
+            assert!(
+                !joined.contains(refused),
+                "Hermes refuses changed creation flags on resume: {joined}"
+            );
+        }
+        let new = build_args(
+            "hermes",
+            &ChatRequest {
+                session_id: None,
+                ..req.clone()
+            },
+            Path::new("C:/q.md"),
+            Path::new("C:/repo"),
+        )
+        .join(" ");
+        assert!(new.contains("--checkpoints"));
+        assert!(new.contains("-m claude-opus-5-5[1m]"));
+        assert!(new.contains("-s agentos-studio-dev,obsidian"), "{new}");
         let c = build_args(
             "claude-code",
             &ChatRequest {
@@ -975,6 +1058,26 @@ mod tests {
         assert!(!c.contains(&"--resume".to_string()));
         assert_eq!(normalize_backend("Claude").unwrap(), "claude-code");
         assert!(normalize_backend("qoder").is_err());
+    }
+
+    #[test]
+    fn a_skill_added_mid_chat_is_invoked_not_passed_as_a_flag() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let launched = s(&["obsidian"]);
+        let (p, loaded) =
+            hermes_resume_prompt("fix it", &s(&["obsidian", "github"]), Some(&launched));
+        assert_eq!(p, "/github fix it");
+        assert_eq!(loaded, s(&["obsidian", "github"]));
+        let (p, _) = hermes_resume_prompt("fix it", &s(&["obsidian"]), Some(&launched));
+        assert_eq!(p, "fix it", "nothing new, nothing added");
+        let (p, _) = hermes_resume_prompt("/model x", &s(&["github"]), Some(&launched));
+        assert_eq!(p, "/model x", "a slash command is never prefixed");
+        let (p, loaded) = hermes_resume_prompt("hi", &s(&["github"]), None);
+        assert_eq!(
+            (p.as_str(), loaded),
+            ("hi", s(&["github"])),
+            "unknown sessions are left alone"
+        );
     }
 
     #[test]
