@@ -45,11 +45,13 @@ Hermes stays the source of truth; Studio connects to what it already owns.
 - **Chat header**: selected skills are visible and editable mid-conversation; a branch indicator
   shows when the next turn will be recorded as a child session.
 
-## v0.4.1: memory, transparency, design language
+## v0.4.1: memory, ledger and navigation (shipped)
 
 - **Memory:** vault-first browser with wikilinks and frontmatter, and a "memory ledger" on every
   chat turn listing exactly which notes were read and written (assembled from `tool_use` events of
   `agentos-hub` and file tools). Notion is handled in v0.4.2 as publish-out, not as two-way sync.
+- **Memory ledger:** every chat turn records what it read and wrote, and shows it under the message.
+  The Memory tab lists indexed notes with type, status, inbound links and recent activity.
 - **Transparency:** run timeline across chats, PTYs, workers and updates; reasoning panel fed from
   `state.db` `reasoning` columns after each turn (stream-json does not stream reasoning; the PTY
   does); token and cost panel from `state.db` and `hermes insights`; pause and step-in through

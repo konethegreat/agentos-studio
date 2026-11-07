@@ -34,6 +34,7 @@ import { CliDock, CliProvider, useCli } from "./components/CliDrawer";
 import { CommandBar } from "./components/CommandBar";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { StatusBar } from "./components/StatusBar";
+import { Memory } from "./views/Memory";
 import { NavRail, type RailGroup, type RailView } from "./components/NavRail";
 import { ToastProvider, useToast } from "./components/Toasts";
 import { UpdateBanner, UpdatesProvider, useUpdates } from "./components/Updates";
@@ -52,7 +53,7 @@ import { UpdateCenter } from "./views/UpdateCenter";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 
-type View = "chat" | "projects" | "skills" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup" | "diagnostics";
+type View = "chat" | "projects" | "skills" | "memory" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup" | "diagnostics";
 
 const GROUPS: RailGroup[] = [
   {
@@ -77,8 +78,9 @@ const GROUPS: RailGroup[] = [
     id: "brain",
     label: "Brain",
     icon: <Brain className="size-4" />,
-    defaultView: "skills",
+    defaultView: "memory",
     tabs: [
+      { id: "memory", label: "Memory", hint: "Notes in the vault, how connected they are, and what chats read or wrote" },
       { id: "skills", label: "Skills", hint: "What Hermes can load, plus hub search and install" },
       { id: "constitution", label: "Constitution", hint: "Edit and broadcast the agent constitution, browse shared memory" },
     ],
@@ -418,6 +420,7 @@ function Studio() {
             {view === "diagnostics" && <Diagnostics onFix={(v) => go(v as View)} />}
             {view === "projects" && <Projects onOpenSession={openSessionInChat} onNewSession={newSessionInProject} />}
             {view === "skills" && <Skills onUseSkill={useSkillInChat} />}
+            {view === "memory" && <Memory />}
           </div>
           <CliDock />
         </main>

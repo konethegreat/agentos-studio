@@ -200,6 +200,17 @@ project when there is exactly one), then the user's home. A candidate is rejecte
 relative, missing, under `%WINDIR%`, or any path segment is `system32`. `pick()` is pure so the rule
 is unit tested without touching the environment.
 
+## Memory ledger
+
+`memory_ledger` in `studio.db` (schema 3) records `(session_id, turn, op, target, path, tool, at)`
+for every memory-touching tool call in a chat turn. It is written from the `tool_use` events the
+chat stream already parses, so the strip under a message is derived from evidence, not from the
+model's summary. Classification is by tool name: `recall`, `search_shared_memory`, `project_brief`
+and read tools are reads; `remember`, `write_shared_memory` and edit tools are writes; any Notion
+tool is `target: notion`; agentos-hub memory tools are `target: vault`; everything else that touches
+a file is `target: file`. Turn numbers come from the UI, which sends the 1-based user turn with each
+message, so rows attach to the message that caused them.
+
 ## Typed memory
 
 `03_Memory` notes gain `type` (`decision`, `fact`, `convention`, `episode`, `gotcha`), `status`
