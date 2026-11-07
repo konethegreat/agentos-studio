@@ -35,3 +35,5 @@ refuses an update whose signature does not match the public key compiled into th
 A code signing certificate only changes what Windows shows before the app is trusted: publisher name
 and SmartScreen reputation. It does not make updates safer, and it is not needed for the updater.
 Without it, the first run shows "unknown publisher", which is a trust decision the user makes once.
+
+Mission probe note: the mission pipeline was exercised against this file. Remove at will.
