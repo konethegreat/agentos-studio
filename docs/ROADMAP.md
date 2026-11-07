@@ -312,6 +312,14 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
   `hermes security` in Safety and `hermes insights` as a panel (shipped, verified by
   `tests/live_hermes_surfaces.rs`).
 
+## v0.11: plan mode and the model layer
+
+- Plan first in chat (shipped): Hermes `/plan` scoped to the folder, plan shown for approval, run
+  on Approve. Verified by `tests/live_plan_mode.rs`.
+- Fallback chains, credential pools, mixture-of-agents presets and per-folder default models, all
+  through Hermes' own commands and config.
+- Parallel missions on one repository through kanban worktree workspaces.
+
 ## Ideas worth considering
 
 - Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.

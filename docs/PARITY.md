@@ -19,7 +19,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Real terminal in the app | yes | PTY tabs: shell, Hermes, Hermes TUI, Claude Code | |
 | Hand a chat to the terminal | yes | "Continue in terminal" resumes the session | |
 | Slash commands | yes | plus a command palette | |
-| Plan or step mode | plan | approve the plan before tools run | v0.6.0 |
+| Plan or step mode | yes | Plan first runs the turn as Hermes `/plan` (read-only, scoped to the folder); the plan shows in the chat and runs only after Approve | |
 | Checkpoints and rollback of file edits | yes | new Hermes chats use `--checkpoints`; Undo last turn opens the Hermes TUI on the chat with `/rollback` typed (the gateway refuses it for single-query turns) | |
 | Approve dangerous commands from the chat | no | single-query turns deny them (`approvals.single_query_mode`); ACP can ask, but is not the transport yet ([ACP spike](ACP-SPIKE.md)) | after Hermes adds creation policy to ACP |
 | Stop a running turn | part | the run process is ended; ACP `session/cancel` works in the spike | with ACP |
@@ -29,25 +29,25 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Hermes usage report | yes | `hermes insights` on demand (MCP and Providers > Hermes) | |
 | Supply-chain audit | yes | `hermes security audit --json` in Safety | |
 | Mission notices to a phone | yes | `hermes send` to a target you set, when a mission is done or fails | |
-| Parallel agents on one repo | part | worktree flag exists in Hermes, no UI | v0.6.0 |
+| Parallel agents on one repo | plan | Hermes kanban worktree workspaces; `chat -q` refuses `--worktree` | next |
 
 ## Models
 
 | Capability | Studio | Notes | Plan |
 |---|---|---|---|
 | Claude subscription without an API key | yes | DirectSDK plugin, signed in through Claude Code | |
-| Multiple providers | yes | 8 curated today | |
-| Every provider Hermes supports | plan | 35+ from the provider registry, no app release needed | v0.5.0 |
-| Live model catalog | part | Hermes caches today | v0.5.0 |
-| New model badges and deprecation warnings | plan | catalog changelog in the Update Center | v0.5.0 |
-| Model aliases | plan | `model.aliases`, written through the CLI | v0.5.0 |
-| Fallback chains | plan | `hermes fallback` | v0.5.0 |
-| Credential pools | plan | `hermes auth` add, label, reorder, reset | v0.5.0 |
-| Multi-model mixtures | plan | `hermes moa` presets | v0.5.0 |
-| Per-workspace model defaults | plan | folder pins a model | v0.5.0 |
-| Automatic model selection | plan | deterministic, explainable, shadow-tested | v0.6.0 |
-| Cost guardrails and budgets | plan | ships with routing | v0.6.0 |
-| Per-model scorecards from real sessions | plan | success, retries, cost per task class | v0.6.0 |
+| Multiple providers | yes | every provider in Hermes' catalog, switched in Providers | |
+| Every provider Hermes supports | yes | read from `provider_models_cache.json`; no app release needed | |
+| Live model catalog | yes | Hermes' model cache, refreshed by Hermes | |
+| New model badges and deprecation warnings | plan | diff the Hermes model cache between runs | later |
+| Model aliases | plan | no Hermes command manages them yet | later |
+| Fallback chains | plan | `fallback_providers`, written with `hermes config set` | next |
+| Credential pools | plan | `hermes auth` list, priority, reset, remove | next |
+| Multi-model mixtures | plan | `hermes moa` presets | next |
+| Per-workspace model defaults | plan | a folder pins a model for new chats | next |
+| Automatic model selection | part | shadow router scores real missions and explains its pick; changes nothing | after more mission data |
+| Cost guardrails and budgets | yes | per-mission budgets from Hermes usage data, metered providers only; time caps | |
+| Per-model scorecards from real sessions | part | approval rate and cost per role, provider and model from missions | |
 
 ## Memory and knowledge
 
@@ -55,9 +55,9 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 |---|---|---|---|
 | Local markdown memory as source of truth | yes | Obsidian vault, wikilinks, frontmatter | |
 | Shared memory tools for agents | yes | `agentos-hub` read and write, search with ranking | |
-| Cloud dashboard | part | Notion MCP today, page-level | |
-| Two-way Notion sync with a ledger | plan | `notion_id`, `synced_at`, content hash | v0.4.0 |
-| Show what was read and written per turn | plan | memory ledger on every turn | v0.4.0 |
+| Cloud dashboard | part | Notion publishing: digest, tasks, missions, fleet | |
+| Two-way Notion sync with a ledger | part | publish with `sync_ledger` and hash skip; only the inbox is pulled back | later |
+| Show what was read and written per turn | yes | memory ledger per turn, including Hermes' own memory tool | |
 | Project rules inherited by agents | yes | constitution, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` | |
 
 ## Engineering and delivery
@@ -67,21 +67,21 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | GitHub operations in the UI | yes | auth, repos, branches, commits, PRs, issues, Actions | |
 | GitHub operations from chat | yes | `/gh` and "Ask Hermes" hand-off | |
 | MCP server management across agents | yes | registry, native probe, catalog | |
-| Computer use | part | Hermes toolset and cua-driver; no dedicated view | v0.7.0 |
-| Per-tool permissions | part | per action today | v0.7.0 |
+| Computer use | part | Hermes toolset and cua-driver; no dedicated view | later |
+| Per-tool permissions | yes | per MCP tool, enforced inside the agentos-hub server, plus per action in Studio | |
 | Audit log | yes | every guarded action, terminal open, policy change | |
 | Self-update with backup and rollback | yes | Studio, Hermes and Claude Code | |
-| Signed builds and in-place updates | plan | Tauri updater with signed manifests | v0.7.0 |
+| Signed builds and in-place updates | yes | Tauri updater with a minisign-signed manifest; no code signing certificate (Windows shows unknown publisher) | |
 
 ## Transparency
 
 | Capability | Studio | Notes | Plan |
 |---|---|---|---|
 | Live tool timeline | yes | cards plus worker and PTY output | |
-| Reasoning panel | plan | Hermes stores reasoning; stream-json does not stream it | v0.4.0 |
-| Token and cost per turn | plan | `state.db` plus `hermes insights` | v0.4.0 |
-| Pause, stop, intervene | part | stop works; pause comes with `hermes pause` wiring | v0.4.0 |
-| Router decision explanation | plan | "Auto chose X because Y" | v0.6.0 |
+| Reasoning panel | no | Hermes streams no reasoning to `chat -q` or ACP; it shows live in the terminal | when Hermes streams it |
+| Token and cost per turn | part | usage strip: context, session spend, compactions, credits | |
+| Pause, stop, intervene | part | stop ends the run; ACP cancel is proven but not wired | with ACP |
+| Router decision explanation | part | the shadow router prints its reason | |
 
 ## Where we deliberately differ
 
