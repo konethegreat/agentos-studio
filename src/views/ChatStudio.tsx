@@ -14,6 +14,8 @@ import { ToolCard } from "../components/ToolCard";
 import { UsageBar } from "../components/UsageBar";
 import { Modal } from "../components/ui";
 import { useToast } from "../components/Toasts";
+import { Guide, useGuides, useReportGuides } from "../components/Guides";
+import { chatGuides } from "../lib/guides";
 
 type Backend = "hermes" | "claude-code";
 
@@ -68,6 +70,7 @@ export function ChatStudio({
   onStatusChanged,
   onOpenControl,
   incoming,
+  active = true,
 }: {
   repos: RepoInfo[];
   hermes: HermesStatus | null;
@@ -78,6 +81,8 @@ export function ChatStudio({
   onOpenControl: (tab: "providers" | "mcp") => void;
   /** A hand-off from another view: start a new chat with this draft (and folder). */
   incoming: { text: string; cwd?: string; nonce: number } | null;
+  /** Whether the chat view is on screen; it stays mounted while hidden. */
+  active?: boolean;
 }) {
   const toast = useToast();
   const cli = useCli();
@@ -106,6 +111,21 @@ export function ChatStudio({
   const textarea = useRef<HTMLTextAreaElement>(null);
 
   const cwd = workingDir || home;
+
+  // Signals for the contextual guides: how long the current reply has run, and how full the chat is.
+  const guides = useGuides();
+  const [usageSig, setUsageSig] = useState<{ contextPct: number | null; compacted: number } | null>(null);
+  const [streamStart, setStreamStart] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(0);
+  useEffect(() => {
+    if (!streaming) {
+      setStreamStart(null);
+      return;
+    }
+    setStreamStart((s) => s ?? Date.now());
+    const t = window.setInterval(() => setNowTick(Date.now()), 5000);
+    return () => window.clearInterval(t);
+  }, [streaming]);
   useEffect(() => { localStorage.setItem("chat-backend", JSON.stringify(backend)); }, [backend]);
   useEffect(() => {
     localStorage.setItem("chat-cwd", JSON.stringify(workingDir));
@@ -423,6 +443,7 @@ export function ChatStudio({
         setCurrent(r.session_id);
         setItems(fromHistory(await api.sessionMessages(r.session_id)));
         setPendingBranch(null);
+        guides.done("chat.fork");
         toast("ok", `Forked into "${r.title}" with ${r.turns} turn${r.turns === 1 ? "" : "s"}. The original chat is unchanged.`);
       } else {
         setCurrent(null);
@@ -508,6 +529,22 @@ export function ChatStudio({
     if (workingDir && !list.some((r) => r.path === workingDir)) list.unshift({ path: workingDir, name: basename(workingDir) });
     return list;
   }, [repos, workingDir]);
+
+  const userTurns = items.filter((i) => i.kind === "user").length;
+  const streamingForMs = streaming && streamStart ? Math.max(1, (nowTick || Date.now()) - streamStart) : 0;
+  useReportGuides(
+    "chat",
+    chatGuides({
+      backend,
+      hasSession: !!current,
+      inHomeFolder: !workingDir || workingDir === home,
+      userTurns,
+      streamingForMs,
+      contextPct: current ? usageSig?.contextPct ?? null : null,
+      compacted: current ? usageSig?.compacted ?? 0 : 0,
+    }),
+    active,
+  );
 
   return (
     <div className="flex h-full min-h-0">
@@ -617,7 +654,7 @@ export function ChatStudio({
           <ProviderSwitcher backend={backend} hermes={hermes} onSwitched={onStatusChanged} onOpenControl={() => onOpenControl("providers")} />
         </header>
 
-        <UsageBar sessionId={current} />
+        <UsageBar sessionId={current} refresh={streaming ? 0 : items.length} onUsage={setUsageSig} />
         <div
           ref={scroller}
           onScroll={(e) => {
@@ -695,6 +732,10 @@ export function ChatStudio({
 
         <div className="shrink-0 px-6 pb-5">
           <div className="mx-auto max-w-3xl">
+            <Guide id="chat.context-full" className="mb-2" action={{ label: "Start a new chat", run: () => newChat() }} />
+            <Guide id="chat.long-turn" className="mb-2" action={{ label: "Continue in terminal", run: () => void continueInTerminal() }} />
+            <Guide id="chat.pick-folder" className="mb-2" action={{ label: "Pick a folder", run: () => void browse() }} />
+            <Guide id="chat.fork" className="mb-2" />
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
               {SLASH.map((s) => (
                 <button

@@ -37,6 +37,7 @@ import { StatusBar } from "./components/StatusBar";
 import { Memory } from "./views/Memory";
 import { Onboarding } from "./components/Onboarding";
 import { Help } from "./views/Help";
+import { GuideProvider } from "./components/Guides";
 import { Missions } from "./views/Missions";
 import { NavRail, type RailGroup, type RailView } from "./components/NavRail";
 import { ToastProvider, useToast } from "./components/Toasts";
@@ -116,7 +117,9 @@ export default function App() {
     <ToastProvider>
       <ApprovalProvider>
         <UpdatesProvider>
-          <Studio />
+          <GuideProvider>
+            <Studio />
+          </GuideProvider>
         </UpdatesProvider>
       </ApprovalProvider>
     </ToastProvider>
@@ -156,6 +159,19 @@ function Studio() {
     setView(v);
     setVisited((s) => (s.has(v) ? s : new Set(s).add(v)));
   }, []);
+
+  // A guide's "Read more" opens one Help document from any view.
+  const [helpDoc, setHelpDoc] = useState<{ path: string; nonce: number } | null>(null);
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const path = (e as CustomEvent<string>).detail;
+      if (!path) return;
+      setHelpDoc({ path, nonce: Date.now() });
+      go("help");
+    };
+    window.addEventListener("agentos:open-help", onOpen);
+    return () => window.removeEventListener("agentos:open-help", onOpen);
+  }, [go]);
 
   const openControl = useCallback(
     (tab: "providers" | "mcp") => {
@@ -392,7 +408,7 @@ function Studio() {
           <div className="relative min-h-0 flex-1">
             {visited.has("chat") && (
               <div className={view === "chat" ? "h-full" : "hidden"}>
-                <ChatStudio repos={repos} hermes={hermes} home={home} intent={chatIntent} onStatusChanged={() => void loadHermes()} onOpenControl={openControl} incoming={incoming} />
+                <ChatStudio repos={repos} hermes={hermes} home={home} intent={chatIntent} onStatusChanged={() => void loadHermes()} onOpenControl={openControl} incoming={incoming} active={view === "chat"} />
               </div>
             )}
             {visited.has("github") && (
@@ -427,7 +443,7 @@ function Studio() {
             {view === "projects" && <Projects onOpenSession={openSessionInChat} onNewSession={newSessionInProject} />}
             {view === "skills" && <Skills onUseSkill={useSkillInChat} />}
             {view === "memory" && <Memory />}
-            {view === "help" && <Help />}
+            {view === "help" && <Help doc={helpDoc} />}
           </div>
           <CliDock />
         </main>
