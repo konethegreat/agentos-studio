@@ -15,7 +15,8 @@ export type RailView =
   | "updates"
   | "safety"
   | "setup"
-  | "diagnostics";
+  | "diagnostics"
+  | "help";
 
 export type RailGroup = {
   id: string;
