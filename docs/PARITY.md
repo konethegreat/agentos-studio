@@ -20,7 +20,9 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Hand a chat to the terminal | yes | "Continue in terminal" resumes the session | |
 | Slash commands | yes | plus a command palette | |
 | Plan or step mode | plan | approve the plan before tools run | v0.6.0 |
-| Checkpoints and rollback of file edits | part | Hermes `--checkpoints` exists; no UI yet | v0.6.0 |
+| Checkpoints and rollback of file edits | part | Hermes `--checkpoints` exists; `/rollback` is refused on the gateway, served only in the Ink TUI | v0.10 |
+| Approve dangerous commands from the chat | no | single-query turns deny them (`approvals.single_query_mode`); ACP can ask, but is not the transport yet ([ACP spike](ACP-SPIKE.md)) | after Hermes adds creation policy to ACP |
+| Stop a running turn | part | the run process is ended; ACP `session/cancel` works in the spike | with ACP |
 | Background and scheduled tasks | part | headless workers today; no scheduler UI | v0.6.0 |
 | Parallel agents on one repo | part | worktree flag exists in Hermes, no UI | v0.6.0 |
 
