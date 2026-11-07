@@ -507,7 +507,10 @@ pub fn run(app: Option<AppHandle>) -> BootReport {
     });
 
     // 8. Agent registrations. Reported, not written: registering touches other tools' configs.
-    r.run("mcp", "agentos-hub registration", Some("mcp"), || {
+    // An app update leaves agents on the previous version's staged hub: move them now, so an
+    // update never ends in a warning the user has to fix by hand.
+    let hub_moved = crate::mcp_manager::auto_update_hub(&vault);
+    r.run("mcp", "agentos-hub registration", Some("control"), || {
         let has = |p: PathBuf| {
             fs::read_to_string(p)
                 .map(|t| t.contains("agentos-hub"))
@@ -525,6 +528,26 @@ pub fn run(app: Option<AppHandle>) -> BootReport {
         let outdated = crate::mcp_manager::get_all_mcp_servers()
             .iter()
             .any(|s| s.is_agentos_hub && s.hub_outdated);
+        let moved: Vec<String> = match &hub_moved {
+            Ok(o) => o.iter().filter(|x| x.ok).map(|x| x.agent.clone()).collect(),
+            Err(_) => Vec::new(),
+        };
+        if !moved.is_empty() && !outdated {
+            return (
+                Status::Repaired,
+                format!(
+                    "Updated agentos-hub to v{} in {}. Open agent sessions switch when restarted",
+                    env!("CARGO_PKG_VERSION"),
+                    moved.join(", ")
+                ),
+            );
+        }
+        if let (true, Err(e)) = (outdated, &hub_moved) {
+            return (
+                Status::Warn,
+                format!("Could not update agentos-hub automatically: {e:#}. Use Update agentos-hub in MCP and Providers"),
+            );
+        }
         match registered.len() {
             2 if outdated => (
                 Status::Warn,
@@ -591,6 +614,25 @@ fn previous_crash() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_fix_button_opens_a_real_screen() {
+        let app = include_str!("../../src/App.tsx");
+        let views = &app[app.find("const VIEWS = [").expect("VIEWS in App.tsx")..];
+        let views = &views[..views.find("] as const").unwrap()];
+        let me = include_str!("boot.rs");
+        let re = regex::Regex::new(r#"Some\("([a-z_-]+)"\),\s*\|"#).unwrap();
+        let mut n = 0;
+        for c in re.captures_iter(me) {
+            n += 1;
+            assert!(
+                views.contains(&format!("\"{}\"", &c[1])),
+                "fix view {} is not a screen",
+                &c[1]
+            );
+        }
+        assert!(n >= 4);
+    }
+
     use super::*;
 
     #[test]
