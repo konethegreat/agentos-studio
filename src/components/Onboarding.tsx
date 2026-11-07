@@ -27,8 +27,8 @@ export function Onboarding({ onGo }: { onGo: (view: "setup" | "mission" | "help"
   const steps = [
     {
       icon: <KeyRound className="size-5 text-emerald-300" />,
-      title: "Connect what you already pay for",
-      body: "Claude and Antigravity are subscriptions: they cost nothing at the margin. OpenRouter is metered, and it is the only key you need to paste. Setup checks each one and tells you what is missing.",
+      title: "Install the tools and connect a model",
+      body: "Setup checks Git, the GitHub CLI, Node, Hermes and Claude Code, installs what is missing, and signs you in. Connect at least one model: a Claude Pro or Max subscription, Antigravity, or an OpenRouter API key. A subscription is billed flat; an API key is billed per token.",
       action: "Open Setup",
       view: "setup" as const,
     },

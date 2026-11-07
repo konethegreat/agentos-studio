@@ -173,6 +173,16 @@ function Studio() {
     return () => window.removeEventListener("agentos:open-help", onOpen);
   }, [go]);
 
+  // Empty states elsewhere send the user to the screen that fixes them (usually Setup).
+  useEffect(() => {
+    const onGo = (e: Event) => {
+      const v = (e as CustomEvent<string>).detail;
+      if (v) go(v as View);
+    };
+    window.addEventListener("agentos:go", onGo);
+    return () => window.removeEventListener("agentos:go", onGo);
+  }, [go]);
+
   const openControl = useCallback(
     (tab: "providers" | "mcp") => {
       setControlTab(tab);

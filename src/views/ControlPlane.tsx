@@ -32,6 +32,7 @@ import {
   type ProviderView,
 } from "../lib/api";
 import { useToast } from "../components/Toasts";
+import { goTo } from "../lib/nav";
 import { Badge, Button, Card, Field, Modal, Toggle, inputClass } from "../components/ui";
 
 type Tab = "providers" | "mcp";
@@ -95,7 +96,7 @@ function Providers({ onStatusChanged }: { onStatusChanged: () => void }) {
         <div className="min-w-0 flex-1">
           <div className="text-label uppercase tracking-wide text-slate-500">Hermes is running on</div>
           <div className="truncate text-sm font-semibold text-slate-100">
-            {cfg.active_label} <span className="font-mono text-xs font-normal text-slate-400">{cfg.active.model}</span>
+            {cfg.active.model ? cfg.active_label : "No model chosen yet"} <span className="font-mono text-xs font-normal text-slate-400">{cfg.active.model}</span>
           </div>
         </div>
         <div className="text-right text-label leading-relaxed text-slate-500">
@@ -103,6 +104,16 @@ function Providers({ onStatusChanged }: { onStatusChanged: () => void }) {
           <div title={cfg.env_path}>Keys: Hermes .env (names only shown here)</div>
         </div>
       </Card>
+      {cfg.providers.length === 0 && (
+        <Card className="mb-4 px-5 py-4 text-small text-slate-400">
+          No providers yet: they come from Hermes. Install Hermes in Setup and choose a model there, then come back here to switch between them.
+          <div className="mt-3">
+            <Button size="sm" variant="primary" onClick={() => goTo("setup")}>
+              Open Setup
+            </Button>
+          </div>
+        </Card>
+      )}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         {cfg.providers.map((p) => (
           <ProviderCard

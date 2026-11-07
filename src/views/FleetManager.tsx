@@ -122,6 +122,13 @@ export function FleetManager({ repos, scanning, onRescan }: { repos: RepoInfo[];
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
+            {!scanning && repos.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-10 text-center text-xs text-slate-500">
+                  No Git repositories found in your home, Desktop or Documents folders. Clone or create one, then press Rescan.
+                </td>
+              </tr>
+            )}
             {scanning && repos.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-xs text-slate-500">
