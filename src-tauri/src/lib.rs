@@ -1,5 +1,6 @@
 //! AgentOS Studio: native control plane (Tauri GUI) and native MCP server (`--mcp-stdio`).
 
+pub mod acp;
 pub mod automation;
 pub mod boot;
 pub mod bootstrapper;
