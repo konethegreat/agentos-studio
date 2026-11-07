@@ -13,6 +13,8 @@ pub mod github;
 pub mod hermes_engine;
 pub mod mcp_manager;
 pub mod mcp_stdio;
+pub mod memory_index;
+pub mod memory_ledger;
 pub mod ops;
 pub mod org;
 pub mod permissions;
@@ -25,6 +27,7 @@ pub mod skills;
 pub mod store;
 pub mod updates;
 pub mod vault;
+pub mod workdir;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -235,6 +238,14 @@ pub fn run_gui() {
             commands::install_skill,
             commands::remove_skill,
             commands::update_skills,
+            commands::working_dir_default,
+            commands::set_working_dir,
+            commands::get_pref,
+            commands::set_pref,
+            commands::ci_badge,
+            commands::memory_ledger,
+            commands::memory_recent,
+            commands::memory_notes,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")

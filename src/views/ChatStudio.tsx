@@ -1,7 +1,7 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ArrowUp, Brain, ChevronRight, Cloud, FolderOpen, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { api, errorText, events, type HermesStatus, type RepoInfo, type Skill } from "../lib/api";
+import { api, errorText, events, type HermesStatus, type MemoryEntry, type RepoInfo, type Skill } from "../lib/api";
 import { studio, type Folder, type OrgSnapshot, type PlacedChat } from "../lib/studio";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
 import { WorkspaceTree } from "../components/WorkspaceTree";
@@ -100,7 +100,26 @@ export function ChatStudio({
 
   const cwd = workingDir || home;
   useEffect(() => localStorage.setItem("chat-backend", JSON.stringify(backend)), [backend]);
-  useEffect(() => localStorage.setItem("chat-cwd", JSON.stringify(workingDir)), [workingDir]);
+  useEffect(() => {
+    localStorage.setItem("chat-cwd", JSON.stringify(workingDir));
+    if (workingDir) void api.setWorkingDir(workingDir).catch(() => undefined);
+  }, [workingDir]);
+
+  // A GUI can inherit System32 as its working directory; ask Rust for a safe default instead.
+  useEffect(() => {
+    if (workingDir) return;
+    void api
+      .workingDirDefault()
+      .then((d) => {
+        setWorkingDir(d.path);
+        if (d.forbidden_process_cwd) {
+          toast("info", `Started in ${basename(d.path)}; the inherited working directory was a system folder.`);
+        }
+      })
+      .catch(() => undefined);
+    // Only on first mount, when nothing is saved.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => localStorage.setItem("chat-skills", JSON.stringify(skills)), [skills]);
 
   const loadSessions = useCallback(
@@ -126,6 +145,7 @@ export function ChatStudio({
   backendRef.current = backend;
   const pendingRef = useRef(pendingBranch);
   pendingRef.current = pendingBranch;
+  const [ledger, setLedger] = useState<MemoryEntry[]>([]);
   const pendingBranchRef = useRef(pendingBranch);
   pendingBranchRef.current = pendingBranch;
   const skillsRef = useRef(skills);
@@ -227,6 +247,18 @@ export function ChatStudio({
     // Only a new nonce starts a hand-off.
   }, [incoming?.nonce]);
 
+  // Reload the ledger for this session shortly after a turn settles.
+  useEffect(() => {
+    if (!current) {
+      setLedger([]);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      void api.memoryLedger(current).then(setLedger).catch(() => undefined);
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [current, items]);
+
   useEffect(() => {
     const onUse = (e: Event) => {
       const name = (e as CustomEvent<string>).detail;
@@ -307,7 +339,8 @@ export function ChatStudio({
     setStreaming(true);
     setStatusLine(backend === "hermes" ? "Starting Hermes" : "Starting Claude Code");
     try {
-      const started = await api.sendChat(backend === "hermes" ? current : claudeSession, full, cwd, backend, null, skills);
+      const turn = items.filter((i) => i.kind === "user").length + 1;
+      const started = await api.sendChat(backend === "hermes" ? current : claudeSession, full, cwd, backend, null, skills, turn);
       runRef.current = started.run_id;
     } catch (e) {
       streamingRef.current = false;
@@ -557,7 +590,10 @@ export function ChatStudio({
                 </div>
               </div>
             )}
-            {items.map((it) => {
+            {(() => {
+              let turn = 0;
+              return items.map((it) => {
+              if (it.kind === "user") turn += 1;
               if (it.kind === "user")
                 return (
                   <div key={it.id} className="my-4 flex justify-end">
@@ -580,6 +616,7 @@ export function ChatStudio({
                     )}
                     {it.text.trim() && <Markdown text={it.text.replace(/^\s+/, "")} workingDir={cwd} />}
                     {it.streaming && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-emerald-400 align-middle" />}
+                    <MemoryUsed entries={ledger.filter((e) => e.turn === turn)} />
                   </div>
                 );
               if (it.kind === "tool") return <ToolCard key={it.id} tool={it} />;
@@ -593,7 +630,8 @@ export function ChatStudio({
                   {it.text}
                 </div>
               );
-            })}
+              });
+            })()}
           </div>
         </div>
 
@@ -686,5 +724,32 @@ export function ChatStudio({
         </Modal>
       )}
     </div>
+  );
+}
+
+/** What this turn read from and wrote to memory, from the tool events themselves. */
+function MemoryUsed({ entries }: { entries: MemoryEntry[] }) {
+  if (entries.length === 0) return null;
+  const reads = entries.filter((e) => e.op === "read").length;
+  const writes = entries.length - reads;
+  return (
+    <details className="mt-2 rounded-lg bg-white/[0.02] px-3 py-1.5 text-[11.5px] text-slate-500 ring-1 ring-white/5">
+      <summary className="cursor-pointer select-none">
+        <ChevronRight className="mr-1 inline size-3" />
+        Memory used: {reads} read{reads === 1 ? "" : "s"}
+        {writes > 0 ? `, ${writes} write${writes === 1 ? "" : "s"}` : ""}
+      </summary>
+      <ul className="mt-1.5 space-y-1">
+        {entries.map((e, i) => (
+          <li key={`${e.tool}-${i}`} className="flex gap-2">
+            <span className={e.op === "write" ? "text-amber-300" : "text-sky-300"}>{e.op}</span>
+            <span className="text-slate-400">{e.target}</span>
+            <span className="truncate font-mono text-[11px] text-slate-300" title={e.path || e.tool}>
+              {e.path || e.tool}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }

@@ -332,6 +332,25 @@ export interface ChatEvent {
   stopped?: boolean;
 }
 
+export interface MemoryEntry {
+  session_id: string;
+  turn: number;
+  op: "read" | "write";
+  target: "vault" | "notion" | "file";
+  path: string;
+  tool: string;
+  at: number;
+}
+
+export interface MemoryNote {
+  path: string;
+  title: string;
+  kind: string;
+  status: string;
+  repo: string | null;
+  in_degree: number;
+}
+
 export interface ChatStarted {
   run_id: string;
   backend: string;
@@ -501,8 +520,11 @@ export const api = {
     invoke<AgentOutcome[]>("install_catalog_server", { id, values, syncToAllAgents }),
   ghToken: () => invoke<string>("gh_token"),
 
-  sendChat: (sessionId: string | null, prompt: string, workingDir: string, agentBackend: string, model: string | null, skills: string[] = []) =>
-    invoke<ChatStarted>("send_chat_message", { sessionId, prompt, workingDir, agentBackend, model, skills }),
+  sendChat: (sessionId: string | null, prompt: string, workingDir: string, agentBackend: string, model: string | null, skills: string[] = [], turn?: number) =>
+    invoke<ChatStarted>("send_chat_message", { sessionId, prompt, workingDir, agentBackend, model, skills, turn: turn ?? null }),
+  memoryLedger: (sessionId: string, limit = 400) => invoke<MemoryEntry[]>("memory_ledger", { sessionId, limit }),
+  memoryRecent: (limit = 50) => invoke<MemoryEntry[]>("memory_recent", { limit }),
+  memoryIndexNotes: () => invoke<MemoryNote[]>("memory_notes"),
   stopChat: () => invoke<string>("stop_active_chat"),
   activeChat: () => invoke<string | null>("active_chat"),
   applyCode: (workingDir: string, relPath: string, content: string) =>
@@ -517,6 +539,13 @@ export const api = {
     invoke<void>("link_branch", { parent, projectSlug, title, child }),
   chatSkills: (sessionId: string) => invoke<string[]>("get_chat_skills", { sessionId }),
   setChatSkills: (sessionId: string, skills: string[]) => invoke<void>("set_chat_skills", { sessionId, skills }),
+
+  workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
+  ciBadge: (dir?: string) => invoke<number>("ci_badge", { dir: dir ?? null }),
+
+  getPref: (key: string) => invoke<string | null>("get_pref", { key }),
+  setPref: (key: string, value: string) => invoke<void>("set_pref", { key, value }),
+  setWorkingDir: (path: string) => invoke<string>("set_working_dir", { path }),
 
   skills: () => invoke<Skill[]>("list_skills"),
   readSkill: (name: string) => invoke<string>("read_skill", { name }),

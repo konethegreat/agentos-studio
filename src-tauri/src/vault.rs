@@ -361,6 +361,48 @@ pub struct Vault {
     pub root: PathBuf,
 }
 
+/// What a memory note is for. Old notes have no type and read as `Fact`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemKind {
+    Decision,
+    Fact,
+    Convention,
+    Episode,
+    Gotcha,
+}
+
+impl MemKind {
+    pub fn parse(raw: &str) -> Self {
+        match raw.trim().to_lowercase().as_str() {
+            "decision" => Self::Decision,
+            "convention" => Self::Convention,
+            "episode" => Self::Episode,
+            "gotcha" => Self::Gotcha,
+            _ => Self::Fact,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Decision => "decision",
+            Self::Fact => "fact",
+            Self::Convention => "convention",
+            Self::Episode => "episode",
+            Self::Gotcha => "gotcha",
+        }
+    }
+}
+
+/// Metadata a typed write can carry. All optional except the kind.
+#[derive(Debug, Clone, Default)]
+pub struct MemMeta {
+    pub kind: Option<MemKind>,
+    pub supersedes: Option<String>,
+    pub source_session: Option<String>,
+    pub agent: Option<String>,
+    pub repo: Option<String>,
+}
+
 impl Vault {
     pub fn new(root: impl Into<PathBuf>) -> Vault {
         Vault { root: root.into() }
@@ -861,6 +903,298 @@ impl Vault {
         Ok(format!("Memory note {action}: {}", path.display()))
     }
 
+    /// Typed memory write. Only `decision` notes touch DECISION_LOG; everything else stays
+    /// in its own note so the log keeps meaning what it says.
+    pub fn write_typed_memory(
+        &self,
+        topic: &str,
+        content: &str,
+        category: &str,
+        meta: &MemMeta,
+    ) -> Result<String> {
+        if topic.trim().is_empty() || content.trim().is_empty() {
+            bail!("topic and content must not be empty");
+        }
+        let cat = slug(&category.to_lowercase(), 30).to_lowercase();
+        let file_slug = slug(topic, 60);
+        if RESERVED_MEMORY.contains(&file_slug.to_lowercase().as_str()) {
+            bail!("SYSTEM_CONTEXT and DECISION_LOG are reserved; choose another topic.");
+        }
+        self.ensure_dirs()?;
+        let kind = meta.kind.unwrap_or(MemKind::Fact);
+        let path = self.memory().join(format!("{file_slug}.md"));
+        let ts = now();
+        let section = format!("## {ts} ({cat})\n\n{}\n", content.trim());
+        let action = if path.exists() {
+            let mut doc = Doc::parse(&fs::read_to_string(&path)?);
+            doc.set_str("updated", &ts);
+            doc.set_str("type", kind.as_str());
+            doc.set_str("status", "active");
+            let mut cats = doc.list("categories");
+            if !cats.contains(&cat) {
+                cats.push(cat.clone());
+            }
+            cats.sort();
+            doc.set("categories", Fm::List(cats));
+            doc.body = format!("{}\n\n{section}", doc.body.trim_end());
+            atomic_write(&path, &doc.render())?;
+            "appended"
+        } else {
+            let mut doc = Doc::default();
+            doc.set_str("type", kind.as_str());
+            doc.set_str("status", "active");
+            doc.set_str("topic", topic.trim());
+            doc.set("categories", Fm::List(vec![cat.clone()]));
+            doc.set_str("created", &ts);
+            doc.set_str("updated", &ts);
+            if let Some(s) = meta.supersedes.as_deref().filter(|s| !s.trim().is_empty()) {
+                doc.set_str("supersedes", slug(s, 60));
+            }
+            if let Some(s) = meta
+                .source_session
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+            {
+                doc.set_str("source_session", s.trim());
+            }
+            if let Some(a) = meta.agent.as_deref().filter(|a| !a.trim().is_empty()) {
+                doc.set_str("agent", a.trim());
+            }
+            if let Some(r) = meta.repo.as_deref().filter(|r| !r.trim().is_empty()) {
+                doc.set_str("repo", r.trim());
+            }
+            doc.set(
+                "tags",
+                Fm::List(vec!["memory".into(), format!("memory/{cat}")]),
+            );
+            doc.body = format!(
+                "# {}\n\nSee also: [[SYSTEM_CONTEXT]] - [[DECISION_LOG]]\n\n{section}",
+                topic.trim()
+            );
+            atomic_write(&path, &doc.render())?;
+            "created"
+        };
+
+        if let Some(old) = meta.supersedes.as_deref().filter(|s| !s.trim().is_empty()) {
+            let old_slug = slug(old, 60);
+            let old_path = self.memory().join(format!("{old_slug}.md"));
+            if old_path.exists() {
+                let mut doc = Doc::parse(&fs::read_to_string(&old_path)?);
+                doc.set_str("status", "superseded");
+                doc.set_str("superseded_by", &file_slug);
+                doc.set_str("updated", &ts);
+                atomic_write(&old_path, &doc.render())?;
+            }
+        }
+
+        if kind == MemKind::Decision {
+            let first: String = content
+                .trim()
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .chars()
+                .take(160)
+                .collect();
+            self.append_decision(
+                &format!("[{cat}] {}", topic.trim()),
+                &format!("Memory {action}: [[{file_slug}]] - {first}"),
+                meta.agent.as_deref().unwrap_or("agentos-hub"),
+            )?;
+        }
+
+        Ok(format!("Memory note {action}: {}", path.display()))
+    }
+
+    /// One page an agent can read instead of every note: purpose, stack, commands, open tasks,
+    /// the last few decisions and the known gotchas.
+    pub fn project_brief(&self, repo: &str) -> Result<String> {
+        let repo = repo.trim();
+        if repo.is_empty() {
+            bail!("repo must not be empty");
+        }
+        let slugish = slug(repo, 60);
+        let note = self.projects().join(format!("{slugish}.md"));
+        let mut out = String::new();
+        out.push_str(&format!("# Brief: {repo}\n\n"));
+
+        let mut root_dir: Option<PathBuf> = None;
+        if note.exists() {
+            let raw = fs::read_to_string(&note)?;
+            let doc = Doc::parse(&raw);
+            let purpose = doc
+                .body
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with('>'))
+                .unwrap_or("No purpose recorded.")
+                .to_string();
+            out.push_str(&format!("## Purpose\n{purpose}\n\n"));
+            for key in ["path", "root", "repo_path"] {
+                if let Some(p) = doc.get(key) {
+                    if Path::new(p).is_dir() {
+                        root_dir = Some(PathBuf::from(p));
+                    }
+                }
+            }
+        } else {
+            out.push_str(&format!(
+                "## Purpose\nNo project note at 01_Projects/{slugish}.md yet.\n\n"
+            ));
+        }
+
+        let mut stack: Vec<String> = Vec::new();
+        if let Some(dir) = root_dir.as_deref() {
+            for (file, label) in [
+                ("Cargo.toml", "Rust"),
+                ("package.json", "Node / TypeScript"),
+                ("pyproject.toml", "Python"),
+                ("go.mod", "Go"),
+                ("src-tauri", "Tauri desktop"),
+            ] {
+                if dir.join(file).exists() {
+                    stack.push(label.to_string());
+                }
+            }
+            let readme = dir.join("README.md");
+            if let Ok(text) = fs::read_to_string(readme) {
+                let mut in_commands = false;
+                let mut cmds: Vec<String> = Vec::new();
+                for line in text.lines() {
+                    let low = line.to_lowercase();
+                    if line.starts_with("## ") {
+                        in_commands = low.contains("command")
+                            || low.contains("development")
+                            || low.contains("usage");
+                    } else if in_commands && line.trim_start().starts_with("```") {
+                        continue;
+                    } else if in_commands && !line.trim().is_empty() && cmds.len() < 6 {
+                        cmds.push(line.trim().to_string());
+                    }
+                }
+                if !cmds.is_empty() {
+                    out.push_str("## Commands\n");
+                    for c in cmds {
+                        out.push_str(&format!("- `{c}`\n"));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        out.push_str(&format!(
+            "## Stack\n{}\n\n",
+            if stack.is_empty() {
+                "Not detected. Add `path:` to the project note.".to_string()
+            } else {
+                stack.join(", ")
+            }
+        ));
+
+        let open: Vec<crate::vault::Task> = self
+            .fetch_pending_tasks("all")?
+            .into_iter()
+            .filter(|t| {
+                let p = t.project.to_lowercase();
+                let r = repo.to_lowercase();
+                p == r || p.contains(&r) || r.contains(&p)
+            })
+            .collect();
+        out.push_str("## Open tasks\n");
+        if open.is_empty() {
+            out.push_str("- None on the bus for this project.\n\n");
+        } else {
+            for t in open {
+                out.push_str(&format!(
+                    "- {} [{}] {} ({})\n",
+                    t.id, t.status, t.title, t.assigned_to
+                ));
+            }
+            out.push('\n');
+        }
+
+        let mut decisions: Vec<String> = Vec::new();
+        if let Ok(log) = fs::read_to_string(self.decision_log()) {
+            let mut block = String::new();
+            for line in log.lines() {
+                if line.starts_with("### ") {
+                    if !block.is_empty() && block.to_lowercase().contains(&repo.to_lowercase()) {
+                        decisions.push(block.trim().to_string());
+                    }
+                    block = line.to_string();
+                } else {
+                    block.push('\n');
+                    block.push_str(line);
+                }
+            }
+            if !block.is_empty() && block.to_lowercase().contains(&repo.to_lowercase()) {
+                decisions.push(block.trim().to_string());
+            }
+        }
+        out.push_str("## Recent decisions\n");
+        if decisions.is_empty() {
+            out.push_str("- None recorded for this project.\n\n");
+        } else {
+            for d in decisions.iter().rev().take(5) {
+                let head = d
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim_start_matches("### ")
+                    .to_string();
+                out.push_str(&format!("- {head}\n"));
+            }
+            out.push('\n');
+        }
+
+        out.push_str("## Gotchas\n");
+        let mut gotchas = 0usize;
+        if let Ok(entries) = fs::read_dir(self.memory()) {
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.extension().and_then(|x| x.to_str()) != Some("md") {
+                    continue;
+                }
+                let Ok(raw) = fs::read_to_string(&p) else {
+                    continue;
+                };
+                let doc = Doc::parse(&raw);
+                if MemKind::parse(doc.get("type").unwrap_or("")) != MemKind::Gotcha {
+                    continue;
+                }
+                let repo_match = doc
+                    .get("repo")
+                    .map(|r| r.to_lowercase().contains(&repo.to_lowercase()))
+                    .unwrap_or(true);
+                if !repo_match {
+                    continue;
+                }
+                let first = doc
+                    .body
+                    .lines()
+                    .rev()
+                    .map(str::trim)
+                    .find(|l| !l.is_empty() && !l.starts_with('#'))
+                    .unwrap_or("")
+                    .chars()
+                    .take(200)
+                    .collect::<String>();
+                let stem = p
+                    .file_stem()
+                    .map(|x| x.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                out.push_str(&format!("- [[{stem}]]: {first}\n"));
+                gotchas += 1;
+                if gotchas >= 5 {
+                    break;
+                }
+            }
+        }
+        if gotchas == 0 {
+            out.push_str("- None recorded.\n");
+        }
+        Ok(out)
+    }
+
     pub fn search_shared_memory(&self, query: &str) -> Result<Vec<SearchHit>> {
         let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
         if terms.is_empty() {
@@ -1141,6 +1475,103 @@ mod tests {
         let b = v.board();
         assert_eq!(b.pending.len(), 1);
         assert!(b.pending[0].completed_by.is_none());
+    }
+
+    #[test]
+    fn typed_memory_logs_only_decisions() {
+        let (_d, v) = vault();
+        let fact = MemMeta {
+            kind: Some(MemKind::Fact),
+            agent: Some("hermes".into()),
+            repo: Some("agentos-studio".into()),
+            ..Default::default()
+        };
+        v.write_typed_memory(
+            "Port Number",
+            "The single instance guard uses 47823.",
+            "ops",
+            &fact,
+        )
+        .unwrap();
+        let doc = Doc::parse(&v.read_note("03_Memory/Port_Number.md").unwrap());
+        assert_eq!(doc.get("type"), Some("fact"));
+        assert_eq!(doc.get("status"), Some("active"));
+        assert_eq!(doc.get("agent"), Some("hermes"));
+        assert_eq!(doc.get("repo"), Some("agentos-studio"));
+        let log = v.read_note("03_Memory/DECISION_LOG.md").unwrap();
+        assert!(
+            !log.contains("Port Number"),
+            "a fact must not reach the decision log"
+        );
+
+        let decision = MemMeta {
+            kind: Some(MemKind::Decision),
+            source_session: Some("sess-1".into()),
+            ..Default::default()
+        };
+        v.write_typed_memory(
+            "FTS Index",
+            "Rank by bm25 plus recency.",
+            "architecture",
+            &decision,
+        )
+        .unwrap();
+        let log = v.read_note("03_Memory/DECISION_LOG.md").unwrap();
+        assert!(log.contains("FTS Index"));
+        assert!(log.contains("[[FTS_Index]]"));
+    }
+
+    #[test]
+    fn superseding_marks_the_old_note_and_untyped_reads_as_fact() {
+        let (_d, v) = vault();
+        let old = MemMeta {
+            kind: Some(MemKind::Fact),
+            ..Default::default()
+        };
+        v.write_typed_memory("Old Guard", "Port 8080.", "ops", &old)
+            .unwrap();
+
+        // A note written before types existed carries no type field at all.
+        v.write_note(
+            "03_Memory/Legacy_Note.md",
+            "---\ntitle: Legacy\nstatus: active\n---\n\nbody\n",
+        )
+        .unwrap();
+
+        let new = MemMeta {
+            kind: Some(MemKind::Gotcha),
+            supersedes: Some("Old Guard".into()),
+            ..Default::default()
+        };
+        v.write_typed_memory("New Guard", "Port 47823, port 8080 is taken.", "ops", &new)
+            .unwrap();
+
+        let old_doc = Doc::parse(&v.read_note("03_Memory/Old_Guard.md").unwrap());
+        assert_eq!(old_doc.get("status"), Some("superseded"));
+        assert_eq!(old_doc.get("superseded_by"), Some("New_Guard"));
+
+        let legacy = Doc::parse(&v.read_note("03_Memory/Legacy_Note.md").unwrap());
+        assert_eq!(legacy.get("type"), None);
+        assert_eq!(
+            MemKind::parse(legacy.get("type").unwrap_or("")),
+            MemKind::Fact
+        );
+        // Read time only: the file keeps its original bytes apart from nothing.
+        assert!(v
+            .read_note("03_Memory/Legacy_Note.md")
+            .unwrap()
+            .contains("status: active"));
+    }
+
+    #[test]
+    fn memory_kind_parses_and_defaults() {
+        assert_eq!(MemKind::parse("decision"), MemKind::Decision);
+        assert_eq!(MemKind::parse(" GOTCHA "), MemKind::Gotcha);
+        assert_eq!(MemKind::parse("episode"), MemKind::Episode);
+        assert_eq!(MemKind::parse("convention"), MemKind::Convention);
+        assert_eq!(MemKind::parse(""), MemKind::Fact);
+        assert_eq!(MemKind::parse("nonsense"), MemKind::Fact);
+        assert_eq!(MemKind::Decision.as_str(), "decision");
     }
 
     #[test]

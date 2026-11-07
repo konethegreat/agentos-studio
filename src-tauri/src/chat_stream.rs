@@ -361,6 +361,9 @@ pub struct ChatRequest {
     /// Skills preloaded for this turn (`hermes chat -s a,b`).
     #[serde(default)]
     pub skills: Vec<String>,
+    /// 1-based user turn in this chat; the ledger attaches rows to it.
+    #[serde(default)]
+    pub turn: Option<u32>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -463,6 +466,14 @@ pub fn build_args(backend: &str, req: &ChatRequest, query_file: &Path, cwd: &Pat
 
 fn emit(app: &AppHandle, run_id: &str, mut e: ChatEvent) {
     e.run_id = run_id.to_string();
+    if e.kind.starts_with("tool") {
+        if let Some(name) = e.tool_name.as_deref() {
+            crate::memory_ledger::note_event(run_id, name, e.input.as_ref(), e.output.as_deref());
+        }
+    }
+    if matches!(e.kind.as_str(), "done" | "end" | "finished" | "exit") {
+        crate::memory_ledger::end_run(run_id);
+    }
     let _ = app.emit(EV_CHAT, e);
 }
 
@@ -491,6 +502,12 @@ pub fn send_chat_message(
         crate::settings::home()
     };
     let run_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string();
+    let ledger_session = req
+        .session_id
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("run-{run_id}"));
+    crate::memory_ledger::begin_run(&run_id, &ledger_session, req.turn.unwrap_or(1));
     let dir = dirs::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("agentos-studio")
@@ -922,6 +939,7 @@ mod tests {
     #[test]
     fn builds_resume_args_for_both_backends() {
         let req = ChatRequest {
+            turn: None,
             session_id: Some("local-1".into()),
             prompt: "hi".into(),
             working_dir: "C:/repo".into(),

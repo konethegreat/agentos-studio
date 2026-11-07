@@ -27,7 +27,7 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Hermes Chat Studio.** A Claude-Desktop-style chat over Hermes (or Claude Code), bound to any of your repositories. Replies stream in with rendered Markdown, highlighted code blocks with Copy and Apply-to-file, and expandable cards for every MCP and tool call. Your whole Hermes history is in the sidebar, read straight from `state.db`, with rename, delete and export to Obsidian.
 - **Hot-swap provider switchboard.** Run on your Claude Pro or Max subscription today, then move to OpenRouter, Gemini, the Anthropic or OpenAI APIs, DeepSeek, Nous Portal or a local Ollama model from a dropdown. Keys go into Hermes's own `.env`, and every switch can be checked with a live test turn.
 - **Universal MCP router.** One table of every MCP server across Hermes, Claude Code, Qoder and Antigravity: which agent has it, whether it answers, how fast, and every tool it exposes. Add servers from a one-click catalog, sync them to all four agents, toggle them per conversation, or run OAuth sign-in.
-- **Native Rust MCP bus.** The same binary run with `--mcp-stdio` is `agentos-hub`: 6 tools for a shared task queue and shared memory, no Python, a full initialize plus tools/list round trip in about 35 ms.
+- **Native Rust MCP bus.** The same binary run with `--mcp-stdio` is `agentos-hub`: 9 tools for a shared task queue, typed memory and ranked recall, no Python, a full initialize plus tools/list round trip in about 35 ms.
 - **Real terminals.** A docked panel with true PTY terminals (ConPTY on Windows) for interactive Hermes, the Hermes TUI, Claude Code or your shell, plus a one-shot command runner. Any chat can be continued in a terminal with one click.
 - **Workspaces and folders.** Organise chats into workspaces, folders and sub-folders with drag and drop, pins, tags, archive and file attachments. Map a folder to a repository and every chat run there lands in it automatically; link it to a Hermes project.
 - **GitHub.** Pull requests (diff, checks, review, merge, create), issues, Actions runs (failed logs, re-run), branches and commits, all through your `gh` login, with "Ask Hermes" hand-offs into chat.
@@ -126,7 +126,7 @@ On first launch open **Setup and Integrations** and press **Auto-Setup and Repai
 | 2 | Hermes Agent Engine | `hermes --version`, default model in `config.yaml` | Official Hermes installer, `hermes model` |
 | 3 | Obsidian Shared Brain | `00_Inbox` to `04_Agent_Engine` tree | Scaffolds the vault and seed files at any folder you pick |
 | 4 | Notion Cloud Sync | Notion MCP server configured and authorized in Hermes | `hermes mcp install notion`, `hermes mcp login notion` |
-| 5 | AgentOS Rust MCP Bus | Self-test over stdio (`initialize` + `tools/list` returns 6 tools), Hermes registration | `hermes mcp add agentos-hub --command <studio> --args --mcp-stdio --vault <vault>` |
+| 5 | AgentOS Rust MCP Bus | Self-test over stdio (`initialize` + `tools/list` returns 9 tools), Hermes registration | `hermes mcp add agentos-hub --command <studio> --args --mcp-stdio --vault <vault>` |
 | 6 | IDE Fleet Connectors | `agentos-hub` in `~/.claude.json`, `~/.qoder/settings.json`, `~/.gemini/config/mcp_config.json` | `claude mcp add` and JSON merges (existing files are backed up once) |
 
 Foundations (Git, GitHub CLI, Node, user `PATH` entries for `~/.local/bin`, npm and Cargo) are checked and repaired the same way. Studio also resolves tools through the persisted user `PATH`, so a freshly installed CLI works without restarting the app.
@@ -139,7 +139,7 @@ The home screen. Pick a working directory (any of your repositories, or any fold
 - The Rust parser turns the stream into `token`, `tool_start`, `tool_result`, `error` and `complete` events. Tool calls render as cards showing the MCP server, the tool, its input, its result and how long it took. MCP calls that Hermes routes through its `tool_call` wrapper are shown under the real server and tool.
 - Code blocks have **Copy** and **Apply**. Apply writes the block to a file inside the working directory (paths outside it are refused) and keeps the file's line endings.
 - **Stop** ends the turn immediately and keeps the partial reply.
-- The sidebar lists every Hermes conversation from `state.db` with search, and each one can be renamed, deleted or exported to `03_Memory/Hermes_Sessions/` in your vault, where `search_shared_memory` can find it.
+- The chat list shows every Hermes conversation from `state.db` with search, and each one can be renamed, deleted or exported to `03_Memory/Hermes_Sessions/` in your vault, where `search_shared_memory` can find it.
 - The header pill switches provider, model and the MCP servers Hermes loads, without leaving the conversation.
 - Slash commands: `/doctor` runs `hermes doctor` in the terminal, `/mcp-test` pings every MCP server, `/delegate-to-kanban <task>` queues a task on the Agent Bus, and `/sync-notion` has Hermes update your AgentOS Command Center page in Notion.
 
@@ -195,6 +195,18 @@ The chat sidebar is a tree: **workspaces > folders > sub-folders > chats**, plus
 - **Link to a Hermes project**: reuses the Hermes project that already contains the directory, or runs `hermes project create`.
 - **Attach files** to a chat or a folder. When you send a message, the attached paths of the chat and every parent folder are listed at the top of the prompt for the agent, and the chat shows which files were included. Files are referenced, never copied.
 - Deleting a folder or workspace never deletes chats; they return to Unfiled. Hermes sessions stay in Hermes's `state.db`; placement lives in Studio's `studio.db`.
+
+## Navigation
+
+A five-group icon rail replaces the old twelve-item list: **Chat**, **Work** (Projects, Mission
+Control, Fleet), **Brain** (Skills, Constitution), **Code** (GitHub) and **System** (MCP and
+Providers, Updates, Safety, Setup, Diagnostics). The rail is 56 px, expands on hover, and stays open
+if you pin it. Badges count open bus tasks on Work, waiting updates on System and failing CI runs on
+Code. `Alt+1..5` jumps between groups and `Ctrl+K` reaches every tab.
+
+Chats never start in a system folder: the working directory comes from the last folder you used,
+then the active project, then your home directory. Anything under `%WINDIR%` or `System32` is
+rejected.
 
 ## Projects, branches and skills
 
@@ -274,8 +286,11 @@ claude mcp add agentos-hub --scope user -- /path/to/agentos-studio --mcp-stdio -
 | `fetch_pending_tasks(agent_name)` | Open tasks for one agent or `all`, sorted by priority |
 | `claim_task(task_id, agent_name)` | Move a task to `In_Progress/` |
 | `complete_task(task_id, agent_name, summary_of_work)` | Move a task to `Completed/` with a completion summary |
-| `write_shared_memory(topic, content, category)` | Create or append a note in `03_Memory/` and log it in `DECISION_LOG.md` |
-| `search_shared_memory(query)` | Ranked keyword search across `01_Projects/` and `03_Memory/` |
+| `write_shared_memory(topic, content, category, type?)` | Create or append a note in `03_Memory/`. Only `type=decision` (the default) reaches `DECISION_LOG.md` |
+| `search_shared_memory(query)` | Simple keyword search across `01_Projects/` and `03_Memory/` |
+| `recall(query, repo?, k=8, max_tokens=1500)` | Ranked recall from the FTS5 index: bm25 plus recency and wikilink in-degree, superseded notes last, chunks with path and line |
+| `remember(type, topic, content, supersedes?)` | Typed write: decision, fact, convention, episode or gotcha, with optional supersede |
+| `project_brief(repo)` | One page: purpose, stack, commands, open tasks, last five decisions, gotchas |
 
 Every state change regenerates the task section of `DASHBOARD.md`. Writes are atomic and guarded by a cross-process lock, so the GUI, the MCP server and other tools can share one vault safely. The file format is compatible with the original AgentOS Python server.
 

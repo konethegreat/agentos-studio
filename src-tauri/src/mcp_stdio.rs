@@ -203,15 +203,82 @@ pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Valu
                 .get("category")
                 .and_then(Value::as_str)
                 .unwrap_or("architecture");
-            Ok(json!(vault.write_shared_memory(
+            let meta = crate::vault::MemMeta {
+                kind: Some(crate::vault::MemKind::parse(
+                    args.get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("decision"),
+                )),
+                supersedes: args
+                    .get("supersedes")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                source_session: args
+                    .get("source_session")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                agent: args
+                    .get("agent")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                repo: args.get("repo").and_then(Value::as_str).map(str::to_string),
+            };
+            Ok(json!(vault.write_typed_memory(
                 str_arg(args, "topic")?,
                 str_arg(args, "content")?,
-                category
+                category,
+                &meta
             )?))
         }
         "search_shared_memory" => Ok(serde_json::to_value(
             vault.search_shared_memory(str_arg(args, "query")?)?,
         )?),
+        "recall" => {
+            let k = args.get("k").and_then(Value::as_u64).unwrap_or(8) as usize;
+            let max_tokens = args
+                .get("max_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(1500) as usize;
+            let repo = args.get("repo").and_then(Value::as_str);
+            Ok(serde_json::to_value(crate::memory_index::recall(
+                vault,
+                str_arg(args, "query")?,
+                repo,
+                k,
+                max_tokens,
+            )?)?)
+        }
+        "remember" => {
+            let kind = args
+                .get("type")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow::anyhow!("missing required string argument 'type'"))?;
+            let meta = crate::vault::MemMeta {
+                kind: Some(crate::vault::MemKind::parse(kind)),
+                supersedes: args
+                    .get("supersedes")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                source_session: args
+                    .get("source_session")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                agent: args
+                    .get("agent")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                repo: args.get("repo").and_then(Value::as_str).map(str::to_string),
+            };
+            Ok(json!(vault.write_typed_memory(
+                str_arg(args, "topic")?,
+                str_arg(args, "content")?,
+                args.get("category")
+                    .and_then(Value::as_str)
+                    .unwrap_or("architecture"),
+                &meta
+            )?))
+        }
+        "project_brief" => Ok(json!(vault.project_brief(str_arg(args, "repo")?)?)),
         other => anyhow::bail!("Unknown tool '{other}'"),
     }
 }
@@ -275,9 +342,55 @@ pub fn tool_definitions() -> Value {
                 "properties": {
                     "topic": {"type": "string", "description": "Note title; becomes 03_Memory/<Topic>.md"},
                     "content": {"type": "string", "description": "Markdown content for a new dated section."},
-                    "category": {"type": "string", "default": "architecture"}
+                    "category": {"type": "string", "default": "architecture"},
+                    "type": {"type": "string", "enum": ["decision", "fact", "convention", "episode", "gotcha"], "default": "decision", "description": "Only decision is appended to DECISION_LOG.md."},
+                    "supersedes": {"type": "string"},
+                    "source_session": {"type": "string"},
+                    "agent": {"type": "string"},
+                    "repo": {"type": "string"}
                 },
                 "required": ["topic", "content"]
+            }
+        },
+        {
+            "name": "recall",
+            "description": "Ranked recall across the vault: bm25 plus recency and wikilink in-degree, superseded notes last. Call this at the start of a task instead of reading every note. Returns chunks with path and line so you can open the exact source.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What you are trying to remember."},
+                    "repo": {"type": "string", "description": "Optional repository name to bias ranking toward its notes."},
+                    "k": {"type": "integer", "default": 8, "description": "Maximum chunks to return."},
+                    "max_tokens": {"type": "integer", "default": 1500, "description": "Approximate token budget for the returned text."}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "remember",
+            "description": "Write a typed memory note. type=decision is the only one appended to DECISION_LOG.md; fact, convention, episode and gotcha stay in their own note. Use supersedes to replace an outdated note, which marks the old one superseded instead of deleting it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": ["decision", "fact", "convention", "episode", "gotcha"]},
+                    "topic": {"type": "string", "description": "Note title; becomes 03_Memory/<Topic>.md"},
+                    "content": {"type": "string", "description": "Markdown content for a new dated section."},
+                    "supersedes": {"type": "string", "description": "Topic of the note this replaces."},
+                    "category": {"type": "string", "default": "architecture"},
+                    "source_session": {"type": "string"},
+                    "agent": {"type": "string"},
+                    "repo": {"type": "string"}
+                },
+                "required": ["type", "topic", "content"]
+            }
+        },
+        {
+            "name": "project_brief",
+            "description": "One page for a repository: purpose, stack, commands, open bus tasks, the last five decisions and known gotchas. Call this at task start, then recall for anything specific.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"repo": {"type": "string", "description": "Repository or project name, for example agentos-studio."}},
+                "required": ["repo"]
             }
         },
         {
@@ -339,9 +452,51 @@ mod tests {
                 "claim_task",
                 "complete_task",
                 "write_shared_memory",
+                "recall",
+                "remember",
+                "project_brief",
                 "search_shared_memory"
             ]
         );
+    }
+
+    #[test]
+    fn memory_tools_round_trip() {
+        let (_d, v) = vault();
+        let wrote = call(
+            &v,
+            11,
+            "tools/call",
+            json!({"name": "remember", "arguments": {
+                "type": "gotcha", "topic": "Port Clash", "content": "8080 is taken by Docker.",
+                "repo": "agentos-studio", "agent": "hermes"
+            }}),
+        );
+        assert!(wrote["result"]["content"].is_array());
+        let log = v.read_note("03_Memory/DECISION_LOG.md").unwrap();
+        assert!(!log.contains("Port Clash"), "a gotcha is not a decision");
+
+        let found = call(
+            &v,
+            12,
+            "tools/call",
+            json!({"name": "recall", "arguments": {"query": "port docker", "k": 3}}),
+        );
+        let text = found["result"]["content"][0]["text"].as_str().unwrap_or("");
+        assert!(
+            text.contains("Port_Clash"),
+            "recall returns the note: {text}"
+        );
+
+        let brief = call(
+            &v,
+            13,
+            "tools/call",
+            json!({"name": "project_brief", "arguments": {"repo": "agentos-studio"}}),
+        );
+        let brief_text = brief["result"]["content"][0]["text"].as_str().unwrap_or("");
+        assert!(brief_text.contains("## Gotchas"));
+        assert!(brief_text.contains("## Open tasks"));
     }
 
     #[test]

@@ -97,3 +97,12 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 Reviewed at the start of each phase, and updated when a capability ships or a competitor changes
 something that matters. A row moves to "yes" only with a verification note in the release record,
 not because code exists.
+
+## Memory tools (v0.4.1)
+
+| Hermes CLI | Studio |
+|---|---|
+| Reading every note before a task | `project_brief(repo)` plus `recall(query)` at task start, with `01_Projects`, `03_Memory` and `02_Agent_Bus/Completed` indexed in FTS5 |
+| Ad hoc grep | `recall` with bm25, recency decay and wikilink in-degree, superseded notes last |
+| Writing notes by hand | `remember(type, topic, content)` with decision, fact, convention, episode and gotcha |
+| Decision history | only `type: decision` reaches `DECISION_LOG.md` |
