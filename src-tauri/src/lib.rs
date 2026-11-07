@@ -23,6 +23,7 @@ pub mod mcp_stdio;
 pub mod memory_index;
 pub mod memory_ledger;
 pub mod missions;
+pub mod model_layer;
 pub mod models;
 pub mod notion;
 pub mod offline;
@@ -258,6 +259,14 @@ pub fn run_gui() {
             ops::plan_prompt,
             ops::plan_run_prompt,
             ops::latest_plan,
+            ops::hermes_fallback_chain,
+            ops::hermes_set_fallback_chain,
+            ops::hermes_credentials,
+            ops::hermes_credential_action,
+            ops::hermes_moa,
+            ops::hermes_set_active_moa,
+            ops::folder_models,
+            ops::set_folder_models,
             commands::boot_snapshot,
             commands::boot_run,
             commands::boot_logs_dir,

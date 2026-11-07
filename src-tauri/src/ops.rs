@@ -717,3 +717,83 @@ pub async fn plan_run_prompt(path: String) -> CmdResult<String> {
 pub async fn latest_plan(cwd: String, since: i64) -> CmdResult<Option<crate::plans::Plan>> {
     blocking(move || crate::plans::latest_since(std::path::Path::new(&cwd), since)).await
 }
+
+// ------------------------------------------------------------------ model layer
+
+use crate::model_layer::{self, Credential, FolderModel, Moa, Route};
+
+#[tauri::command]
+pub async fn hermes_fallback_chain() -> CmdResult<Vec<Route>> {
+    blocking(|| Ok(model_layer::fallback_chain())).await
+}
+
+#[tauri::command]
+pub async fn hermes_set_fallback_chain(chain: Vec<Route>, approved: Option<bool>) -> CmdResult<()> {
+    blocking(move || {
+        let summary = chain
+            .iter()
+            .map(|r| format!("{}:{}", r.provider, r.model))
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        permissions::run_guarded(
+            "hermes.fallback.change",
+            "fallback_providers",
+            &format!(
+                "Fallback chain: {}",
+                if summary.is_empty() { "none" } else { &summary }
+            ),
+            approved.unwrap_or(false),
+            || model_layer::set_fallback_chain(&chain),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn hermes_credentials() -> CmdResult<Vec<Credential>> {
+    blocking(model_layer::credentials).await
+}
+
+#[tauri::command]
+pub async fn hermes_credential_action(
+    provider: String,
+    id: String,
+    action: String,
+    priority: Option<u32>,
+    approved: Option<bool>,
+) -> CmdResult<String> {
+    blocking(move || {
+        if action == "remove" {
+            permissions::run_guarded(
+                "hermes.credential.remove",
+                &format!("{provider}/{id}"),
+                &format!("hermes auth remove {provider} {id}"),
+                approved.unwrap_or(false),
+                || model_layer::credential_action(&provider, &id, &action, priority),
+            )
+        } else {
+            model_layer::credential_action(&provider, &id, &action, priority)
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn hermes_moa() -> CmdResult<Moa> {
+    blocking(|| Ok(model_layer::moa())).await
+}
+
+#[tauri::command]
+pub async fn hermes_set_active_moa(preset: String) -> CmdResult<()> {
+    blocking(move || model_layer::set_active_moa(&preset)).await
+}
+
+#[tauri::command]
+pub async fn folder_models() -> CmdResult<Vec<FolderModel>> {
+    blocking(|| Ok(model_layer::folder_models())).await
+}
+
+#[tauri::command]
+pub async fn set_folder_models(entries: Vec<FolderModel>) -> CmdResult<()> {
+    blocking(move || model_layer::set_folder_models(&entries)).await
+}
