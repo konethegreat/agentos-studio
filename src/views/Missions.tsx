@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, ClipboardCheck, Play, Plus, ShieldCheck, Zap } from "lucide-react";
+import { ChevronDown, ChevronRight, ClipboardCheck, GitMerge, Play, Plus, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { api, errorText, type Mission } from "../lib/api";
 import { useToast } from "../components/Toasts";
 
@@ -24,6 +24,7 @@ export function Missions({ repos }: { repos: string[] }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [auto, setAuto] = useState<{ enabled: boolean; max_concurrent: number } | null>(null);
+  const [allowMerge, setAllowMerge] = useState(false);
   const [form, setForm] = useState({
     repo: repos[0] ?? "",
     goal: "",
@@ -118,6 +119,33 @@ export function Missions({ repos }: { repos: string[] }) {
     }
   }
 
+  async function agentReview(m: Mission) {
+    const reviewer = m.agent === "hermes" ? "claude-code" : "hermes";
+    setBusy(true);
+    try {
+      const r = await api.reviewWithAgent(m.id, reviewer);
+      toast("ok", `${reviewer} judged ${r.id}: ${r.review_verdict}`);
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function merge(m: Mission) {
+    setBusy(true);
+    try {
+      const out = await api.mergeMission(m.id, allowMerge);
+      toast("ok", out || `${m.id} merged`);
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function judge(m: Mission, verdict: "approve" | "reject") {
     const reviewer = m.agent === "hermes" ? "claude-code" : "hermes";
     const note = window.prompt(
@@ -156,6 +184,13 @@ export function Missions({ repos }: { repos: string[] }) {
         >
           <Zap className="size-3.5" /> Automations {auto?.enabled ? "on" : "off"}
         </button>
+        <label
+          className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[11px] text-slate-400 ring-1 ring-line"
+          title="Merging also requires an approving review from another agent, green CI and budget left"
+        >
+          <input type="checkbox" checked={allowMerge} onChange={(e) => setAllowMerge(e.target.checked)} className="size-3 accent-emerald-500" />
+          Allow merge
+        </label>
         <button
           onClick={() => void tickNow()}
           title="Run one scheduler pass now"
@@ -273,6 +308,17 @@ export function Missions({ repos }: { repos: string[] }) {
                 {m.goal}
               </span>
               <span className="hidden shrink-0 text-slate-500 md:inline">{m.repo}</span>
+              {m.pr_url && (
+                <a
+                  href={m.pr_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0 text-[10px] text-sky-300 hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  PR
+                </a>
+              )}
               {m.review_verdict && (
                 <span className="shrink-0 text-[10px] text-slate-500">
                   {m.review_verdict} by {m.reviewer}
@@ -289,8 +335,26 @@ export function Missions({ repos }: { repos: string[] }) {
                     <Play className="size-3" /> Dispatch
                   </button>
                 )}
+                {m.status === "done" && m.review_verdict === "approve" && m.pr_url && (
+                  <button
+                    onClick={() => void merge(m)}
+                    disabled={busy || !allowMerge}
+                    title={allowMerge ? "Merge the approved pull request" : "Tick Allow merge first"}
+                    className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/10 disabled:opacity-40"
+                  >
+                    <GitMerge className="size-3" /> Merge PR
+                  </button>
+                )}
                 {m.status === "review" && (
                   <>
+                    <button
+                      onClick={() => void agentReview(m)}
+                      disabled={busy}
+                      title={`Ask ${m.agent === "hermes" ? "Claude Code" : "Hermes"} to judge the diff`}
+                      className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] text-violet-300 ring-1 ring-violet-500/25 hover:bg-violet-500/10 disabled:opacity-50"
+                    >
+                      <Sparkles className="size-3" /> Agent review
+                    </button>
                     <button
                       onClick={() => void judge(m, "approve")}
                       disabled={busy}
