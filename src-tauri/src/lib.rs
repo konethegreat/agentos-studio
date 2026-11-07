@@ -22,6 +22,7 @@ pub mod notion;
 pub mod ops;
 pub mod org;
 pub mod permissions;
+pub mod policy;
 pub mod procs;
 pub mod projects;
 pub mod pty;
@@ -263,6 +264,9 @@ pub fn run_gui() {
             commands::review_with_agent,
             commands::merge_mission,
             commands::model_catalog,
+            commands::tool_policies,
+            commands::set_tool_policy,
+            commands::hub_tools,
             commands::notion_publish,
             commands::notion_pull_inbox,
             commands::notion_status,

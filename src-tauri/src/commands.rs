@@ -733,6 +733,29 @@ pub async fn dispatch_mission(
 }
 
 #[tauri::command]
+pub fn tool_policies() -> Vec<crate::policy::ToolPolicy> {
+    crate::policy::list()
+}
+
+#[tauri::command]
+pub fn set_tool_policy(server: String, tool: String, policy: String) -> CmdResult<()> {
+    crate::policy::set(&server, &tool, &policy).map_err(|e| e.to_string())
+}
+
+/// The tools the hub exposes, so the policy UI lists exactly what exists.
+#[tauri::command]
+pub fn hub_tools() -> Vec<String> {
+    crate::mcp_stdio::tool_definitions()
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| t.get("name").and_then(|n| n.as_str()).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[tauri::command]
 pub fn model_catalog() -> crate::models::Catalog {
     crate::models::catalog()
 }

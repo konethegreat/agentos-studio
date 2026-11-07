@@ -2,7 +2,7 @@ import { Loader2, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card } from "../components/ui";
-import { errorText } from "../lib/api";
+import { api, errorText } from "../lib/api";
 import { studio, type AuditEntry, type Policy, type PolicyView } from "../lib/studio";
 
 const RISK: Record<string, string> = {
@@ -23,6 +23,8 @@ export function SafetyCenter() {
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [tools, setTools] = useState<string[]>([]);
+  const [toolPolicy, setToolPolicy] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -36,6 +38,24 @@ export function SafetyCenter() {
       setLoading(false);
     }
   }, [query, toast]);
+
+  useEffect(() => {
+    void api.hubTools().then(setTools).catch(() => undefined);
+    void api
+      .toolPolicies()
+      .then((rows) => setToolPolicy(Object.fromEntries(rows.map((r) => [r.tool, r.policy]))))
+      .catch(() => undefined);
+  }, []);
+
+  async function setTool(tool: string, policy: "allow" | "ask" | "deny") {
+    try {
+      await api.setToolPolicy("agentos-hub", tool, policy);
+      setToolPolicy((cur) => ({ ...cur, [tool]: policy }));
+      toast("ok", `${tool}: ${policy}`);
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }
 
   useEffect(() => {
     const t = window.setTimeout(() => void load(), 200);
@@ -68,6 +88,40 @@ export function SafetyCenter() {
             Reload
           </Button>
         </div>
+
+        <Card className="p-0">
+          <div className="border-b border-line px-4 py-3">
+            <h2 className="text-sm font-semibold text-slate-100">Tool permissions (agentos-hub)</h2>
+            <p className="mt-0.5 text-[11.5px] text-slate-500">
+              Enforced inside the MCP server, so an agent cannot call around it. Ask means refused in headless sessions, because there is nobody to prompt.
+            </p>
+          </div>
+          {tools.length === 0 ? (
+            <div className="px-4 py-3 text-xs text-slate-500">Reading the hub tool list...</div>
+          ) : (
+            tools.map((t) => (
+              <div key={t} className="flex items-center gap-3 border-t border-line px-4 py-2">
+                <span className="min-w-0 flex-1 font-mono text-[11.5px] text-slate-300">{t}</span>
+                <div className="flex rounded-lg bg-canvas p-0.5 ring-1 ring-line" role="radiogroup" aria-label={`Policy for ${t}`}>
+                  {(["allow", "ask", "deny"] as const).map((v) => {
+                    const active = (toolPolicy[t] ?? "allow") === v;
+                    return (
+                      <button
+                        key={v}
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => void setTool(t, v)}
+                        className={`rounded-md px-2 py-1 text-[11px] capitalize ${active ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-300"}`}
+                      >
+                        {v}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </Card>
 
         <Card className="p-0">
           <div className="border-b border-line px-4 py-3">
