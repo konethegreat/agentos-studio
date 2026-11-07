@@ -563,6 +563,11 @@ export const api = {
 
   workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
   missions: () => invoke<Mission[]>("list_missions", { limit: 100 }),
+  toolPolicies: () => invoke<{ server: string; tool: string; policy: string }[]>("tool_policies"),
+  setToolPolicy: (server: string, tool: string, policy: string) =>
+    invoke<void>("set_tool_policy", { server, tool, policy }),
+  hubTools: () => invoke<string[]>("hub_tools"),
+
   modelCatalog: () =>
     invoke<{
       providers: { id: string; label: string; models: string[]; active: boolean }[];

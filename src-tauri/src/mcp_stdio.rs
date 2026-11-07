@@ -174,6 +174,10 @@ fn str_arg<'a>(args: &'a Value, key: &str) -> anyhow::Result<&'a str> {
 }
 
 pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Value> {
+    // Per-tool policy is enforced here, not in the UI, so no client can route around it.
+    if let Err(msg) = crate::policy::check("agentos-hub", name) {
+        anyhow::bail!("{msg}");
+    }
     match name {
         "delegate_task" => {
             let a: DelegateArgs = serde_json::from_value(args.clone())

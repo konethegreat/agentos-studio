@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -157,6 +157,15 @@ CREATE TABLE IF NOT EXISTS sync_ledger (
 );
 ";
 
+const MIGRATION_7: &str = "
+CREATE TABLE IF NOT EXISTS tool_policy (
+    server TEXT NOT NULL,
+    tool   TEXT NOT NULL,
+    policy TEXT NOT NULL DEFAULT 'allow',
+    PRIMARY KEY (server, tool)
+);
+";
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
@@ -227,6 +236,9 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     if v < 6 {
         c.execute_batch(MIGRATION_6)?;
+    }
+    if v < 7 {
+        c.execute_batch(MIGRATION_7)?;
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
