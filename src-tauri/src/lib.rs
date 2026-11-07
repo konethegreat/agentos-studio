@@ -29,6 +29,7 @@ pub mod offline;
 pub mod ops;
 pub mod org;
 pub mod permissions;
+pub mod plans;
 pub mod policy;
 pub mod procs;
 pub mod projects;
@@ -254,6 +255,9 @@ pub fn run_gui() {
             ops::hermes_set_notify_target,
             ops::hermes_time_caps,
             ops::hermes_set_time_caps,
+            ops::plan_prompt,
+            ops::plan_run_prompt,
+            ops::latest_plan,
             commands::boot_snapshot,
             commands::boot_run,
             commands::boot_logs_dir,

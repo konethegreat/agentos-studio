@@ -700,3 +700,20 @@ pub async fn hermes_set_time_caps(
 ) -> CmdResult<()> {
     blocking(move || hermes_surfaces::set_time_caps(mission_max_runtime, run_budget_seconds)).await
 }
+
+// ------------------------------------------------------------------ plan mode
+
+#[tauri::command]
+pub async fn plan_prompt(task: String, cwd: String) -> CmdResult<String> {
+    blocking(move || Ok(crate::plans::plan_prompt(&task, std::path::Path::new(&cwd)))).await
+}
+
+#[tauri::command]
+pub async fn plan_run_prompt(path: String) -> CmdResult<String> {
+    blocking(move || Ok(crate::plans::run_prompt(&path))).await
+}
+
+#[tauri::command]
+pub async fn latest_plan(cwd: String, since: i64) -> CmdResult<Option<crate::plans::Plan>> {
+    blocking(move || crate::plans::latest_since(std::path::Path::new(&cwd), since)).await
+}
