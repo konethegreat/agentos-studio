@@ -41,10 +41,10 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Live model catalog | yes | Hermes' model cache, refreshed by Hermes | |
 | New model badges and deprecation warnings | plan | diff the Hermes model cache between runs | later |
 | Model aliases | plan | no Hermes command manages them yet | later |
-| Fallback chains | plan | `fallback_providers`, written with `hermes config set` | next |
-| Credential pools | plan | `hermes auth` list, priority, reset, remove | next |
-| Multi-model mixtures | plan | `hermes moa` presets | next |
-| Per-workspace model defaults | plan | a folder pins a model for new chats | next |
+| Fallback chains | yes | Providers > Model layer: order, add, remove; saved to `fallback_providers` with `hermes config set` | |
+| Credential pools | yes | `hermes auth list`, priority, clear exhaustion, remove; adding a key runs `hermes auth add` in a terminal so the secret never passes through Studio | |
+| Multi-model mixtures | yes | `hermes moa` presets shown; turn one on for every turn or off; configure in a terminal | |
+| Per-workspace model defaults | yes | a folder pins a model for new Hermes chats; the deepest folder wins | |
 | Automatic model selection | part | shadow router scores real missions and explains its pick; changes nothing | after more mission data |
 | Cost guardrails and budgets | yes | per-mission budgets from Hermes usage data, metered providers only; time caps | |
 | Per-model scorecards from real sessions | part | approval rate and cost per role, provider and model from missions | |
