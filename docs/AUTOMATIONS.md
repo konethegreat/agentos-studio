@@ -81,6 +81,11 @@ deliberately boring.
   `hermes verify --json --skip-start` in the repository, and moves the mission to Studio review.
   A rejection queues the mission again and the next attempt is a new kanban task that carries the
   reviewer's note. The repository must be a Hermes project: a mission never runs in the home folder.
+- **Parallel missions in one repository:** with "Hermes missions per repository" above 1, each
+  Hermes mission gets its own git worktree (`--workspace worktree --project <repo>`, so
+  `<repo>/.worktrees/<task>` on branch `<repo>/<task>-...`) and `hermes verify` runs in that
+  worktree. Missions for other agents share the checkout, so they never start beside anything in
+  their repository, and nothing starts beside them.
 - **Claude Code and Antigravity missions** keep the Agent Bus: a bus task completion with a summary
   and a PR URL moves them to review.
 - **Budgets** count only metered providers: the spend is read from Hermes usage data in `state.db`

@@ -29,7 +29,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Hermes usage report | yes | `hermes insights` on demand (MCP and Providers > Hermes) | |
 | Supply-chain audit | yes | `hermes security audit --json` in Safety | |
 | Mission notices to a phone | yes | `hermes send` to a target you set, when a mission is done or fails | |
-| Parallel agents on one repo | plan | Hermes kanban worktree workspaces; `chat -q` refuses `--worktree` | next |
+| Parallel agents on one repo | yes | up to 4 Hermes missions per repository, each on a kanban git worktree with its own branch; other agents run alone in their repository | |
 
 ## Models
 
