@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card } from "../components/ui";
 import { api, errorText } from "../lib/api";
+import { HermesAuditCard } from "../components/HermesAudit";
 import { studio, type AuditEntry, type Policy, type PolicyView } from "../lib/studio";
 
 const RISK: Record<string, string> = {
@@ -88,6 +89,8 @@ export function SafetyCenter() {
             Reload
           </Button>
         </div>
+
+        <HermesAuditCard />
 
         <Card className="p-0">
           <div className="border-b border-line px-4 py-3">
