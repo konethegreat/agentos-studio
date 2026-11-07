@@ -57,7 +57,9 @@ import { UpdateCenter } from "./views/UpdateCenter";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 
-type View = "chat" | "projects" | "skills" | "memory" | "help" | "github" | "mission" | "control" | "fleet" | "constitution" | "updates" | "safety" | "setup" | "diagnostics";
+const VIEWS = ["chat", "projects", "skills", "memory", "help", "github", "mission", "control", "fleet", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
+type View = (typeof VIEWS)[number];
+const isView = (v: string): v is View => (VIEWS as readonly string[]).includes(v);
 
 const GROUPS: RailGroup[] = [
   {
@@ -155,7 +157,9 @@ function Studio() {
   const liveBoot = useRef(false);
   const boardTimer = useRef<number | undefined>(undefined);
 
-  const go = useCallback((v: View) => {
+  const go = useCallback((target: View) => {
+    // A link to a screen that does not exist must never leave a blank window: show Diagnostics.
+    const v: View = isView(target) ? target : "diagnostics";
     setView(v);
     setVisited((s) => (s.has(v) ? s : new Set(s).add(v)));
   }, []);
