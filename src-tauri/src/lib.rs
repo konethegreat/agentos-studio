@@ -24,6 +24,7 @@ pub mod memory_index;
 pub mod memory_ledger;
 pub mod missions;
 pub mod model_layer;
+pub mod model_watch;
 pub mod models;
 pub mod notion;
 pub mod offline;
@@ -269,6 +270,7 @@ pub fn run_gui() {
             ops::set_folder_models,
             ops::missions_parallel_per_repo,
             ops::set_missions_parallel_per_repo,
+            ops::model_changes,
             commands::boot_snapshot,
             commands::boot_run,
             commands::boot_logs_dir,
