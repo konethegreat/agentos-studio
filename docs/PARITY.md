@@ -39,7 +39,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Multiple providers | yes | every provider in Hermes' catalog, switched in Providers | |
 | Every provider Hermes supports | yes | read from `provider_models_cache.json`; no app release needed | |
 | Live model catalog | yes | Hermes' model cache, refreshed by Hermes | |
-| New model badges and deprecation warnings | plan | diff the Hermes model cache between runs | later |
+| New model badges and deprecation warnings | yes | Providers > Model layer: models new to Hermes' catalog this week, and a warning when a mission, folder default or fallback pins a model the catalog no longer lists | |
 | Model aliases | plan | no Hermes command manages them yet | later |
 | Fallback chains | yes | Providers > Model layer: order, add, remove; saved to `fallback_providers` with `hermes config set` | |
 | Credential pools | yes | `hermes auth list`, priority, clear exhaustion, remove; adding a key runs `hermes auth add` in a terminal so the secret never passes through Studio | |
