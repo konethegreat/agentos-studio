@@ -31,6 +31,12 @@ function contextPreamble(files: string[]) {
   return `Attached context files (read the ones relevant to this message with your file tools):\n${files.map((f) => `- ${f}`).join("\n")}\n\n`;
 }
 
+/** The prompt without the attachment preamble, so a forked draft does not carry it twice. */
+function withoutPreamble(text: string) {
+  const m = /^Attached context files \(read the ones relevant to this message with your file tools\):\n(?:- .*\n)*\n/.exec(text);
+  return m ? text.slice(m[0].length) : text;
+}
+
 const STARTERS = [
   "Summarize what changed in this repository this week and what is left to do.",
   "Call agentos-hub fetch_pending_tasks and plan how to clear the queue.",
@@ -424,7 +430,7 @@ export function ChatStudio({
         setPendingBranch({ parent: r.parent_id, projectSlug: null, title: r.title });
         toast("info", "Nothing came before this message, so the fork starts as a new chat with it as the draft");
       }
-      setDraft(r.draft ?? "");
+      setDraft(r.draft ? withoutPreamble(r.draft) : "");
       stick.current = true;
       void loadSessions();
       window.setTimeout(() => textarea.current?.focus(), 30);
