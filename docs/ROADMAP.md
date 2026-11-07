@@ -223,7 +223,7 @@ always able to override. Design in [`MODEL-ROUTER.md`](MODEL-ROUTER.md).
 
 Depends on: v0.5 capability metadata, and the cost and outcome data from v0.4.
 
-## v0.9.1: session forking (built, not yet released)
+## v0.9.1: session forking (shipped)
 
 - **Fork at a message:** any message in a Hermes chat can be forked into a new Hermes session.
   At a reply, the fork keeps everything through that reply; at a user message, it keeps everything
@@ -238,7 +238,7 @@ Depends on: v0.5 capability metadata, and the cost and outcome data from v0.4.
   kept as a `[ran tool: name]` line. A resumed fork runs on the active model.
 - Verified by `tests/live_fork.rs` against a real session (fork, read back, compare, delete).
 
-## v0.9.1: contextual guides (built, not yet released)
+## v0.9.1: contextual guides (shipped)
 
 - **One tip at a time, from your own state:** a chat nearing its context limit or already
   compacted, a reply running past a minute, a new chat about to start in the home folder, a chat
@@ -253,7 +253,7 @@ Depends on: v0.5 capability metadata, and the cost and outcome data from v0.4.
 - Rules are pure (`src/lib/guides.ts`) and tested in CI with `npm run test:guides`. The full list is
   in [`GUIDES.md`](GUIDES.md).
 
-## v0.9.1: design tokens and a light theme (built, not yet released)
+## v0.9.1: design tokens and a light theme (shipped)
 
 - **Semantic tokens** for surfaces, text, status, accent, type scale and motion, in one file. Every
   hex value and pixel font size in the components was replaced by a token, 1:1, so dark is unchanged.
