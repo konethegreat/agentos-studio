@@ -728,30 +728,45 @@ pub async fn dispatch_mission(
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<crate::missions::Mission> {
-    let mission = crate::missions::get(&id).map_err(err)?;
-    let Some(m) = mission else {
-        return Err(format!("no mission '{id}'"));
-    };
     let v = current_vault(&state);
-    let args = crate::vault::DelegateArgs {
-        title: m.goal.chars().take(90).collect(),
-        assigned_to: m.agent.clone(),
-        creator: "agentos-studio".into(),
-        project: m.repo.clone(),
-        context_files: Vec::new(),
-        instructions: format!(
-            "{}\n\nAcceptance criteria:\n{}\n\nRole: {}. Provider: {}. Return a summary and the PR URL.",
-            m.goal, m.acceptance, m.role, m.provider
-        ),
-        priority: "high".into(),
-    };
-    let task = v.delegate_task(args).map_err(err)?;
-    let task_id = task
-        .get("id")
-        .and_then(|x| x.as_str())
-        .map(str::to_string)
-        .ok_or_else(|| "the bus did not return a task id".to_string())?;
-    blocking(move || crate::missions::dispatch(&id, &task_id)).await
+    blocking(move || crate::missions::start(&v, &id)).await
+}
+
+#[tauri::command]
+pub async fn automation_status() -> CmdResult<serde_json::Value> {
+    blocking(|| {
+        Ok(serde_json::json!({
+            "enabled": crate::automation::enabled(),
+            "max_concurrent": crate::automation::max_concurrent(),
+        }))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_automation(
+    enabled: bool,
+    max_concurrent: Option<usize>,
+) -> CmdResult<serde_json::Value> {
+    blocking(move || {
+        crate::automation::set_enabled(enabled);
+        if let Some(n) = max_concurrent {
+            crate::automation::set_max_concurrent(n);
+        }
+        Ok(serde_json::json!({
+            "enabled": crate::automation::enabled(),
+            "max_concurrent": crate::automation::max_concurrent(),
+        }))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn automation_tick(
+    state: State<'_, AppState>,
+) -> CmdResult<crate::automation::TickReport> {
+    let v = current_vault(&state);
+    blocking(move || Ok(crate::automation::tick(&v))).await
 }
 
 #[tauri::command]

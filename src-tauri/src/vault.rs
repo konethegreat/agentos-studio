@@ -496,6 +496,11 @@ impl Vault {
         (missing.is_empty(), missing)
     }
 
+    /// Where a task currently sits: pending, in progress or completed.
+    pub fn task_state(&self, id: &str) -> Option<State> {
+        self.find_task(id, &State::ALL).map(|(_, s)| s)
+    }
+
     fn find_task(&self, id: &str, states: &[State]) -> Option<(PathBuf, State)> {
         for s in states {
             if let Ok(rd) = fs::read_dir(self.state_dir(*s)) {
