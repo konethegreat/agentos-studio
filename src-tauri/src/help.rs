@@ -3,7 +3,8 @@
 //! It reads the Markdown that ships with the repository, so help cannot drift from the product.
 //! No network, no separate content store.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::Result;
 use serde::Serialize;
@@ -15,19 +16,31 @@ pub struct Doc {
     pub body: String,
 }
 
+/// `docs/*.md` is bundled as a Tauri resource (`bundle.resources` in tauri.conf.json), so an
+/// installed build has its own copy beside the exe. Setup records where that copy lives.
+static RESOURCE_DOCS: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn set_resource_dir(resource_dir: &Path) {
+    let _ = RESOURCE_DOCS.set(resource_dir.join("docs"));
+}
+
+/// The first folder that exists. A dev checkout's live `docs/` wins over the bundled copy, so an
+/// edited doc shows without a rebuild; an installed build falls through to its resources.
+fn first_dir(candidates: Vec<PathBuf>) -> Option<PathBuf> {
+    candidates.into_iter().find(|p| p.is_dir())
+}
+
 fn docs_dir() -> PathBuf {
-    // The app is usually run from the repository during development and from an installed folder
-    // otherwise; try both, then the vault's own docs folder.
     let mut candidates = Vec::new();
     if let Ok(cwd) = std::env::current_dir() {
         candidates.push(cwd.join("docs"));
         candidates.push(cwd.join("..").join("docs"));
     }
+    if let Some(r) = RESOURCE_DOCS.get() {
+        candidates.push(r.clone());
+    }
     candidates.push(crate::settings::home().join("agentos-studio").join("docs"));
-    candidates
-        .into_iter()
-        .find(|p| p.is_dir())
-        .unwrap_or_else(|| PathBuf::from("docs"))
+    first_dir(candidates).unwrap_or_else(|| PathBuf::from("docs"))
 }
 
 pub fn all() -> Result<Vec<Doc>> {
@@ -89,6 +102,21 @@ mod tests {
             path: "x.md".into(),
             body: body.into(),
         }
+    }
+
+    #[test]
+    fn first_existing_docs_folder_wins() {
+        let d = tempfile::tempdir().unwrap();
+        let bundled = d.path().join("res").join("docs");
+        std::fs::create_dir_all(&bundled).unwrap();
+        let missing = d.path().join("checkout").join("docs");
+        assert_eq!(
+            first_dir(vec![missing.clone(), bundled.clone()]),
+            Some(bundled.clone())
+        );
+        std::fs::create_dir_all(&missing).unwrap();
+        assert_eq!(first_dir(vec![missing.clone(), bundled]), Some(missing));
+        assert_eq!(first_dir(vec![d.path().join("nope")]), None);
     }
 
     #[test]
