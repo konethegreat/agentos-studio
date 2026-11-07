@@ -111,6 +111,18 @@ Why before the model layer: roles need per-mission provider and model values to 
 is anything to route. The database columns land here; the full provider catalog and routing land
 after, and the router itself waits for mission scorecards.
 
+## v0.5.1: scheduler, auto-advance and keep-awake (shipped)
+
+- **Scheduler:** a pass a minute while the app is open. It advances running missions whose bus task
+  is completed into review, and starts queued missions while there is room.
+- **Concurrency caps:** a global cap (default 3, adjustable 1 to 12) and never two missions in the
+  same repository at once.
+- **Keep-awake:** the machine is held awake only while a mission is running, and released when the
+  queue drains.
+- **Controls:** Automations on or off and Run now in the Missions board. Turning automations off
+  does not stop work in flight: running missions still finish and still go to review.
+- **Rule that never bends:** the scheduler never approves. It only moves work to the reviewer.
+
 ## v0.6.0: model layer, full parity and live freshness
 
 Goal: anything Hermes can connect to in a terminal can be chosen in the app, and new models appear

@@ -164,6 +164,37 @@ fn set_status(c: &Connection, id: &str, from: &[&str], to: &str) -> Result<()> {
     Ok(())
 }
 
+/// Put a queued mission on the Agent Bus: create the task from the mission and start it.
+pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
+    let m = get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
+    if m.status != "queued" && m.status != "blocked" {
+        bail!(
+            "{} is {}; only a queued or blocked mission can start",
+            id,
+            m.status
+        );
+    }
+    let args = crate::vault::DelegateArgs {
+        title: m.goal.chars().take(90).collect(),
+        assigned_to: m.agent.clone(),
+        creator: "agentos-studio".into(),
+        project: m.repo.clone(),
+        context_files: Vec::new(),
+        instructions: format!(
+            "{}\n\nAcceptance criteria:\n{}\n\nRole: {}. Provider: {}. Return a summary and the PR URL.",
+            m.goal, m.acceptance, m.role, m.provider
+        ),
+        priority: "high".into(),
+    };
+    let task = v.delegate_task(args)?;
+    let task_id = task
+        .get("id")
+        .and_then(|x| x.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow::anyhow!("the bus did not return a task id"))?;
+    dispatch(id, &task_id)
+}
+
 /// Attach the bus task that will do the work, and start the mission.
 pub fn dispatch(id: &str, task_id: &str) -> Result<Mission> {
     let c = store::open()?;

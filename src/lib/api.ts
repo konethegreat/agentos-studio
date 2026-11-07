@@ -562,6 +562,13 @@ export const api = {
 
   workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
   missions: () => invoke<Mission[]>("list_missions", { limit: 100 }),
+  automationStatus: () => invoke<{ enabled: boolean; max_concurrent: number }>("automation_status"),
+  setAutomation: (enabled: boolean, maxConcurrent?: number) =>
+    invoke<{ enabled: boolean; max_concurrent: number }>("set_automation", {
+      enabled,
+      maxConcurrent: maxConcurrent ?? null,
+    }),
+  automationTick: () => invoke<{ dispatched: string[]; moved_to_review: string[]; running: number }>("automation_tick"),
   createMission: (input: {
     repo: string;
     goal: string;

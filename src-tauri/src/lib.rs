@@ -1,5 +1,6 @@
 //! AgentOS Studio: native control plane (Tauri GUI) and native MCP server (`--mcp-stdio`).
 
+pub mod automation;
 pub mod boot;
 pub mod bootstrapper;
 pub mod broadcast;
@@ -77,6 +78,9 @@ pub fn run_gui() {
                     eprintln!("vault watcher not started: {e:#}");
                 }
             }
+            // Missions tick once a minute while the app is open. Off by default; the Missions
+            // board turns it on, and it advances running work either way.
+            automation::start_scheduler(root.clone());
             // Staged startup checks: streamed to the boot screen, cached for the next launch.
             let boot_handle = handle.clone();
             std::thread::spawn(move || {
@@ -253,6 +257,9 @@ pub fn run_gui() {
             commands::submit_mission,
             commands::review_mission,
             commands::mission_merge_blockers,
+            commands::automation_status,
+            commands::set_automation,
+            commands::automation_tick,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")

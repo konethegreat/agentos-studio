@@ -93,10 +93,10 @@ trust.
 
 ## Build order
 
-1. **v0.5.0, this release:** mission store and status machine, role definitions, the review gate
-   with its five conditions, and the Missions board in Mission Control. Manual dispatch.
-2. **v0.5.1:** the scheduler tick, keep-awake, concurrency caps, and automatic advance from bus
-   completion to review.
+1. **v0.5.0 (shipped):** mission store and status machine, role definitions, the review gate with
+   its five conditions, and the Missions board in Mission Control.
+2. **v0.5.1 (shipped):** the scheduler tick, keep-awake, concurrency caps, and automatic advance
+   from bus completion to review. The scheduler never approves: it only moves work to the reviewer.
 3. **v0.5.2:** the reviewer as a real second session with a structured verdict, and the
    gatekeeper merge path.
 4. **v0.6.0:** the model layer and per-session provider pins, so roles can name a model.
