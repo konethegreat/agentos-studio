@@ -733,6 +733,16 @@ pub async fn dispatch_mission(
 }
 
 #[tauri::command]
+pub async fn provider_connections() -> CmdResult<Vec<crate::connect::Connection>> {
+    blocking(|| Ok(crate::connect::status())).await
+}
+
+#[tauri::command]
+pub async fn save_provider_key(provider: String, key: String) -> CmdResult<String> {
+    blocking(move || crate::connect::save_key(&provider, &key)).await
+}
+
+#[tauri::command]
 pub fn tool_policies() -> Vec<crate::policy::ToolPolicy> {
     crate::policy::list()
 }
