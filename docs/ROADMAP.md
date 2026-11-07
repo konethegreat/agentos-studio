@@ -90,7 +90,28 @@ note is visible as a diff before it goes out.
 Command Center page, then enable the Inbox pull. Only after publishing works should `fleet.rs` stop
 creating LLM bus tasks for routine Notion row appends. Until that publisher exists, leave it alone.
 
-## v0.5.0: model layer, full parity and live freshness
+## v0.5.0: missions, roles and the review gate (in progress)
+
+The automation spine. See [`AUTOMATIONS.md`](AUTOMATIONS.md) for the contract.
+
+- **Missions** as durable objects in `studio.db`, not chats: repo, goal, acceptance criteria, role,
+  provider, model, budget, spend, status. Status machine `queued -> running -> review -> done`, with
+  `blocked` for rework and `failed` for a human.
+- **Roles**: planner, implementer, reviewer, gatekeeper, memory. Each is a prompt template, a
+  permission set and a provider preference. Subscriptions carry the volume; OpenRouter is metered.
+- **Review gate**: a second agent on a different provider reads the diff, tests and acceptance
+  criteria, and returns approve or reject with a note. Merge is allowed only for an approved
+  mission on an allow-listed repository with green CI and spend inside budget.
+- **Missions board** inside Mission Control: create, dispatch, watch, review. Manual dispatch in
+  this release; the scheduler follows in v0.5.1.
+- **Identity**: installers carry the publisher K-ONE IT SOLUTIONS and the copyright holder, and the
+  app credits Kone Tshivhinda in the rail and in the About text.
+
+Why before the model layer: roles need per-mission provider and model values to exist before there
+is anything to route. The database columns land here; the full provider catalog and routing land
+after, and the router itself waits for mission scorecards.
+
+## v0.6.0: model layer, full parity and live freshness
 
 Goal: anything Hermes can connect to in a terminal can be chosen in the app, and new models appear
 without shipping a new Studio release.
@@ -125,7 +146,16 @@ without shipping a new Studio release.
 
 Depends on: nothing from v0.4 except the design tokens for the new panels.
 
-## v0.6.0: auto model routing and cost guardrails
+## v0.7.0: trust and distribution
+
+- Permission model extended to MCP servers and individual MCP tools (mirrors `hermes tools
+  enable|disable`), HTTP APIs and computer use (`hermes computer-use status|doctor`), with
+  per-workspace overrides.
+- Studio secrets in the OS keychain (`keyring`), surfacing `hermes secrets` sources.
+- Signed builds and the Tauri updater plugin with signed manifests, so updates install in place.
+- GitHub notifications inbox and PR review comments inline on the diff.
+
+## v0.8.0: auto model routing and cost guardrails
 
 Goal: pick the right model for each task automatically, explainably and cheaply, with the user
 always able to override. Design in [`MODEL-ROUTER.md`](MODEL-ROUTER.md).
@@ -155,15 +185,6 @@ always able to override. Design in [`MODEL-ROUTER.md`](MODEL-ROUTER.md).
   compared instead of guessed.
 
 Depends on: v0.5 capability metadata, and the cost and outcome data from v0.4.
-
-## v0.7.0: trust and distribution
-
-- Permission model extended to MCP servers and individual MCP tools (mirrors `hermes tools
-  enable|disable`), HTTP APIs and computer use (`hermes computer-use status|doctor`), with
-  per-workspace overrides.
-- Studio secrets in the OS keychain (`keyring`), surfacing `hermes secrets` sources.
-- Signed builds and the Tauri updater plugin with signed manifests, so updates install in place.
-- GitHub notifications inbox and PR review comments inline on the diff.
 
 ## Ideas worth considering
 
