@@ -432,6 +432,8 @@ export const studio = {
     setNotifyTarget: (target: string, test: boolean) => invoke<string>("hermes_set_notify_target", { target, test }),
     timeCaps: () => invoke<{ mission_max_runtime: number | null; run_budget_seconds: number | null }>("hermes_time_caps"),
     setTimeCaps: (missionMaxRuntime: number | null, runBudgetSeconds: number | null) => invoke<void>("hermes_set_time_caps", { missionMaxRuntime, runBudgetSeconds }),
+    parallelPerRepo: () => invoke<number>("missions_parallel_per_repo"),
+    setParallelPerRepo: (n: number) => invoke<void>("set_missions_parallel_per_repo", { n }),
   },
   pty: {
     spawn: (request: PtySpawn) => invoke<PtyInfo>("pty_spawn", { request }),

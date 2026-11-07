@@ -1,4 +1,4 @@
-import { BarChart3, Bell, CalendarClock, Loader2, Pause, Play, Plus, RefreshCw, Timer, Trash2, Users, Zap } from "lucide-react";
+import { BarChart3, Bell, CalendarClock, GitBranch, Loader2, Pause, Play, Plus, RefreshCw, Timer, Trash2, Users, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
 import { useToast } from "../components/Toasts";
@@ -16,7 +16,10 @@ export function HermesPanel() {
         <ProfilesCard />
         <NoticesCard />
       </div>
-      <TimeCapsCard />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <TimeCapsCard />
+        <ParallelCard />
+      </div>
       <InsightsCard />
     </div>
   );
@@ -365,6 +368,40 @@ function TimeCapsCard() {
           Save
         </Button>
       </div>
+    </Section>
+  );
+}
+
+function ParallelCard() {
+  const toast = useToast();
+  const [n, setN] = useState<number | null>(null);
+  useEffect(() => {
+    void studio.hermes.parallelPerRepo().then(setN).catch(() => setN(1));
+  }, []);
+  async function save(v: number) {
+    try {
+      await studio.hermes.setParallelPerRepo(v);
+      setN(v);
+      toast("ok", v > 1 ? `Up to ${v} Hermes missions per repository, each in its own worktree` : "One mission per repository");
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }
+  return (
+    <Section
+      icon={<GitBranch className="size-4 text-emerald-300" />}
+      title="Parallel missions in one repository"
+      hint="Above 1, each Hermes mission runs in its own git worktree (<repo>/.worktrees/<task>, its own branch), so several work on one repository at once. Claude Code and Antigravity missions share the checkout, so they always run alone in their repository. The global cap in Mission Control still applies."
+    >
+      <Field label="Hermes missions per repository">
+        <select className={inputClass} value={n ?? 1} disabled={n === null} onChange={(e) => void save(Number(e.target.value))}>
+          {[1, 2, 3, 4].map((v) => (
+            <option key={v} value={v}>
+              {v === 1 ? "1 (no worktrees)" : `${v}, on worktrees`}
+            </option>
+          ))}
+        </select>
+      </Field>
     </Section>
   );
 }
