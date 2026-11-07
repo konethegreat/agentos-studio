@@ -137,3 +137,102 @@ fn hermes_mission_runs_on_kanban_and_stops_at_studio_review() {
     );
     assert_eq!(note.trim(), "ready");
 }
+
+/// Two Hermes missions at once in one repository, each on its own kanban worktree.
+#[test]
+#[ignore]
+fn two_hermes_missions_share_a_repository_on_worktrees() {
+    let tmp = std::env::temp_dir().join(format!("kanban-par-{}", std::process::id()));
+    let repo = tmp.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    std::env::set_var("AGENTOS_STUDIO_DB", tmp.join("studio.db"));
+    std::fs::write(repo.join("README.md"), "# parallel\n").unwrap();
+    git(&repo, &["init", "-q"]);
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+    let slug = format!("kanban-par-{}", std::process::id());
+    let created = Command::new("hermes")
+        .args([
+            "project",
+            "create",
+            &slug,
+            &repo.display().to_string(),
+            "--slug",
+            &slug,
+        ])
+        .output()
+        .unwrap();
+    assert!(created.status.success());
+    kanban::set_parallel_per_repo(2).unwrap();
+    automation::set_enabled(true);
+    let v = Vault::new(tmp.join("vault"));
+    v.scaffold().unwrap();
+    let make = |name: &str| {
+        missions::create(
+            &slug,
+            &format!("Create a file {name} containing the single word ok and commit it on the current branch, then request review. There is no remote; do not open a pull request."),
+            &format!("{name} exists with ok and is committed"),
+            "implementer",
+            "hermes",
+            "claude-subscription-directsdk-experimental",
+            "claude-haiku-5-5[1m]",
+            0.0,
+        )
+        .unwrap()
+    };
+    let a = make("A.md");
+    let b = make("B.md");
+    let first = automation::tick(&v);
+    println!("dispatched in one tick: {:?}", first.dispatched);
+    assert_eq!(first.dispatched.len(), 2, "both missions start together");
+
+    let end = Instant::now() + Duration::from_secs(480);
+    while Instant::now() < end {
+        std::thread::sleep(Duration::from_secs(15));
+        let _ = automation::tick(&v);
+        let s: Vec<String> = [&a.id, &b.id]
+            .iter()
+            .map(|id| missions::get(id).unwrap().unwrap().status)
+            .collect();
+        if s.iter().all(|x| x != "running") {
+            break;
+        }
+    }
+    let mut paths = Vec::new();
+    for id in [&a.id, &b.id] {
+        let m = missions::get(id).unwrap().unwrap();
+        let task = m.task_id.clone().unwrap();
+        let view = kanban::show(&task).unwrap();
+        println!(
+            "{id}: {} in {:?} verify {:?}",
+            m.status,
+            view.workspace_path,
+            m.verify
+                .as_deref()
+                .map(|s| s.chars().take(80).collect::<String>())
+        );
+        paths.push(view.workspace_path.clone().unwrap_or_default());
+        let _ = Command::new("hermes")
+            .args([
+                "kanban",
+                "--board",
+                kanban::BOARD,
+                "archive",
+                task.trim_start_matches(kanban::PREFIX),
+            ])
+            .output();
+        assert_eq!(m.status, "review");
+    }
+    let branches = Command::new("git")
+        .args(["branch", "--list"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    println!("branches:\n{}", String::from_utf8_lossy(&branches.stdout));
+    automation::set_enabled(false);
+    let _ = Command::new("hermes")
+        .args(["project", "archive", &slug])
+        .output();
+    assert_ne!(paths[0], paths[1], "each mission had its own worktree");
+    assert!(paths.iter().all(|p| p.contains(".worktrees")));
+}
