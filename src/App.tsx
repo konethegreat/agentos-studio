@@ -35,6 +35,7 @@ import { CommandBar } from "./components/CommandBar";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { StatusBar } from "./components/StatusBar";
 import { Memory } from "./views/Memory";
+import { Missions } from "./views/Missions";
 import { NavRail, type RailGroup, type RailView } from "./components/NavRail";
 import { ToastProvider, useToast } from "./components/Toasts";
 import { UpdateBanner, UpdatesProvider, useUpdates } from "./components/Updates";
@@ -399,6 +400,7 @@ function Studio() {
             )}
             {view === "mission" && (
               <div className="flex h-full flex-col">
+                <Missions repos={repos.map((r) => r.name)} />
                 <CommandBar
                   repos={repos}
                   onDispatched={(id, hasWorker) => {
