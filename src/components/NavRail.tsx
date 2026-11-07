@@ -121,6 +121,12 @@ export function NavRail({
         })}
       </div>
 
+      {expanded && (
+        <div className="border-t border-line px-3.5 py-2 text-[10px] leading-tight text-slate-600">
+          <div className="font-medium text-slate-500">K-ONE IT SOLUTIONS</div>
+          <div>by Kone Tshivhinda</div>
+        </div>
+      )}
       <button
         type="button"
         onClick={togglePin}

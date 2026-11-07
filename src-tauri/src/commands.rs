@@ -691,6 +691,98 @@ pub fn set_pref(key: String, value: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn create_mission(
+    repo: String,
+    goal: String,
+    acceptance: String,
+    role: String,
+    agent: String,
+    provider: String,
+    model: String,
+    budget_usd: f64,
+) -> CmdResult<crate::missions::Mission> {
+    blocking(move || {
+        crate::missions::create(
+            &repo,
+            &goal,
+            &acceptance,
+            &role,
+            &agent,
+            &provider,
+            &model,
+            budget_usd,
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_missions(limit: Option<usize>) -> CmdResult<Vec<crate::missions::Mission>> {
+    blocking(move || crate::missions::list(limit.unwrap_or(100))).await
+}
+
+/// Create the bus task that does the work, then mark the mission running.
+#[tauri::command]
+pub async fn dispatch_mission(
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<crate::missions::Mission> {
+    let mission = crate::missions::get(&id).map_err(err)?;
+    let Some(m) = mission else {
+        return Err(format!("no mission '{id}'"));
+    };
+    let v = current_vault(&state);
+    let args = crate::vault::DelegateArgs {
+        title: m.goal.chars().take(90).collect(),
+        assigned_to: m.agent.clone(),
+        creator: "agentos-studio".into(),
+        project: m.repo.clone(),
+        context_files: Vec::new(),
+        instructions: format!(
+            "{}\n\nAcceptance criteria:\n{}\n\nRole: {}. Provider: {}. Return a summary and the PR URL.",
+            m.goal, m.acceptance, m.role, m.provider
+        ),
+        priority: "high".into(),
+    };
+    let task = v.delegate_task(args).map_err(err)?;
+    let task_id = task
+        .get("id")
+        .and_then(|x| x.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| "the bus did not return a task id".to_string())?;
+    blocking(move || crate::missions::dispatch(&id, &task_id)).await
+}
+
+#[tauri::command]
+pub async fn submit_mission(id: String, spent_usd: f64) -> CmdResult<crate::missions::Mission> {
+    blocking(move || crate::missions::submit_for_review(&id, spent_usd)).await
+}
+
+#[tauri::command]
+pub async fn review_mission(
+    id: String,
+    reviewer: String,
+    verdict: String,
+    note: String,
+) -> CmdResult<crate::missions::Mission> {
+    blocking(move || crate::missions::review(&id, &reviewer, &verdict, &note)).await
+}
+
+#[tauri::command]
+pub fn mission_merge_blockers(
+    id: String,
+    ci_green: bool,
+    allowlisted: bool,
+) -> CmdResult<Vec<String>> {
+    let m = crate::missions::get(&id).map_err(err)?;
+    match m {
+        Some(m) => Ok(crate::missions::merge_blockers(&m, ci_green, allowlisted)),
+        None => Err(format!("no mission '{id}'")),
+    }
+}
+
+#[tauri::command]
 pub async fn memory_ledger(
     session_id: String,
     limit: Option<usize>,

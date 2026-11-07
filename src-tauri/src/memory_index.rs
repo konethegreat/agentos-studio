@@ -20,7 +20,17 @@ use crate::vault::{Doc, MemKind, Vault};
 const CHUNK_CHARS: usize = 900;
 const SCAN_DIRS: [&str; 3] = ["01_Projects", "03_Memory", "02_Agent_Bus/Completed"];
 
-/// One index per vault, so two vaults never share ranks and a test vault cannot pollute the real one.
+// One index per vault, so two vaults never share ranks and a test vault cannot pollute the real one.
+#[cfg(test)]
+thread_local! {
+    static TEST_DIR: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub fn set_test_index_dir(path: Option<PathBuf>) {
+    TEST_DIR.with(|c| *c.borrow_mut() = path);
+}
+
 pub fn db_path_for(vault_root: &Path) -> PathBuf {
     let digest = format!(
         "{:x}",
@@ -28,6 +38,14 @@ pub fn db_path_for(vault_root: &Path) -> PathBuf {
     );
     // The index location must not follow AGENTOS_STUDIO_DB, which tests point at a temp store.
     // AGENTOS_STUDIO_MEMORY_DIR keeps test indexes out of the user's app data.
+    #[cfg(test)]
+    {
+        let mut found = None;
+        TEST_DIR.with(|c| found = c.borrow().clone());
+        if let Some(base) = found {
+            return base.join(format!("memory-{}.db", &digest[..10]));
+        }
+    }
     let base = std::env::var("AGENTOS_STUDIO_MEMORY_DIR")
         .ok()
         .filter(|d| !d.trim().is_empty())
@@ -426,7 +444,7 @@ mod tests {
     fn temp_vault() -> (tempfile::TempDir, Vault) {
         let d = tempfile::tempdir().unwrap();
         // Keep the FTS database inside the test directory, never in %APPDATA%.
-        std::env::set_var("AGENTOS_STUDIO_MEMORY_DIR", d.path());
+        set_test_index_dir(Some(d.path().to_path_buf()));
         let v = Vault::new(d.path());
         v.scaffold().unwrap();
         (d, v)
@@ -434,6 +452,7 @@ mod tests {
 
     #[test]
     fn chunks_keep_paragraphs_and_line_numbers() {
+        let _g = crate::store::test_env_lock();
         let body =
             "# Title\n\nFirst paragraph about ports.\n\nSecond paragraph\nstill second.\n\nThird.";
         let chunks = chunk_body(body);
@@ -449,6 +468,7 @@ mod tests {
 
     #[test]
     fn links_are_stems_only() {
+        let _g = crate::store::test_env_lock();
         assert_eq!(
             links("see [[DECISION_LOG]] and [[03_Memory/Port_Number|ports]] and [[a/b/Note.md]]"),
             vec!["decision_log", "port_number", "note"]
@@ -457,6 +477,7 @@ mod tests {
 
     #[test]
     fn recall_finds_written_notes_and_buries_superseded() {
+        let _g = crate::store::test_env_lock();
         let (_d, v) = temp_vault();
         v.write_typed_memory(
             "Guard Port",
@@ -501,6 +522,7 @@ mod tests {
 
     #[test]
     fn recall_respects_the_token_budget() {
+        let _g = crate::store::test_env_lock();
         let (_d, v) = temp_vault();
         let long: String = "tokens. ".repeat(400);
         v.write_typed_memory(

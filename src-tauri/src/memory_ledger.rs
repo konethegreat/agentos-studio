@@ -227,8 +227,7 @@ pub fn recent(limit: usize) -> Result<Vec<Entry>> {
 mod tests {
     use super::*;
 
-    /// The store location is process-global, so DB tests must not overlap.
-    static DB_LOCK: Mutex<()> = Mutex::new(());
+    // The store location is process-global; the shared lock lives in `store`.
 
     #[test]
     fn classification_is_by_tool_not_by_prose() {
@@ -263,9 +262,9 @@ mod tests {
 
     #[test]
     fn events_become_rows_for_the_right_turn() {
-        let _g = DB_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::store::test_env_lock();
         let d = tempfile::tempdir().unwrap();
-        std::env::set_var("AGENTOS_STUDIO_DB", d.path().join("studio.db"));
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
         begin_run("run-a", "sess-a", 3);
         note_event(
             "run-a",
@@ -296,14 +295,14 @@ mod tests {
         assert_eq!(rows[1].op, "write");
         assert_eq!(rows[1].target, "vault");
         end_run("run-a");
-        std::env::remove_var("AGENTOS_STUDIO_DB");
+        crate::store::set_test_db(None);
     }
 
     #[test]
     fn rows_attach_to_session_and_turn() {
-        let _g = DB_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::store::test_env_lock();
         let d = tempfile::tempdir().unwrap();
-        std::env::set_var("AGENTOS_STUDIO_DB", d.path().join("studio.db"));
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
         let c = store::open().unwrap();
         let e = Entry {
             session_id: "s1".into(),
@@ -319,6 +318,6 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].turn, 2);
         assert!(list("other", 10).unwrap().is_empty());
-        std::env::remove_var("AGENTOS_STUDIO_DB");
+        crate::store::set_test_db(None);
     }
 }

@@ -15,6 +15,7 @@ pub mod mcp_manager;
 pub mod mcp_stdio;
 pub mod memory_index;
 pub mod memory_ledger;
+pub mod missions;
 pub mod ops;
 pub mod org;
 pub mod permissions;
@@ -246,6 +247,12 @@ pub fn run_gui() {
             commands::memory_ledger,
             commands::memory_recent,
             commands::memory_notes,
+            commands::create_mission,
+            commands::list_missions,
+            commands::dispatch_mission,
+            commands::submit_mission,
+            commands::review_mission,
+            commands::mission_merge_blockers,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")

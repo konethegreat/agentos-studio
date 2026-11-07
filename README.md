@@ -196,6 +196,17 @@ The chat sidebar is a tree: **workspaces > folders > sub-folders > chats**, plus
 - **Attach files** to a chat or a folder. When you send a message, the attached paths of the chat and every parent folder are listed at the top of the prompt for the agent, and the chat shows which files were included. Files are referenced, never copied.
 - Deleting a folder or workspace never deletes chats; they return to Unfiled. Hermes sessions stay in Hermes's `state.db`; placement lives in Studio's `studio.db`.
 
+## Missions
+
+A mission is a durable unit of work that can authorise a merge, and a chat never can. Create one in
+Mission Control with a repository, a goal and acceptance criteria, pick a role (planner, implementer,
+reviewer, gatekeeper, memory), a provider (Claude subscription, Antigravity subscription or metered
+OpenRouter) and a budget. Queue it, dispatch it to the Agent Bus, and when the work comes back a
+second agent approves or rejects it with a note. Approval is refused when the reviewer is the
+implementer, and the merge gate reports every reason a merge is not allowed.
+
+The design, including the cost model and the status machine, is in [`docs/AUTOMATIONS.md`](docs/AUTOMATIONS.md).
+
 ## Navigation
 
 A five-group icon rail replaces the old twelve-item list: **Chat**, **Work** (Projects, Mission
@@ -365,6 +376,12 @@ The live tests read your Hermes sessions, providers and MCP servers, run real ch
 
 Contributions follow the AgentOS constitution in [`CLAUDE.md`](CLAUDE.md): branch, atomic conventional commits, PR, self-review, squash merge.
 
+## Built by
+
+Kone Tshivhinda at **K-ONE IT SOLUTIONS**.
+
+AgentOS Studio exists because running four agent tools, a vault and a Notion workspace by hand is a full time job. It is built to be the last control plane you need for a fleet of agents.
+
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE), Copyright 2026 Kone Tshivhinda and K-ONE IT SOLUTIONS.

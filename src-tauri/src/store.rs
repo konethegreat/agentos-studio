@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -111,13 +111,63 @@ CREATE INDEX IF NOT EXISTS idx_memory_ledger_session ON memory_ledger(session_id
 CREATE INDEX IF NOT EXISTS idx_memory_ledger_at ON memory_ledger(at);
 ";
 
+const MIGRATION_4: &str = "
+CREATE TABLE IF NOT EXISTS missions (
+    id             TEXT PRIMARY KEY,
+    repo           TEXT NOT NULL,
+    goal           TEXT NOT NULL,
+    acceptance     TEXT NOT NULL DEFAULT '',
+    role           TEXT NOT NULL,
+    agent          TEXT NOT NULL DEFAULT 'hermes',
+    status         TEXT NOT NULL DEFAULT 'queued',
+    provider       TEXT NOT NULL DEFAULT '',
+    model          TEXT NOT NULL DEFAULT '',
+    budget_usd     REAL NOT NULL DEFAULT 0,
+    spent_usd      REAL NOT NULL DEFAULT 0,
+    task_id        TEXT,
+    reviewer       TEXT,
+    review_verdict TEXT,
+    review_note    TEXT,
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_missions_status ON missions(status, updated_at);
+";
+
+/// Tests that point the store or the index at a temp directory must not overlap: the paths are
+/// process-wide environment variables. One lock, shared by every such test.
+#[cfg(test)]
+pub fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static L: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    L.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
         .join("agentos-studio")
 }
 
+// Test override, thread-local so parallel tests cannot see each other's store.
+#[cfg(test)]
+thread_local! {
+    static TEST_DB: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub fn set_test_db(path: Option<PathBuf>) {
+    TEST_DB.with(|c| *c.borrow_mut() = path);
+}
+
 pub fn db_path() -> PathBuf {
+    #[cfg(test)]
+    {
+        let mut found = None;
+        TEST_DB.with(|c| found = c.borrow().clone());
+        if let Some(p) = found {
+            return p;
+        }
+    }
     if let Ok(p) = std::env::var("AGENTOS_STUDIO_DB") {
         if !p.trim().is_empty() {
             return PathBuf::from(p);
@@ -152,6 +202,9 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     if v < 3 {
         c.execute_batch(MIGRATION_3)?;
+    }
+    if v < 4 {
+        c.execute_batch(MIGRATION_4)?;
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
