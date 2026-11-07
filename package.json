@@ -2,7 +2,7 @@
   "name": "agentos-studio",
   "private": true,
   "author": "Kone Tshivhinda (K-ONE IT SOLUTIONS)",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
