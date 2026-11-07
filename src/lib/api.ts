@@ -563,6 +563,14 @@ export const api = {
 
   workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
   missions: () => invoke<Mission[]>("list_missions", { limit: 100 }),
+  notionStatus: () =>
+    invoke<{ connected: boolean; has_parent: boolean; token_var: string }>("notion_status"),
+  notionPublish: (dryRun = false) =>
+    invoke<{ connected: boolean; dry_run: boolean; pages: { title: string; hash: string; action: string }[]; error: string | null }>(
+      "notion_publish",
+      { dryRun },
+    ),
+  notionPullInbox: () => invoke<number>("notion_pull_inbox"),
   automationStatus: () => invoke<{ enabled: boolean; max_concurrent: number }>("automation_status"),
   setAutomation: (enabled: boolean, maxConcurrent?: number) =>
     invoke<{ enabled: boolean; max_concurrent: number }>("set_automation", {

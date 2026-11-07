@@ -64,7 +64,7 @@ Hermes stays the source of truth; Studio connects to what it already owns.
 Why after v0.4.0: the memory ledger and cost panel produce the per-turn outcome data the model
 router needs, and the design tokens are needed by every later screen, so both stay ahead of v0.5.0.
 
-## v0.4.2: Notion as a publishing surface
+## v0.5.3: Notion as a publishing surface (shipped)
 
 Two-way last-writer-wins sync was on this roadmap and has been removed. It sounds symmetric and is
 not: the vault is markdown in git, Notion is a hosted database with its own editors, and a silent
@@ -86,9 +86,11 @@ is strong, as the dashboard other humans read.
 per published object, so a repeated publish with an unchanged hash is a no-op and a changed vault
 note is visible as a diff before it goes out.
 
-**Sequencing:** build the ledger and the outbound publisher first, run it in dry-run against the
-Command Center page, then enable the Inbox pull. Only after publishing works should `fleet.rs` stop
-creating LLM bus tasks for routine Notion row appends. Until that publisher exists, leave it alone.
+**Shipped:** `notion.rs` builds four artifacts from the vault (decision digest, task status,
+missions, fleet), hashes each one, and skips anything unchanged through `sync_ledger`. With no
+`NOTION_API_KEY` it runs a dry run and sends nothing. `notion_pull_inbox` reads the configured inbox
+database into `00_Inbox`. `fleet.rs` still creates its bus tasks; that changes once a publish has
+been observed against the live workspace.
 
 ## v0.5.0: missions, roles and the review gate (in progress)
 
