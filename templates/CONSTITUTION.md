@@ -37,20 +37,19 @@ For every task:
 - LAST: before closing a task or merging a PR, update `README.md` and every affected `.md` file so documentation matches the code exactly (setup, commands, architecture, env var names).
 
 ### Law 6 - AgentOS bus protocol
-- Always connect to the `agentos-hub` MCP server (vault: `C:\Users\Konet\Obsidian\Hermes Obsidian vault`).
+- Always connect to the `agentos-hub` MCP server (vault: `{{VAULT}}`).
 - Session start: `fetch_pending_tasks(agent_name="<you>")` and `search_shared_memory("<repo> <topic>")`.
 - Take work with `claim_task(task_id, agent_name)`.
 - Log architectural changes, new conventions, and dependency or language choices with `write_shared_memory(topic, content, category)`.
 - Hand cross-tool work to another agent with `delegate_task(...)`: `hermes` for CLI, DevOps, cron, and Notion sync; `qoder` or `antigravity` for IDE coding (antigravity for UI); `claude-code` for large refactors and reviews; `human` only for credentials, payments, or Law 1 exceptions. Never ask the human to copy-paste prompts between tools.
 - Close out with `complete_task(task_id, agent_name, summary_of_work)`: what changed, files, PR URL, verification, follow-ups.
 - If `agentos-hub` is unavailable, say so once, continue the work, and never invent task IDs.
-- When you create a new project folder, bootstrap it first: `new-agent-project <path>` in PowerShell, or `C:\Users\Konet\Obsidian\Hermes Obsidian vault\04_Agent_Engine\.venv\Scripts\python.exe fleet_deploy.py bootstrap <path>` from any shell. This initializes Git, drops in the rule files, registers the project in the vault, and queues the Notion sync.
+- When you create a new project folder, initialize Git in it and let AgentOS Studio add the rule files (Fleet, Sync rules), so every agent works there under these laws.
 
 ### Law 7 - Keep builds lean (advisory)
 - Advisory only. This law never blocks or fails a build, test, commit, PR, merge, or task, and never overrides Laws 1 to 6.
 - Never delete anything for disk reasons on your own. This is not a permission request: do not pause work, just mention it in the closing summary.
-- After a merged PR, if the repo's Rust `target` folder is above 10 GB, add one line to the summary suggesting `cargo clean`. Mention a given repo at most once a week. Exception: in agentos-studio never suggest `cargo clean`, because `src-tauri/target/release/agentos-studio.exe` is the live agentos-hub binary that every agent launches. There, suggest removing only `target/debug` and the subfolders of `target/release`, and keep the `.exe` files.
-- Thresholds, the weekly report, and cleanup commands live in `03_Memory/DISK_BUDGET.md` in the vault.
+- After a merged PR, if the repo's Rust `target` folder is above 10 GB, add one line to the summary suggesting `cargo clean`. Mention a given repo at most once a week.
 - Never touch Docker volumes, model assets, or anything other than regenerable build output and caches.
 - If any disk check errors or times out, skip it silently and carry on.
 ### Security floor (never overridden by Law 1)

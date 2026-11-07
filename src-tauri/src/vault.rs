@@ -456,7 +456,7 @@ impl Vault {
                 created.push(format!("{d}/"));
             }
         }
-        let raw = crate::constitution::DEFAULT_CONSTITUTION.replace("\r\n", "\n");
+        let raw = crate::constitution::default_for(&self.root);
         let seeds: Vec<(&str, String)> = vec![
             ("00_Inbox/README.md", "# 00_Inbox\n\nQuick dumps, raw prompts, and unsorted agent outputs.\n".into()),
             ("04_Agent_Engine/templates/CONSTITUTION.md", raw.clone()),
