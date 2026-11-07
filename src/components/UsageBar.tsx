@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Gauge } from "lucide-react";
 import { api } from "../lib/api";
 
@@ -28,7 +28,17 @@ const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
  * How full the context window is, what the session has cost, and whether Hermes has already had to
  * compact. Compaction is where answer quality drops, so it is shown before it happens, not after.
  */
-export function UsageBar({ sessionId }: { sessionId: string | null }) {
+export function UsageBar({
+  sessionId,
+  refresh = 0,
+  onUsage,
+}: {
+  sessionId: string | null;
+  /** Bump after a turn settles so the figures follow the conversation. */
+  refresh?: number;
+  /** Context fill and compaction count, for the chat guides. */
+  onUsage?: (u: { contextPct: number | null; compacted: number } | null) => void;
+}) {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [credits, setCredits] = useState<Credits | null>(null);
 
@@ -45,7 +55,13 @@ export function UsageBar({ sessionId }: { sessionId: string | null }) {
     return () => {
       live = false;
     };
-  }, [sessionId]);
+  }, [sessionId, refresh]);
+
+  const report = useRef(onUsage);
+  report.current = onUsage;
+  useEffect(() => {
+    report.current?.(usage ? { contextPct: usage.context_limit ? usage.context_used_pct : null, compacted: usage.compacted_messages } : null);
+  }, [usage]);
 
   useEffect(() => {
     void api

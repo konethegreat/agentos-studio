@@ -75,6 +75,9 @@ pub fn run_gui() {
         .manage(state)
         .setup(move |app| {
             let handle = app.handle().clone();
+            if let Ok(dir) = app.path().resource_dir() {
+                help::set_resource_dir(&dir);
+            }
             if let Err(e) = single::claim(handle.clone()) {
                 eprintln!("single instance guard not claimed: {e:#}");
             }

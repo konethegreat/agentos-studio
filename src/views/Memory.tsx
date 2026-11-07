@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Brain, FileText, RefreshCw, Search, Sparkles, Upload } from "lucide-react";
 import { api, errorText, type MemoryEntry, type MemoryNote } from "../lib/api";
 import { useToast } from "../components/Toasts";
+import { Guide, useReportGuides } from "../components/Guides";
 
 const KIND_STYLE: Record<string, string> = {
   decision: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25",
@@ -95,8 +96,11 @@ export function Memory() {
     return c;
   }, [notes]);
 
+  useReportGuides("memory", notes !== null && notes.length === 0 ? ["memory.empty"] : []);
+
   return (
     <div className="flex h-full flex-col">
+      <Guide id="memory.empty" className="m-3 mb-0" action={{ label: "Index again", run: () => void load() }} />
       <div className="flex items-center gap-3 border-b border-line px-4 py-3">
         <Brain className="size-4 text-emerald-300" />
         <div className="text-sm font-semibold text-slate-100">Memory</div>

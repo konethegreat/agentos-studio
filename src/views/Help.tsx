@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Search } from "lucide-react";
+import { BookOpen, Lightbulb, Search } from "lucide-react";
 import { api, errorText } from "../lib/api";
 import { useToast } from "../components/Toasts";
 import { Markdown } from "../components/Markdown";
+import { useGuides } from "../components/Guides";
 
 type Doc = { title: string; path: string; body: string };
 
 /** The docs that ship with the build, searchable, so help cannot drift from the product. */
-export function Help() {
+export function Help({ doc }: { doc?: { path: string; nonce: number } | null }) {
   const toast = useToast();
+  const guides = useGuides();
   const [docs, setDocs] = useState<Doc[]>([]);
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -18,11 +20,18 @@ export function Help() {
       .helpDocs()
       .then((d) => {
         setDocs(d);
-        setSelected(d[0]?.path ?? null);
+        setSelected((cur) => cur ?? d[0]?.path ?? null);
       })
       .catch((e) => toast("error", errorText(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Opened from a guide's "Read more": select that document and clear any search hiding it.
+  useEffect(() => {
+    if (!doc) return;
+    setQ("");
+    setSelected(doc.path);
+  }, [doc?.nonce]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -38,7 +47,25 @@ export function Help() {
         <BookOpen className="size-4 text-emerald-300" />
         <div className="text-sm font-semibold text-slate-100">Help</div>
         <span className="text-[11px] text-slate-500">{docs.length} documents from docs/</span>
-        <div className="relative ml-auto">
+        <div className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">
+          <Lightbulb className="size-3.5" aria-hidden />
+          <label className="inline-flex cursor-pointer items-center gap-1.5" title="Short hints that appear when they apply to what you are doing">
+            <input type="checkbox" checked={!guides.off} onChange={(e) => guides.setOff(!e.target.checked)} className="size-3 accent-emerald-500" />
+            Tips
+          </label>
+          <button
+            onClick={() => {
+              guides.reset();
+              void api.setPref("onboarding.done", "0").catch(() => undefined);
+              toast("ok", "Tips and the first-run guide will show again");
+            }}
+            disabled={guides.dismissedCount === 0 && !guides.off}
+            className="rounded-md px-1.5 py-0.5 ring-1 ring-line hover:text-slate-300 disabled:opacity-40"
+          >
+            Show tips again
+          </button>
+        </div>
+        <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-slate-500" />
           <input
             value={q}

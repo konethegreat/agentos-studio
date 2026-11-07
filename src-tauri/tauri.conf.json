@@ -39,7 +39,10 @@
     "publisher": "K-ONE IT SOLUTIONS",
     "copyright": "Copyright 2026 Kone Tshivhinda, K-ONE IT SOLUTIONS",
     "longDescription": "AgentOS Studio is the native control plane for multi-agent engineering: Hermes, Claude Code, Qoder and Antigravity in one window, with a shared brain, real terminals, projects, skills and a Rust MCP bus. Built by Kone Tshivhinda at K-ONE IT SOLUTIONS.",
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "resources": {
+      "../docs/*.md": "docs/"
+    }
   },
   "plugins": {
     "updater": {

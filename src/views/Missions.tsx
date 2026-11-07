@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, ClipboardCheck, GitMerge, Play, Plus, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { api, errorText, type Mission } from "../lib/api";
 import { useToast } from "../components/Toasts";
+import { Guide, useReportGuides } from "../components/Guides";
+import { missionGuides } from "../lib/guides";
 
 const STATUS_STYLE: Record<string, string> = {
   queued: "bg-slate-500/10 text-slate-300 ring-slate-500/25",
@@ -38,11 +40,14 @@ export function Missions({ repos }: { repos: string[] }) {
     budget: "0",
   });
 
+  const [loaded, setLoaded] = useState(false);
   async function load() {
     try {
       setRows(await api.missions());
     } catch (e) {
       toast("error", errorText(e));
+    } finally {
+      setLoaded(true);
     }
   }
 
@@ -170,6 +175,18 @@ export function Missions({ repos }: { repos: string[] }) {
     }
   }
 
+  useReportGuides(
+    "missions",
+    loaded
+      ? missionGuides({
+          total: rows.length,
+          queued: rows.filter((r) => r.status === "queued").length,
+          awaitingReview: rows.filter((r) => r.status === "review" && !r.review_verdict).length,
+          automationsOn: auto ? auto.enabled : null,
+        })
+      : [],
+  );
+
   return (
     <section className="border-b border-line bg-[#080c12]">
       <div className="flex items-center gap-2 px-4 py-2">
@@ -210,6 +227,12 @@ export function Missions({ repos }: { repos: string[] }) {
           {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           <Plus className="size-3.5" /> New mission
         </button>
+      </div>
+
+      <div className="px-4 empty:hidden">
+        <Guide id="missions.first" className="mb-2" action={{ label: "New mission", run: () => setOpen(true) }} />
+        <Guide id="missions.queued-off" className="mb-2" action={{ label: "Turn Automations on", run: () => void toggleAuto() }} />
+        <Guide id="missions.review" className="mb-2" />
       </div>
 
       {router.length > 0 && (
