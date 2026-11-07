@@ -9,7 +9,10 @@ use agentos_studio_lib::vault::Vault;
 fn publish_really_creates_the_pages() {
     let v = Vault::new(settings::vault_path());
     let report = notion::publish(&v, false);
-    println!("connected: {} dry_run: {}", report.connected, report.dry_run);
+    println!(
+        "connected: {} dry_run: {}",
+        report.connected, report.dry_run
+    );
     for p in &report.pages {
         println!("  {:<28} {}", p.title, p.action);
     }
