@@ -132,7 +132,7 @@ function Studio() {
   const toast = useToast();
   const updates = useUpdates();
   const [view, setView] = useState<View>("chat");
-  const [controlTab, setControlTab] = useState<"providers" | "mcp">("providers");
+  const [controlTab, setControlTab] = useState<"providers" | "mcp" | "hermes">("providers");
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [status, setStatus] = useState<StackStatus | null>(null);
   const [hermes, setHermes] = useState<HermesStatus | null>(null);
@@ -188,7 +188,7 @@ function Studio() {
   }, [go]);
 
   const openControl = useCallback(
-    (tab: "providers" | "mcp") => {
+    (tab: "providers" | "mcp" | "hermes") => {
       setControlTab(tab);
       go("control");
     },

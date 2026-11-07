@@ -305,7 +305,86 @@ export interface AuditEntry {
 
 type Approved = { approved?: boolean };
 
+// ---------------------------------------------------------------- Hermes surfaces
+
+export interface JourneyNode {
+  id: string;
+  label: string;
+  kind: string;
+  timestamp?: number;
+  category?: string;
+  useCount?: number;
+  state?: string;
+  createdBy?: string;
+  memorySource?: string;
+}
+
+export interface HermesMemory {
+  home: string;
+  memory_path: string;
+  memory: string;
+  user_path: string;
+  user: string;
+  status: string;
+  journey: { nodes?: JourneyNode[]; stats?: Record<string, unknown> } | null;
+}
+
+export interface CronJob {
+  id: string;
+  name: string | null;
+  prompt: string | null;
+  schedule_display: string | null;
+  state: string | null;
+  enabled: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_status: string | null;
+  last_error: string | null;
+  workdir: string | null;
+  deliver: string | null;
+}
+
+export interface CronSpec {
+  schedule: string;
+  prompt: string;
+  name?: string;
+  workdir?: string;
+  paused?: boolean;
+}
+
+export interface HermesProfile {
+  name: string;
+  path: string;
+  model: string;
+  provider: string;
+  roles: string[];
+}
+
+export interface AuditFinding {
+  package: string;
+  version: string;
+  ecosystem: string;
+  source: string;
+  vuln_id: string;
+  severity: string;
+  summary: string;
+  fixed_versions: string[];
+}
+
 export const studio = {
+  hermes: {
+    memory: () => invoke<HermesMemory>("hermes_memory_view"),
+    journeyDelete: (node: string, a: Approved = {}) => invoke<string>("hermes_journey_delete", { node, ...a }),
+    insights: (days: number) => invoke<string>("hermes_insights", { days }),
+    securityAudit: () => invoke<{ total_components_scanned?: number; finding_count?: number; findings?: AuditFinding[] }>("hermes_security_audit"),
+    cronJobs: () => invoke<CronJob[]>("hermes_cron_jobs"),
+    cronAction: (id: string, action: "pause" | "resume" | "run" | "remove", a: Approved = {}) => invoke<string>("hermes_cron_action", { id, action, ...a }),
+    cronCreate: (spec: CronSpec, a: Approved = {}) => invoke<string>("hermes_cron_create", { spec, ...a }),
+    profiles: () => invoke<HermesProfile[]>("hermes_profiles"),
+    setRoleProfile: (role: "implementer" | "reviewer", profile: string) => invoke<void>("hermes_set_role_profile", { role, profile }),
+    notifyTarget: () => invoke<string | null>("hermes_notify_target"),
+    setNotifyTarget: (target: string, test: boolean) => invoke<string>("hermes_set_notify_target", { target, test }),
+  },
   pty: {
     spawn: (request: PtySpawn) => invoke<PtyInfo>("pty_spawn", { request }),
     write: (id: string, data: string) => invoke<void>("pty_write", { id, data }),

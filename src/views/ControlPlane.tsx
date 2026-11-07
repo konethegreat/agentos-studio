@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  CalendarClock,
   CheckCircle2,
   CircleAlert,
   GitBranch,
@@ -33,9 +34,10 @@ import {
 } from "../lib/api";
 import { useToast } from "../components/Toasts";
 import { goTo } from "../lib/nav";
+import { HermesPanel } from "./HermesPanel";
 import { Badge, Button, Card, Field, Modal, Toggle, inputClass } from "../components/ui";
 
-type Tab = "providers" | "mcp";
+type Tab = "providers" | "mcp" | "hermes";
 
 const AGENT_LABEL: Record<string, string> = { hermes: "Hermes", "claude-code": "Claude Code", qoder: "Qoder", antigravity: "Antigravity" };
 const AGENT_SHORT: Record<string, string> = { hermes: "H", "claude-code": "C", qoder: "Q", antigravity: "A" };
@@ -53,6 +55,7 @@ export function ControlPlane({ tab, onTab, onStatusChanged }: { tab: Tab; onTab:
             [
               ["providers", "Providers", <Bot key="b" className="size-3.5" />],
               ["mcp", "MCP Server Hub", <Plug key="p" className="size-3.5" />],
+              ["hermes", "Hermes", <CalendarClock key="h" className="size-3.5" />],
             ] as [Tab, string, ReactNode][]
           ).map(([id, label, icon]) => (
             <button
@@ -66,7 +69,9 @@ export function ControlPlane({ tab, onTab, onStatusChanged }: { tab: Tab; onTab:
           ))}
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 pt-4">{tab === "providers" ? <Providers onStatusChanged={onStatusChanged} /> : <McpHub onStatusChanged={onStatusChanged} />}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 pt-4">
+        {tab === "providers" ? <Providers onStatusChanged={onStatusChanged} /> : tab === "mcp" ? <McpHub onStatusChanged={onStatusChanged} /> : <HermesPanel />}
+      </div>
     </div>
   );
 }
