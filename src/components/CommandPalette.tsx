@@ -71,7 +71,7 @@ export function CommandPalette({ commands, open, onClose }: { commands: PaletteC
             aria-activedescendant={list[idx] ? `cmd-${list[idx].id}` : undefined}
             className="h-12 flex-1 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-600"
           />
-          <kbd className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-500">Esc</kbd>
+          <kbd className="rounded bg-white/5 px-1.5 py-0.5 text-2xs text-slate-500">Esc</kbd>
         </div>
         <div className="max-h-[50vh] overflow-y-auto p-1.5" role="listbox">
           {list.length === 0 && <div className="px-3 py-6 text-center text-xs text-slate-600">No matching command</div>}
@@ -80,7 +80,7 @@ export function CommandPalette({ commands, open, onClose }: { commands: PaletteC
             lastGroup = c.group;
             return (
               <div key={c.id}>
-                {header && <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">{header}</div>}
+                {header && <div className="px-3 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-slate-600">{header}</div>}
                 <button
                   id={`cmd-${c.id}`}
                   role="option"
@@ -91,10 +91,10 @@ export function CommandPalette({ commands, open, onClose }: { commands: PaletteC
                 >
                   <span className="text-slate-400">{c.icon}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] text-slate-100">{c.label}</span>
-                    {c.hint && <span className="block truncate text-[11px] text-slate-500">{c.hint}</span>}
+                    <span className="block truncate text-body text-slate-100">{c.label}</span>
+                    {c.hint && <span className="block truncate text-label text-slate-500">{c.hint}</span>}
                   </span>
-                  {c.keys && <kbd className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-500">{c.keys}</kbd>}
+                  {c.keys && <kbd className="rounded bg-white/5 px-1.5 py-0.5 text-2xs text-slate-500">{c.keys}</kbd>}
                   {i === idx && <CornerDownLeft className="size-3.5 text-emerald-300" />}
                 </button>
               </div>

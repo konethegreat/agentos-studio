@@ -113,7 +113,7 @@ export function SetupWizard({
             <div className={`flex h-full min-h-28 min-w-36 flex-1 flex-col items-center justify-center gap-2 rounded-xl border px-3 py-3 text-center ${p.ok ? "border-emerald-500/30 bg-emerald-500/[0.06]" : "border-amber-500/30 bg-amber-500/[0.06]"}`}>
               <div className={p.ok ? "text-emerald-300" : "text-amber-300"}>{PILLAR_ICON[p.number]}</div>
               <div className="text-xs font-semibold text-slate-200">{p.title}</div>
-              <div className={`text-[11px] ${p.ok ? "text-emerald-400" : "text-amber-400"}`}>{p.ok ? "Connected" : "Needs setup"}</div>
+              <div className={`text-label ${p.ok ? "text-ok" : "text-warn"}`}>{p.ok ? "Connected" : "Needs setup"}</div>
             </div>
             {i < arr.length - 1 && <div className={`my-auto h-px w-6 shrink-0 ${p.ok && arr[i + 1].ok ? "bg-emerald-500/50" : "bg-line"}`} />}
           </div>
@@ -147,10 +147,10 @@ export function SetupWizard({
                   .filter((c) => c.pillar === p.number)
                   .map((c) => (
                     <li key={c.id} className="flex items-center gap-3 px-4 py-2.5">
-                      {c.ok ? <CheckCircle2 className="size-4 shrink-0 text-emerald-400" /> : <CircleAlert className="size-4 shrink-0 text-amber-400" />}
+                      {c.ok ? <CheckCircle2 className="size-4 shrink-0 text-ok" /> : <CircleAlert className="size-4 shrink-0 text-warn" />}
                       <div className="min-w-0 flex-1">
                         <div className="text-sm text-slate-200">{c.label}</div>
-                        <div className="truncate text-[11px] text-muted" title={c.detail}>
+                        <div className="truncate text-label text-muted" title={c.detail}>
                           {c.detail}
                         </div>
                       </div>
@@ -167,9 +167,9 @@ export function SetupWizard({
           <Card className="sticky top-0 flex max-h-[calc(100vh-180px)] flex-col overflow-hidden">
             <div className="flex items-center justify-between border-b border-line px-4 py-3">
               <div className="text-sm font-semibold text-slate-100">Setup console</div>
-              {activeJob && <span className="text-[11px] text-emerald-300">running job {activeJob}</span>}
+              {activeJob && <span className="text-label text-emerald-300">running job {activeJob}</span>}
             </div>
-            <div className="min-h-64 flex-1 overflow-y-auto bg-[#0a0e16] px-4 py-3 font-mono text-[11.5px] leading-relaxed">
+            <div className="min-h-64 flex-1 overflow-y-auto bg-inset px-4 py-3 font-mono text-small leading-relaxed">
               {setupLog.length === 0 ? (
                 <div className="text-slate-600">Install, sign-in and registration output streams here.</div>
               ) : (
@@ -182,7 +182,7 @@ export function SetupWizard({
               <div ref={logEnd} />
             </div>
             {status && (
-              <div className="border-t border-line px-4 py-2.5 text-[11px] text-muted">
+              <div className="border-t border-line px-4 py-2.5 text-label text-muted">
                 Bus binary: <span className="font-mono text-slate-400">{status.studio_binary}</span>
               </div>
             )}

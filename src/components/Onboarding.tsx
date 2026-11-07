@@ -51,8 +51,8 @@ export function Onboarding({ onGo }: { onGo: (view: "setup" | "mission" | "help"
   const s = steps[step];
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-6">
-      <div className="w-full max-w-lg rounded-2xl border border-line bg-[#0b1018] p-6 shadow-2xl">
-        <div className="mb-1 flex items-center gap-2 text-[11px] text-slate-500">
+      <div className="w-full max-w-lg rounded-2xl border border-line bg-panel p-6 shadow-2xl">
+        <div className="mb-1 flex items-center gap-2 text-label text-slate-500">
           Step {step + 1} of {steps.length}
         </div>
         <div className="flex items-start gap-3">
@@ -60,8 +60,8 @@ export function Onboarding({ onGo }: { onGo: (view: "setup" | "mission" | "help"
             {s.icon}
           </div>
           <div>
-            <h2 className="text-[15px] font-semibold text-slate-100">{s.title}</h2>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">{s.body}</p>
+            <h2 className="text-title font-semibold text-slate-100">{s.title}</h2>
+            <p className="mt-1 text-body-sm leading-relaxed text-slate-400">{s.body}</p>
           </div>
         </div>
 

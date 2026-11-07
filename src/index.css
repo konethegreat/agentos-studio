@@ -1,13 +1,144 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens. See docs/DESIGN.md.
+ *
+ * Surfaces, text and status colours are semantic: components ask for "card" or "danger", never a
+ * hex value. The neutral ramp (slate) and the pale accent shades (100 to 300) are theme aware, so
+ * the many existing slate and accent classes follow the theme without a rewrite. Dark is the
+ * reference: every light value was chosen to give the same contrast on the light canvas that the
+ * dark value gives on the dark one.
+ */
 @theme {
+  /* Surfaces, from deepest to highest. */
+  --color-sunken: #080c12;
+  --color-inset: #0a0e15;
   --color-canvas: #0b0f17;
+  --color-panel: #0d121c;
   --color-card: #111827;
   --color-raised: #161f2e;
+  --color-raised-hover: #1c2738;
   --color-line: #1f2937;
+  --color-knob: #ffffff;
+  --color-scrollbar: #2b3647;
+
+  /* Text. */
+  --color-fg: #e5e7eb;
+  --color-fg-strong: #f8fafc;
+  --color-fg-muted: #94a3b8;
   --color-muted: #8b95a7;
+
+  /* Status and accent. */
+  --color-accent: var(--color-emerald-500);
+  --color-ok: var(--color-emerald-400);
+  --color-danger: var(--color-red-400);
+  --color-warn: var(--color-amber-400);
+  --color-info: var(--color-sky-400);
+
+  /* Type scale (the sizes the app actually uses, by role). */
+  --text-micro: 9.5px;
+  --text-2xs: 10px;
+  --text-caption: 10.5px;
+  --text-label: 11px;
+  --text-small: 11.5px;
+  --text-ui: 12px;
+  --text-body-sm: 12.5px;
+  --text-body: 13px;
+  --text-chat: 13.5px;
+  --text-title: 15px;
+
+  /* Motion. */
+  --duration-fast: 150ms;
+  --duration-base: 180ms;
+  --ease-standard: ease-out;
+
   --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
+}
+
+/* Light theme: semantic tokens, the neutral ramp inverted, pale accents darkened for contrast. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-prose: #1f2937;
+  --hl-text: #24292f;
+  --hl-comment: #6e7781;
+  --hl-keyword: #8250df;
+  --hl-string: #0a3069;
+  --hl-number: #953800;
+  --hl-title: #0550ae;
+  --hl-type: #953800;
+  --hl-attr: #116329;
+  --hl-meta: #0550ae;
+  --hl-deletion: #cf222e;
+  --color-sunken: #eceff4;
+  --color-inset: #f0f2f6;
+  --color-canvas: #f5f7fa;
+  --color-panel: #ffffff;
+  --color-card: #ffffff;
+  --color-raised: #f3f5f8;
+  --color-raised-hover: #e8ecf2;
+  --color-line: #dde2ea;
+  --color-knob: #ffffff;
+  --color-scrollbar: #c3cad5;
+
+  --color-fg: #111827;
+  --color-fg-strong: #020617;
+  --color-fg-muted: #475569;
+  --color-muted: #5f6b7e;
+
+  --color-ok: #047857;
+  --color-danger: #b91c1c;
+  --color-warn: #b45309;
+  --color-info: #0369a1;
+
+  /* White overlays (bg-white/5 and friends) become dark tints on a light canvas. */
+  --color-white: #0b0f17;
+
+  --color-slate-50: #020617;
+  --color-slate-100: #0f172a;
+  --color-slate-200: #1e293b;
+  --color-slate-300: #334155;
+  --color-slate-400: #475569;
+  --color-slate-500: #5f6b7e;
+  --color-slate-600: #8a96a8;
+  --color-slate-700: #cbd5e1;
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #f1f5f9;
+  --color-slate-950: #f8fafc;
+
+  --color-emerald-100: #064e3b;
+  --color-emerald-200: #065f46;
+  --color-emerald-300: #047857;
+  --color-sky-100: #0c4a6e;
+  --color-sky-200: #075985;
+  --color-sky-300: #0369a1;
+  --color-amber-100: #78350f;
+  --color-amber-200: #92400e;
+  --color-amber-300: #b45309;
+  --color-red-100: #7f1d1d;
+  --color-red-200: #991b1b;
+  --color-red-300: #b91c1c;
+  --color-violet-100: #4c1d95;
+  --color-violet-200: #5b21b6;
+  --color-violet-300: #6d28d9;
+  --color-orange-300: #c2410c;
+  --color-pink-300: #be185d;
+  --color-cyan-300: #0e7490;
+}
+
+:root {
+  color-scheme: dark;
+  --color-prose: #d8dee9;
+  --hl-text: #d4dbe6;
+  --hl-comment: #64748b;
+  --hl-keyword: #c792ea;
+  --hl-string: #a5d6a7;
+  --hl-number: #f78c6c;
+  --hl-title: #82aaff;
+  --hl-type: #ffcb6b;
+  --hl-attr: #7fdbca;
+  --hl-meta: #89ddff;
+  --hl-deletion: #ff8a80;
 }
 
 html,
@@ -19,18 +150,36 @@ body,
 body {
   margin: 0;
   background: var(--color-canvas);
-  color: #e5e7eb;
+  color: var(--color-fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: rgb(16 185 129 / 0.35);
+  background: color-mix(in oklab, var(--color-accent) 35%, transparent);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2b3647 transparent;
+  scrollbar-color: var(--color-scrollbar) transparent;
+}
+
+/* Keyboard focus is always visible; mouse clicks do not draw a ring. */
+:where(button, a, summary, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @keyframes slide-in {
@@ -45,14 +194,14 @@ body {
 }
 
 .animate-slide-in {
-  animation: slide-in 180ms ease-out;
+  animation: slide-in var(--duration-base) var(--ease-standard);
 }
 
 /* Chat markdown */
 .prose-studio {
   font-size: 13.5px;
   line-height: 1.7;
-  color: #d8dee9;
+  color: var(--color-prose);
   overflow-wrap: anywhere;
 }
 .prose-studio > :first-child {
@@ -79,7 +228,7 @@ body {
 .prose-studio h2,
 .prose-studio h3,
 .prose-studio h4 {
-  color: #f1f5f9;
+  color: var(--color-slate-100);
   font-weight: 600;
   margin: 1.1em 0 0.45em;
   line-height: 1.35;
@@ -94,13 +243,13 @@ body {
   font-size: 1.03em;
 }
 .prose-studio strong {
-  color: #f8fafc;
+  color: var(--color-fg-strong);
   font-weight: 600;
 }
 .prose-studio blockquote {
-  border-left: 2px solid #334155;
+  border-left: 2px solid var(--color-slate-700);
   padding-left: 0.9em;
-  color: #94a3b8;
+  color: var(--color-fg-muted);
 }
 .prose-studio hr {
   border-color: var(--color-line);
@@ -109,11 +258,11 @@ body {
 .prose-studio :not(pre) > code {
   font-family: var(--font-mono);
   font-size: 0.88em;
-  background: rgb(255 255 255 / 0.06);
-  border: 1px solid rgb(255 255 255 / 0.06);
+  background: color-mix(in oklab, var(--color-white) 6%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-white) 6%, transparent);
   border-radius: 5px;
   padding: 0.08em 0.35em;
-  color: #e2e8f0;
+  color: var(--color-slate-200);
 }
 .prose-studio table {
   width: 100%;
@@ -128,22 +277,22 @@ body {
   vertical-align: top;
 }
 .prose-studio th {
-  background: rgb(255 255 255 / 0.03);
-  color: #e2e8f0;
+  background: color-mix(in oklab, var(--color-white) 3%, transparent);
+  color: var(--color-slate-200);
   font-weight: 600;
 }
 .prose-studio input[type="checkbox"] {
-  accent-color: #10b981;
+  accent-color: var(--color-accent);
   margin-right: 0.4em;
 }
 
 /* Syntax highlighting (highlight.js class names from rehype-highlight) */
 .hljs {
-  color: #d4dbe6;
+  color: var(--hl-text);
 }
 .hljs-comment,
 .hljs-quote {
-  color: #64748b;
+  color: var(--hl-comment);
   font-style: italic;
 }
 .hljs-keyword,
@@ -151,44 +300,44 @@ body {
 .hljs-literal,
 .hljs-section,
 .hljs-doctag {
-  color: #c792ea;
+  color: var(--hl-keyword);
 }
 .hljs-string,
 .hljs-regexp,
 .hljs-addition,
 .hljs-template-tag {
-  color: #a5d6a7;
+  color: var(--hl-string);
 }
 .hljs-number,
 .hljs-symbol,
 .hljs-bullet,
 .hljs-variable.constant_ {
-  color: #f78c6c;
+  color: var(--hl-number);
 }
 .hljs-title,
 .hljs-title.function_,
 .hljs-name {
-  color: #82aaff;
+  color: var(--hl-title);
 }
 .hljs-type,
 .hljs-built_in,
 .hljs-class .hljs-title,
 .hljs-title.class_ {
-  color: #ffcb6b;
+  color: var(--hl-type);
 }
 .hljs-attr,
 .hljs-attribute,
 .hljs-property,
 .hljs-variable,
 .hljs-template-variable {
-  color: #7fdbca;
+  color: var(--hl-attr);
 }
 .hljs-meta,
 .hljs-meta .hljs-keyword {
-  color: #89ddff;
+  color: var(--hl-meta);
 }
 .hljs-deletion {
-  color: #ff8a80;
+  color: var(--hl-deletion);
 }
 .hljs-emphasis {
   font-style: italic;

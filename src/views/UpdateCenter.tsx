@@ -40,7 +40,7 @@ function ProductCard({ p }: { p: ProductUpdate }) {
               </>
             )}
           </div>
-          <div className="mt-1 text-[11px] text-slate-500">{p.detail}</div>
+          <div className="mt-1 text-label text-slate-500">{p.detail}</div>
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
           {p.state === "available" && (
@@ -63,7 +63,7 @@ function ProductCard({ p }: { p: ProductUpdate }) {
           )}
         </div>
       </div>
-      <p className="mt-3 text-[11px] leading-relaxed text-slate-500">{p.update_note}</p>
+      <p className="mt-3 text-label leading-relaxed text-slate-500">{p.update_note}</p>
       {cl && (
         <div className="mt-3 rounded-lg border border-line bg-canvas/60">
           <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium text-slate-200" aria-expanded={open}>
@@ -81,7 +81,7 @@ function ProductCard({ p }: { p: ProductUpdate }) {
               )}
               {cl.groups.map((g) => (
                 <div key={g.title}>
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{g.title}</div>
+                  <div className="mb-1 text-label font-semibold uppercase tracking-wide text-slate-500">{g.title}</div>
                   <ul className="list-disc space-y-0.5 pl-4 text-slate-400">
                     {g.items.map((it, i) => (
                       <li key={i}>{it}</li>
@@ -112,12 +112,12 @@ function BackupRow({ b }: { b: BackupManifest }) {
         <div className="text-slate-200">
           {b.product} <span className="font-mono">{b.from_version}</span> before updating to <span className="font-mono">{b.to_version}</span>
         </div>
-        <div className="text-[11px] text-slate-500">
+        <div className="text-label text-slate-500">
           {when(b.created_at)}
           {b.hermes_commit && <> · commit {b.hermes_commit.slice(0, 10)}</>}
           {b.hermes_snapshot && <> · state snapshot {b.hermes_snapshot}</>}
         </div>
-        <div className="text-[11px] text-slate-500">{b.note}</div>
+        <div className="text-label text-slate-500">{b.note}</div>
       </div>
       <div className="flex shrink-0 gap-1.5">
         {b.hermes_snapshot && (
@@ -174,7 +174,7 @@ export function UpdateCenter() {
               {u.busy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5 text-emerald-300" />}
               Progress
             </div>
-            <div className="max-h-80 overflow-y-auto px-4 py-2 font-mono text-[11.5px] leading-relaxed">
+            <div className="max-h-80 overflow-y-auto px-4 py-2 font-mono text-small leading-relaxed">
               {u.log.map((l, i) => (
                 <div
                   key={i}
@@ -192,7 +192,7 @@ export function UpdateCenter() {
         <Card className="p-0">
           <div className="border-b border-line px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-100">Backups and rollback</h2>
-            <p className="text-[11px] text-slate-500">Made automatically before every update. Rolling back asks for approval first.</p>
+            <p className="text-label text-slate-500">Made automatically before every update. Rolling back asks for approval first.</p>
           </div>
           {u.backups.length === 0 ? <div className="px-4 py-6 text-center text-xs text-slate-600">No backups yet. One is made the first time you update.</div> : u.backups.map((b) => <BackupRow key={`${b.product}/${b.id}`} b={b} />)}
         </Card>

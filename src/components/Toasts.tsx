@@ -21,7 +21,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((t) => [...t.slice(-3), { id, kind, text }]);
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === "error" ? 9000 : 4500);
   }, []);
-  const icon = { ok: <CheckCircle2 className="size-4 text-emerald-400" />, error: <CircleAlert className="size-4 text-red-400" />, info: <Info className="size-4 text-sky-400" /> };
+  const icon = { ok: <CheckCircle2 className="size-4 text-ok" />, error: <CircleAlert className="size-4 text-danger" />, info: <Info className="size-4 text-info" /> };
   return (
     <ToastCtx.Provider value={push}>
       {children}

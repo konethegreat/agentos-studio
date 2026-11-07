@@ -63,15 +63,15 @@ export function NavRail({
       aria-label="Main navigation"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      className={`relative z-20 flex shrink-0 flex-col border-r border-line bg-[#080c12] transition-[width] duration-150 ${
+      className={`relative z-20 flex shrink-0 flex-col border-r border-line bg-sunken transition-[width] duration-150 ${
         expanded ? "w-52" : "w-14"
       }`}
     >
       <div className="flex h-12 items-center gap-2 px-3.5">
-        <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-400/30 to-sky-500/20 text-[11px] font-bold text-emerald-200 ring-1 ring-emerald-400/30">
+        <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-400/30 to-sky-500/20 text-label font-bold text-emerald-200 ring-1 ring-emerald-400/30">
           AO
         </span>
-        {expanded && <span className="truncate text-[12.5px] font-semibold text-slate-200">AgentOS</span>}
+        {expanded && <span className="truncate text-body-sm font-semibold text-slate-200">AgentOS</span>}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pb-2">
@@ -90,11 +90,11 @@ export function NavRail({
                 }`}
               >
                 <span className={`shrink-0 ${active ? "text-emerald-300" : ""}`}>{g.icon}</span>
-                {expanded && <span className="truncate text-[12.5px] font-medium">{g.label}</span>}
+                {expanded && <span className="truncate text-body-sm font-medium">{g.label}</span>}
                 {g.badge ? (
                   <span
                     aria-hidden="true"
-                    className={`${expanded ? "ml-auto" : "absolute right-1.5 top-1.5"} rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold leading-4 text-emerald-950`}
+                    className={`${expanded ? "ml-auto" : "absolute right-1.5 top-1.5"} rounded-full bg-emerald-500 px-1.5 text-2xs font-bold leading-4 text-emerald-950`}
                   >
                     {g.badge > 99 ? "99+" : g.badge}
                   </span>
@@ -108,7 +108,7 @@ export function NavRail({
                       type="button"
                       onClick={() => onGo(t.id)}
                       title={t.hint}
-                      className={`flex h-8 w-full items-center rounded-md px-2 text-left text-[12px] transition-colors ${
+                      className={`flex h-8 w-full items-center rounded-md px-2 text-left text-ui transition-colors ${
                         view === t.id ? "bg-emerald-500/10 text-emerald-200" : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
                       }`}
                     >
@@ -123,7 +123,7 @@ export function NavRail({
       </div>
 
       {expanded && (
-        <div className="border-t border-line px-3.5 py-2 text-[10px] leading-tight text-slate-600">
+        <div className="border-t border-line px-3.5 py-2 text-2xs leading-tight text-slate-600">
           <div className="font-medium text-slate-500">K-ONE IT SOLUTIONS</div>
           <div>by Kone Tshivhinda</div>
         </div>
@@ -136,7 +136,7 @@ export function NavRail({
         className="flex h-10 items-center gap-3 border-t border-line px-3.5 text-slate-500 transition-colors hover:text-slate-200"
       >
         {pinned ? <Pin className="size-4 shrink-0" /> : <PinOff className="size-4 shrink-0" />}
-        {expanded ? <span className="text-[11.5px]">{pinned ? "Pinned" : "Pin rail"}</span> : null}
+        {expanded ? <span className="text-small">{pinned ? "Pinned" : "Pin rail"}</span> : null}
         {expanded && <ChevronLeft className={`ml-auto size-3.5 transition-transform ${pinned ? "" : "rotate-180"}`} />}
       </button>
     </nav>

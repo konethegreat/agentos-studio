@@ -228,7 +228,7 @@ export function CliDock() {
   const onCommands = c.tab === "commands";
 
   return (
-    <div className={`flex shrink-0 flex-col border-t border-line bg-[#080b11] ${c.open ? "" : "hidden"}`} style={{ height }}>
+    <div className={`flex shrink-0 flex-col border-t border-line bg-sunken ${c.open ? "" : "hidden"}`} style={{ height }}>
       <div onMouseDown={startDrag} className="h-1.5 shrink-0 cursor-ns-resize hover:bg-emerald-500/30" title="Drag to resize" />
       <div className="flex shrink-0 items-center gap-1 border-b border-line px-3 pb-1.5" role="tablist" aria-label="Terminals">
         <button
@@ -238,8 +238,8 @@ export function CliDock() {
           title="One-shot commands with captured output"
           className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs ${onCommands ? "bg-white/[0.07] text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
         >
-          <SquareTerminal className="size-3.5 text-emerald-400" /> Commands
-          {c.running.length > 0 && <span className="rounded bg-emerald-500/20 px-1 text-[10px] text-emerald-300">{c.running.length}</span>}
+          <SquareTerminal className="size-3.5 text-ok" /> Commands
+          {c.running.length > 0 && <span className="rounded bg-emerald-500/20 px-1 text-2xs text-emerald-300">{c.running.length}</span>}
         </button>
         {c.ptys.map((p) => (
           <div key={p.id} className={`inline-flex h-7 items-center rounded-md ${c.tab === p.id ? "bg-white/[0.07]" : ""}`}>
@@ -285,7 +285,7 @@ export function CliDock() {
                   className="block w-full rounded-md px-3 py-2 text-left hover:bg-white/5"
                 >
                   <div className="text-xs font-medium text-slate-100">{t.label}</div>
-                  <div className="text-[11px] text-slate-500">{t.hint}</div>
+                  <div className="text-label text-slate-500">{t.hint}</div>
                 </button>
               ))}
             </div>
@@ -294,7 +294,7 @@ export function CliDock() {
         <select
           value={c.cwd}
           onChange={(e) => c.setCwd(e.target.value)}
-          className="ml-2 h-7 max-w-56 rounded-md border border-line bg-card px-2 text-[11px] text-slate-300 outline-none"
+          className="ml-2 h-7 max-w-56 rounded-md border border-line bg-card px-2 text-label text-slate-300 outline-none"
           aria-label="Working directory for new commands and terminals"
           title="Working directory for new commands and terminals"
         >
@@ -309,7 +309,7 @@ export function CliDock() {
         {onCommands && c.running.length > 0 && (
           <button
             onClick={() => c.running.forEach(c.stop)}
-            className="inline-flex h-6 items-center gap-1 rounded-md bg-red-500/10 px-2 text-[11px] text-red-300 ring-1 ring-red-500/30 hover:bg-red-500/20"
+            className="inline-flex h-6 items-center gap-1 rounded-md bg-red-500/10 px-2 text-label text-red-300 ring-1 ring-red-500/30 hover:bg-red-500/20"
             title="Stop every running command"
           >
             <Square className="size-3" /> Stop ({c.running.length})
@@ -343,14 +343,14 @@ export function CliDock() {
                 <button
                   key={q}
                   onClick={() => submit(q)}
-                  className="h-6 rounded-md bg-white/[0.04] px-2 font-mono text-[10.5px] text-slate-400 ring-1 ring-white/5 hover:bg-white/[0.08] hover:text-slate-100"
+                  className="h-6 rounded-md bg-white/[0.04] px-2 font-mono text-caption text-slate-400 ring-1 ring-white/5 hover:bg-white/[0.08] hover:text-slate-100"
                   title={`Run ${q}`}
                 >
                   {q}
                 </button>
               ))}
             </div>
-            <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 py-2 font-mono text-[12px] leading-[1.55]">
+            <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 py-2 font-mono text-ui leading-[1.55]">
               {c.lines.length === 0 && (
                 <div className="text-slate-600">Run any hermes, claude, git, gh or shell command. For interactive programs open a terminal with +. Up and Down walk through history.</div>
               )}
@@ -361,16 +361,16 @@ export function CliDock() {
               ))}
             </div>
             <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-2">
-              <span className="font-mono text-xs text-emerald-400">&gt;</span>
+              <span className="font-mono text-xs text-ok">&gt;</span>
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKey}
                 placeholder="hermes mcp test agentos-hub"
                 aria-label="Command"
-                className="min-w-0 flex-1 bg-transparent font-mono text-[12.5px] text-slate-100 outline-none placeholder:text-slate-600"
+                className="min-w-0 flex-1 bg-transparent font-mono text-body-sm text-slate-100 outline-none placeholder:text-slate-600"
               />
-              <button onClick={() => submit()} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/5 hover:text-slate-100" title="Run (Enter)">
+              <button onClick={() => submit()} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-label text-slate-400 hover:bg-white/5 hover:text-slate-100" title="Run (Enter)">
                 <CornerDownLeft className="size-3.5" /> Run
               </button>
             </div>

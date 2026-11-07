@@ -55,7 +55,7 @@ export function BootSplash({
           <img src="/icon.png" alt="" className="size-10 rounded-xl" />
           <div>
             <div className="text-base font-semibold tracking-tight text-slate-100">AgentOS Studio</div>
-            <div className="text-[11.5px] text-slate-500">{report?.app_version ? `v${report.app_version}` : "starting"}</div>
+            <div className="text-small text-slate-500">{report?.app_version ? `v${report.app_version}` : "starting"}</div>
           </div>
         </div>
 
@@ -70,18 +70,18 @@ export function BootSplash({
           {steps.map((s) => {
             const tone = TONE[s.status] ?? TONE.skipped;
             return (
-              <div key={s.id} className="flex items-start gap-2.5 text-[12.5px]">
+              <div key={s.id} className="flex items-start gap-2.5 text-body-sm">
                 <span className={`mt-0.5 shrink-0 ${tone.text}`}>{tone.icon}</span>
                 <div className="min-w-0 flex-1">
                   <span className="text-slate-200">{s.label}</span>
                   <span className="ml-2 text-slate-500">{s.detail}</span>
                 </div>
-                <span className="shrink-0 tabular-nums text-[11px] text-slate-600">{s.ms} ms</span>
+                <span className="shrink-0 tabular-nums text-label text-slate-600">{s.ms} ms</span>
               </div>
             );
           })}
           {!done && (
-            <div className="flex items-center gap-2.5 pt-1 text-[12.5px] text-slate-400">
+            <div className="flex items-center gap-2.5 pt-1 text-body-sm text-slate-400">
               <Loader2 className="size-3.5 animate-spin text-slate-500" />
               Checking…
             </div>
@@ -89,14 +89,14 @@ export function BootSplash({
         </div>
 
         {report?.previous_crash && (
-          <div className="mt-5 rounded-lg bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-200 ring-1 ring-amber-500/25">
+          <div className="mt-5 rounded-lg bg-amber-500/10 px-3 py-2 text-small text-amber-200 ring-1 ring-amber-500/25">
             The last session ended with an error: {report.previous_crash}
           </div>
         )}
 
         {done && problems.length > 0 && (
           <div className="mt-6 space-y-2">
-            <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200 ring-1 ring-amber-500/25">
+            <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-ui text-amber-200 ring-1 ring-amber-500/25">
               {problems.length} item{problems.length > 1 ? "s" : ""} need attention. You can continue and fix them later.
             </div>
             <div className="flex flex-wrap gap-2">
@@ -135,7 +135,7 @@ export function BootSplash({
           </div>
         )}
 
-        <div className="mt-8 text-[11px] text-slate-600">
+        <div className="mt-8 text-label text-slate-600">
           Checks run on every launch. Only safe repairs happen automatically; anything that changes another tool's configuration is shown here for you to decide.
         </div>
       </div>

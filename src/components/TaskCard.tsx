@@ -47,8 +47,8 @@ export function TaskCard({ task, running, onOpen }: { task: Task; running: boole
     <div className={`group relative rounded-xl border bg-card p-3.5 transition-colors hover:border-slate-600 ${running ? "border-emerald-500/50 shadow-[0_0_0_1px_rgba(16,185,129,0.15)]" : "border-line"}`}>
       <button onClick={() => onOpen(task.id)} className="block w-full text-left">
         <div className="mb-1.5 flex items-center justify-between gap-2">
-          <span className="font-mono text-[11px] text-slate-500">{task.id}</span>
-          <span className="text-[11px] text-slate-500">{relativeTime(when)}</span>
+          <span className="font-mono text-label text-slate-500">{task.id}</span>
+          <span className="text-label text-slate-500">{relativeTime(when)}</span>
         </div>
         <div className="mb-2.5 line-clamp-2 text-sm font-medium leading-snug text-slate-100">{task.title}</div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -91,7 +91,7 @@ function CardAction({ icon, label, onClick, busy, disabled }: { icon: React.Reac
     <button
       onClick={onClick}
       disabled={disabled || busy}
-      className="flex h-7 w-full items-center justify-center gap-1.5 rounded-md bg-white/[0.03] px-2 text-[11px] font-medium text-slate-400 ring-1 ring-line transition-colors hover:bg-white/[0.06] hover:text-slate-100 disabled:opacity-40"
+      className="flex h-7 w-full items-center justify-center gap-1.5 rounded-md bg-white/[0.03] px-2 text-label font-medium text-slate-400 ring-1 ring-line transition-colors hover:bg-white/[0.06] hover:text-slate-100 disabled:opacity-40"
     >
       {busy ? <span className="size-3 animate-spin rounded-full border border-slate-400 border-t-transparent" /> : icon}
       <span className="truncate">{label}</span>

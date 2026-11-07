@@ -122,7 +122,7 @@ function TagChips({ tags }: { tags: string[] }) {
   return (
     <span className="flex flex-wrap gap-0.5">
       {tags.map((t) => (
-        <span key={t} className="rounded bg-sky-500/10 px-1 text-[9.5px] text-sky-300">
+        <span key={t} className="rounded bg-sky-500/10 px-1 text-micro text-sky-300">
           #{t}
         </span>
       ))}
@@ -278,8 +278,8 @@ export function WorkspaceTree({
     return (
       <Fragment key={`att-${depth}`}>
         {list.map((a) => (
-          <div key={a.id} className="group flex items-center gap-1.5 py-0.5 pr-2 text-[11px] text-slate-500" style={{ paddingLeft: depth * 12 + 22 }} title={a.path}>
-            <FileText className={`size-3 shrink-0 ${a.exists ? "" : "text-red-400"}`} />
+          <div key={a.id} className="group flex items-center gap-1.5 py-0.5 pr-2 text-label text-slate-500" style={{ paddingLeft: depth * 12 + 22 }} title={a.path}>
+            <FileText className={`size-3 shrink-0 ${a.exists ? "" : "text-danger"}`} />
             <button onClick={() => void studio.os.reveal(a.path).catch((e) => toast("error", errorText(e)))} className="min-w-0 flex-1 truncate text-left hover:text-slate-300">
               {a.label ?? basename(a.path)}
               {!a.exists && " (missing)"}
@@ -323,9 +323,9 @@ export function WorkspaceTree({
             <button onClick={() => actions.onOpen(c)} onKeyDown={onKey} className="min-w-0 flex-1 text-left" title={`${c.title}\n${c.cwd}\nF2 rename, Delete removes`}>
               <div className="flex items-center gap-1">
                 {isPinned && <Pin className="size-2.5 shrink-0 text-amber-300" />}
-                <span className="truncate text-[12px] text-slate-200">{c.title}</span>
+                <span className="truncate text-ui text-slate-200">{c.title}</span>
               </div>
-              <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+              <div className="flex items-center gap-1.5 text-2xs text-slate-500">
                 <span>{relativeTime(c.last_activity)}</span>
                 <span>{c.message_count} msgs</span>
                 {att.length > 0 && (
@@ -387,7 +387,7 @@ export function WorkspaceTree({
           <button onClick={() => collapsed.toggle(f.id)} className="rounded p-0.5 text-slate-500 hover:text-slate-200" aria-label={open ? "Collapse" : "Expand"} aria-expanded={open}>
             {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
           </button>
-          {f.path ? <FolderGit2 className="size-3.5 shrink-0 text-emerald-400/80" /> : <FolderIcon className="size-3.5 shrink-0 text-slate-400" />}
+          {f.path ? <FolderGit2 className="size-3.5 shrink-0 text-ok/80" /> : <FolderIcon className="size-3.5 shrink-0 text-slate-400" />}
           {editing?.kind === "folder" && editing.id === f.id ? (
             <InlineEdit
               value={f.name}
@@ -407,9 +407,9 @@ export function WorkspaceTree({
               title={`${f.name}${f.path ? `\n${f.path}` : "\nNot mapped to a directory"}${f.project_slug ? `\nHermes project: ${f.project_slug}` : ""}`}
             >
               {f.pinned && <Pin className="size-2.5 shrink-0 text-amber-300" />}
-              <span className="truncate text-[12px] font-medium text-slate-300">{f.name}</span>
-              {count > 0 && <span className="text-[10px] text-slate-600">{count}</span>}
-              {f.project_slug && <span className="rounded bg-violet-500/10 px-1 text-[9.5px] text-violet-300">{f.project_slug}</span>}
+              <span className="truncate text-ui font-medium text-slate-300">{f.name}</span>
+              {count > 0 && <span className="text-2xs text-slate-600">{count}</span>}
+              {f.project_slug && <span className="rounded bg-violet-500/10 px-1 text-micro text-violet-300">{f.project_slug}</span>}
               <TagChips tags={f.tags} />
             </button>
           )}
@@ -477,7 +477,7 @@ export function WorkspaceTree({
           />
           {loading && <Loader2 className="size-3.5 animate-spin text-slate-500" />}
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-slate-500">
+        <div className="flex items-center gap-2 text-label text-slate-500">
           <button onClick={() => void newWorkspace()} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/5 hover:text-slate-200" title="A workspace groups folders, for example Work or a client">
             <Plus className="size-3" /> Workspace
           </button>
@@ -517,7 +517,7 @@ export function WorkspaceTree({
                 <button
                   onClick={() => collapsed.toggle(w.id)}
                   onKeyDown={(e) => e.key === "F2" && setEditing({ kind: "workspace", id: w.id })}
-                  className="min-w-0 flex-1 truncate text-left text-[10.5px] font-semibold uppercase tracking-wider text-slate-400"
+                  className="min-w-0 flex-1 truncate text-left text-caption font-semibold uppercase tracking-wider text-slate-400"
                   title="Drop chats or folders here"
                 >
                   {w.name}
@@ -548,7 +548,7 @@ export function WorkspaceTree({
                   chatRow(c, 0)
                 ))}
                 {(children.get(`ws:${w.id}`) ?? []).length === 0 && (byFolder.get(`ws:${w.id}`) ?? []).length === 0 && (
-                  <div className="px-6 py-1.5 text-[11px] text-slate-600">Empty. Add a folder or drag chats here.</div>
+                  <div className="px-6 py-1.5 text-label text-slate-600">Empty. Add a folder or drag chats here.</div>
                 )}
               </div>
             )}
@@ -556,14 +556,14 @@ export function WorkspaceTree({
         ))}
         <div className="mt-1" {...dropProps("unfiled", intoUnfiled)}>
           <Section title={workspaces.length ? "Unfiled" : "Chats"} id="unfiled" collapsed={collapsed} highlight={dropTarget === "unfiled"}>
-            {unfiled.length === 0 && !loading && <div className="px-3 py-3 text-center text-[11px] text-slate-600">{query ? "No chats match" : workspaces.length ? "Everything is filed" : "No Hermes chats yet"}</div>}
+            {unfiled.length === 0 && !loading && <div className="px-3 py-3 text-center text-label text-slate-600">{query ? "No chats match" : workspaces.length ? "Everything is filed" : "No Hermes chats yet"}</div>}
             {unfiled.map((c) => (
               chatRow(c, 0)
             ))}
           </Section>
         </div>
         {workspaces.length === 0 && (
-          <div className="mx-2 mt-3 rounded-lg border border-dashed border-line px-3 py-3 text-[11px] leading-relaxed text-slate-500">
+          <div className="mx-2 mt-3 rounded-lg border border-dashed border-line px-3 py-3 text-label leading-relaxed text-slate-500">
             Group chats into workspaces and folders. Map a folder to a repository and every chat run there lands in it automatically.
             <button onClick={() => void newWorkspace()} className="mt-2 block text-emerald-300 hover:underline">
               Create your first workspace
@@ -579,7 +579,7 @@ function Section({ title, id, collapsed, children, highlight }: { title: string;
   const closed = collapsed.has(`section:${id}`);
   return (
     <div className={`rounded-md ${highlight ? "bg-emerald-500/10 ring-1 ring-emerald-500/40" : ""}`}>
-      <button onClick={() => collapsed.toggle(`section:${id}`)} className="flex w-full items-center gap-1 px-1 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-300" aria-expanded={!closed}>
+      <button onClick={() => collapsed.toggle(`section:${id}`)} className="flex w-full items-center gap-1 px-1 py-1 text-left text-caption font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-300" aria-expanded={!closed}>
         {closed ? <ChevronRight className="size-3" /> : <ChevronDown className="size-3" />}
         {title}
       </button>

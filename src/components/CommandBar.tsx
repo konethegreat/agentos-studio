@@ -38,7 +38,7 @@ export function CommandBar({ repos, onDispatched }: { repos: RepoInfo[]; onDispa
     <form onSubmit={submit} className="border-b border-line bg-canvas/90 px-6 pb-3 pt-3.5 backdrop-blur">
       <div className="flex items-center gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-line bg-card px-3 focus-within:border-emerald-500/50 focus-within:ring-2 focus-within:ring-emerald-500/10">
-          <Rocket className="size-4 shrink-0 text-emerald-400" />
+          <Rocket className="size-4 shrink-0 text-ok" />
           <input
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -87,7 +87,7 @@ export function CommandBar({ repos, onDispatched }: { repos: RepoInfo[]; onDispa
             </button>
           ))}
         </div>
-        <span className="ml-auto text-[11px] text-slate-600">
+        <span className="ml-auto text-label text-slate-600">
           {agent === "qoder" || agent === "antigravity" ? "Queued on the bus for the IDE agent" : "Runs immediately as a headless worker"}
         </span>
       </div>

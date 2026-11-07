@@ -1,4 +1,5 @@
-import { CircleCheck, Download, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
+import { CircleCheck, Download, Monitor, Moon, RefreshCw, SquareTerminal, Sun, TriangleAlert } from "lucide-react";
+import { NEXT_PREF, setThemePref, themePref, type ThemePref } from "../lib/theme";
 import type { ReactNode } from "react";
 import type { HermesStatus, StackStatus } from "../lib/api";
 import { useCli } from "./CliDrawer";
@@ -11,7 +12,7 @@ function Chip({ children, title, onClick, tone = "" }: { children: ReactNode; ti
       type="button"
       title={title}
       onClick={onClick}
-      className={`inline-flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] ring-1 ring-line transition-colors hover:bg-white/[0.04] ${tone || "text-slate-300"}`}
+      className={`inline-flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-small ring-1 ring-line transition-colors hover:bg-white/[0.04] ${tone || "text-slate-300"}`}
     >
       {children}
     </button>
@@ -22,6 +23,28 @@ function Chip({ children, title, onClick, tone = "" }: { children: ReactNode; ti
  * Status bar. Provider and model live in the chat header only, so this bar answers one question:
  * is the machine healthy. The health chip is the single way into Diagnostics.
  */
+const THEME_LABEL: Record<ThemePref, string> = { system: "Theme: follow Windows", dark: "Theme: dark", light: "Theme: light" };
+
+/** Cycles follow Windows, dark and light. The choice is applied at once and before the next start. */
+function ThemeButton() {
+  const [pref, setPref] = useState<ThemePref>(() => themePref());
+  const Icon = pref === "system" ? Monitor : pref === "dark" ? Moon : Sun;
+  const next = NEXT_PREF[pref];
+  return (
+    <button
+      onClick={() => {
+        setThemePref(next);
+        setPref(next);
+      }}
+      title={`${THEME_LABEL[pref]}. Click for ${THEME_LABEL[next].replace("Theme: ", "")}.`}
+      aria-label={THEME_LABEL[pref]}
+      className="grid size-8 place-items-center rounded-lg text-slate-400 ring-1 ring-line hover:bg-white/[0.04] hover:text-slate-200"
+    >
+      <Icon className="size-3.5" />
+    </button>
+  );
+}
+
 export function StatusBar({
   hermes,
   stack,
@@ -59,7 +82,7 @@ export function StatusBar({
   const needs = healthy ? 0 : missing + (hermesOk ? 0 : 1);
 
   return (
-    <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-[#0a0e15] px-4">
+    <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-inset px-4">
       <Chip
         title={hermes?.hermes_path ?? "Hermes not found"}
         onClick={onOpenDiagnostics}
@@ -69,7 +92,7 @@ export function StatusBar({
         Hermes {hermes ? (hermes.installed ? (hermes.version ?? "installed") : "not installed") : "connecting"}
       </Chip>
       {hermes?.claude_version && (
-        <span className="hidden text-[11px] text-slate-500 xl:inline" title={hermes.claude_path ?? ""}>
+        <span className="hidden text-label text-slate-500 xl:inline" title={hermes.claude_path ?? ""}>
           Claude Code {hermes.claude_version}
         </span>
       )}
@@ -85,7 +108,7 @@ export function StatusBar({
       {offline && !offline.online && (
         <span
           title={offline.note}
-          className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 text-[11px] text-amber-300 ring-1 ring-amber-500/25"
+          className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 text-label text-amber-300 ring-1 ring-amber-500/25"
         >
           Offline{offline.local_models.length > 0 ? ` · ${offline.local_models.length} local` : ""}
         </span>
@@ -113,6 +136,7 @@ export function StatusBar({
         {healthy ? <CircleCheck className="size-4" /> : <TriangleAlert className="size-4" />}
         {healthy ? "Healthy" : stack ? `${needs} need attention` : "Checking"}
       </button>
+      <ThemeButton />
       <button
         onClick={() => cli.setOpen(!cli.open)}
         title="Terminal (Ctrl+`)"

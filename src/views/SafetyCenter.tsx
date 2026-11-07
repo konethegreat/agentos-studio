@@ -92,7 +92,7 @@ export function SafetyCenter() {
         <Card className="p-0">
           <div className="border-b border-line px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-100">Tool permissions (agentos-hub)</h2>
-            <p className="mt-0.5 text-[11.5px] text-slate-500">
+            <p className="mt-0.5 text-small text-slate-500">
               Enforced inside the MCP server, so an agent cannot call around it. Ask means refused in headless sessions, because there is nobody to prompt.
             </p>
           </div>
@@ -101,7 +101,7 @@ export function SafetyCenter() {
           ) : (
             tools.map((t) => (
               <div key={t} className="flex items-center gap-3 border-t border-line px-4 py-2">
-                <span className="min-w-0 flex-1 font-mono text-[11.5px] text-slate-300">{t}</span>
+                <span className="min-w-0 flex-1 font-mono text-small text-slate-300">{t}</span>
                 <div className="flex rounded-lg bg-canvas p-0.5 ring-1 ring-line" role="radiogroup" aria-label={`Policy for ${t}`}>
                   {(["allow", "ask", "deny"] as const).map((v) => {
                     const active = (toolPolicy[t] ?? "allow") === v;
@@ -111,7 +111,7 @@ export function SafetyCenter() {
                         role="radio"
                         aria-checked={active}
                         onClick={() => void setTool(t, v)}
-                        className={`rounded-md px-2 py-1 text-[11px] capitalize ${active ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-300"}`}
+                        className={`rounded-md px-2 py-1 text-label capitalize ${active ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-300"}`}
                       >
                         {v}
                       </button>
@@ -129,7 +129,7 @@ export function SafetyCenter() {
           </div>
           {groups.map((g) => (
             <div key={g}>
-              <div className="bg-white/[0.02] px-4 py-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">{g}</div>
+              <div className="bg-white/[0.02] px-4 py-1.5 text-caption font-semibold uppercase tracking-wider text-slate-500">{g}</div>
               {policies
                 .filter((p) => p.group === g)
                 .map((p) => (
@@ -140,7 +140,7 @@ export function SafetyCenter() {
                         <Badge className={RISK[p.risk]}>{p.risk} risk</Badge>
                         {!p.reversible && <Badge className="bg-white/5 text-slate-400 ring-white/10">cannot be undone</Badge>}
                       </div>
-                      <div className="font-mono text-[10.5px] text-slate-600">
+                      <div className="font-mono text-caption text-slate-600">
                         {p.id} · default {p.default_policy}
                       </div>
                     </div>
@@ -152,7 +152,7 @@ export function SafetyCenter() {
                           aria-checked={p.policy === v}
                           title={POLICY_HINT[v]}
                           onClick={() => void set(p.id, v)}
-                          className={`h-7 rounded-md px-3 text-[11px] font-medium capitalize ${
+                          className={`h-7 rounded-md px-3 text-label font-medium capitalize ${
                             p.policy === v ? (v === "deny" ? "bg-red-500/20 text-red-200" : v === "ask" ? "bg-amber-500/15 text-amber-200" : "bg-emerald-500/15 text-emerald-200") : "text-slate-500 hover:text-slate-200"
                           }`}
                         >
@@ -177,8 +177,8 @@ export function SafetyCenter() {
           {audit.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-slate-600">Nothing recorded yet.</div>
           ) : (
-            <table className="w-full text-left text-[11.5px]">
-              <thead className="text-[10.5px] uppercase tracking-wider text-slate-500">
+            <table className="w-full text-left text-small">
+              <thead className="text-caption uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-4 py-2 font-medium">When</th>
                   <th className="px-2 py-2 font-medium">Action</th>
@@ -193,7 +193,7 @@ export function SafetyCenter() {
                     <td className="px-2 py-2 font-mono text-slate-300">{a.action}</td>
                     <td className="max-w-[320px] px-2 py-2 text-slate-400">
                       <div className="truncate">{a.target}</div>
-                      {a.detail && <div className="truncate text-[10.5px] text-slate-600">{a.detail}</div>}
+                      {a.detail && <div className="truncate text-caption text-slate-600">{a.detail}</div>}
                     </td>
                     <td className={`px-2 py-2 ${a.outcome === "ok" ? "text-emerald-300" : a.outcome === "denied" ? "text-amber-300" : "text-red-300"}`}>{a.outcome}</td>
                   </tr>

@@ -55,7 +55,7 @@ export function ConnectCard() {
         <KeyRound className="size-4 text-emerald-300" />
         <div className="flex-1">
           <h2 className="text-sm font-semibold text-slate-100">Connect your subscriptions</h2>
-          <p className="text-[11.5px] text-slate-500">
+          <p className="text-small text-slate-500">
             A subscription is billed flat, so it carries the volume. An API key is metered, and only
             the key name is ever shown back.
           </p>
@@ -72,16 +72,16 @@ export function ConnectCard() {
           <div key={c.id} className="border-t border-line px-4 py-3">
             <div className="flex items-center gap-2">
               {c.connected ? (
-                <CheckCircle2 className="size-4 text-emerald-400" />
+                <CheckCircle2 className="size-4 text-ok" />
               ) : (
                 <Circle className="size-4 text-slate-600" />
               )}
-              <span className="text-[13px] font-medium text-slate-200">{c.label}</span>
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ${c.connected ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25" : "bg-white/5 text-slate-400 ring-white/10"}`}>
+              <span className="text-body font-medium text-slate-200">{c.label}</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-2xs font-medium ring-1 ${c.connected ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25" : "bg-white/5 text-slate-400 ring-white/10"}`}>
                 {c.connected ? "connected" : "not connected"}
               </span>
             </div>
-            <p className="mt-1 text-[11.5px] text-slate-500">{c.connected ? c.detail : c.needs}</p>
+            <p className="mt-1 text-small text-slate-500">{c.connected ? c.detail : c.needs}</p>
             {c.env_var && (
               <div className="mt-2 flex gap-2">
                 <input
@@ -90,7 +90,7 @@ export function ConnectCard() {
                   onChange={(e) => setKey(e.target.value)}
                   placeholder={c.env_var}
                   aria-label={`${c.label} API key`}
-                  className={`${inputClass} h-8 flex-1 font-mono text-[11px]`}
+                  className={`${inputClass} h-8 flex-1 font-mono text-label`}
                 />
                 <Button size="sm" onClick={() => void save()} disabled={busy || !key.trim()}>
                   Save key

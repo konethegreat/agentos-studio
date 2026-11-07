@@ -468,7 +468,7 @@ export function ChatStudio({
         onClick={() => void forkAt(index)}
         title={label}
         aria-label={label}
-        className="invisible grid size-6 shrink-0 place-items-center rounded-md text-slate-500 ring-1 ring-line hover:bg-white/5 hover:text-slate-200 group-hover:visible focus-visible:visible"
+        className="invisible grid size-6 shrink-0 place-items-center rounded-md bg-card text-slate-500 ring-1 ring-line hover:bg-white/5 hover:text-slate-200 group-hover:visible focus-visible:visible"
       >
         <GitFork className="size-3.5" />
       </button>
@@ -548,7 +548,7 @@ export function ChatStudio({
 
   return (
     <div className="flex h-full min-h-0">
-      <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-[#0a0e15]/60">
+      <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-inset/60">
         <div className="space-y-2 p-3">
           <button
             onClick={() => newChat()}
@@ -598,7 +598,7 @@ export function ChatStudio({
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-5">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-slate-100">{title}</div>
-            <div className="flex items-center gap-1.5 truncate text-[11px] text-slate-500" title={cwd}>
+            <div className="flex items-center gap-1.5 truncate text-label text-slate-500" title={cwd}>
               {folderName && <span className="rounded bg-white/5 px-1 text-slate-400">{folderName}</span>}
               {attachedCount > 0 && (
                 <span className="inline-flex items-center gap-0.5 text-slate-400" title="Files attached to this chat are listed for the agent with every message">
@@ -615,12 +615,12 @@ export function ChatStudio({
               if (!skillList) void api.skills().then(setSkillList).catch((e) => toast("error", errorText(e)));
             }}
             title="Skills preloaded on the next turn"
-            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11.5px] ring-1 ${skills.length ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30" : "bg-white/[0.04] text-slate-400 ring-line hover:text-slate-200"}`}
+            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-small ring-1 ${skills.length ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30" : "bg-white/[0.04] text-slate-400 ring-line hover:text-slate-200"}`}
           >
             <Sparkles className="size-3.5" /> Skills {skills.length || ""}
           </button>
           {pendingBranch && (
-            <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-sky-500/10 px-3 text-[11.5px] text-sky-300 ring-1 ring-sky-500/30" title="This chat will be recorded as a branch of another session">
+            <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-sky-500/10 px-3 text-small text-sky-300 ring-1 ring-sky-500/30" title="This chat will be recorded as a branch of another session">
               Branch
             </span>
           )}
@@ -636,7 +636,7 @@ export function ChatStudio({
                   setClaudeSession(null);
                   setItems([]);
                 }}
-                className={`h-7 rounded-full px-3 text-[11.5px] font-medium ${backend === b ? "bg-emerald-500/15 text-emerald-300" : "text-slate-400 hover:text-slate-200"}`}
+                className={`h-7 rounded-full px-3 text-small font-medium ${backend === b ? "bg-emerald-500/15 text-emerald-300" : "text-slate-400 hover:text-slate-200"}`}
               >
                 {b === "hermes" ? "Hermes" : "Claude Code"}
               </button>
@@ -647,7 +647,7 @@ export function ChatStudio({
             disabled={streaming || !(backend === "hermes" ? current : claudeSession)}
             title={`Continue this conversation in a real terminal (${backend === "hermes" ? "hermes --resume" : "claude --resume"}), with live reasoning and typed approvals`}
             aria-label="Continue in terminal"
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] text-slate-300 ring-1 ring-line hover:bg-white/5 hover:text-slate-100 disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-small text-slate-300 ring-1 ring-line hover:bg-white/5 hover:text-slate-100 disabled:opacity-40"
           >
             <SquareTerminal className="size-3.5" /> Continue in terminal
           </button>
@@ -691,7 +691,7 @@ export function ChatStudio({
                 return (
                   <div key={it.id} className="group my-4 flex items-start justify-end gap-2">
                     {forkButton(index, "Fork here: new session with everything before this message, and this message back in the composer to edit")}
-                    <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-emerald-500/10 px-4 py-2.5 text-[13.5px] leading-relaxed text-slate-100 ring-1 ring-emerald-500/20">
+                    <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-emerald-500/10 px-4 py-2.5 text-chat leading-relaxed text-slate-100 ring-1 ring-emerald-500/20">
                       {it.text}
                     </div>
                   </div>
@@ -699,7 +699,7 @@ export function ChatStudio({
               if (it.kind === "assistant")
                 return (
                   <div key={it.id} className="group relative my-3">
-                    {!it.streaming && <div className="absolute right-0 top-0 rounded-md bg-card">{forkButton(index, "Fork here: new session with the conversation up to and including this reply")}</div>}
+                    {!it.streaming && <div className="absolute right-0 top-0">{forkButton(index, "Fork here: new session with the conversation up to and including this reply")}</div>}
                     {it.thinking && (
                       <details className="mb-2 rounded-lg bg-white/[0.02] px-3 py-1.5 text-xs text-slate-500 ring-1 ring-white/5">
                         <summary className="cursor-pointer select-none">
@@ -743,12 +743,12 @@ export function ChatStudio({
                   title={s.hint}
                   disabled={streaming}
                   onClick={() => void runSlash(s.cmd, s.cmd === "/delegate-to-kanban" ? draft : "").then(() => s.cmd === "/delegate-to-kanban" && setDraft(""))}
-                  className="inline-flex h-6 items-center gap-1 rounded-full bg-white/[0.04] px-2.5 text-[11px] text-slate-400 ring-1 ring-white/5 hover:bg-white/[0.08] hover:text-slate-100 disabled:opacity-40"
+                  className="inline-flex h-6 items-center gap-1 rounded-full bg-white/[0.04] px-2.5 text-label text-slate-400 ring-1 ring-white/5 hover:bg-white/[0.08] hover:text-slate-100 disabled:opacity-40"
                 >
                   <s.icon className="size-3" />/{s.label}
                 </button>
               ))}
-              <span className="ml-auto truncate text-[11px] text-slate-500">
+              <span className="ml-auto truncate text-label text-slate-500">
                 {streaming && <Loader2 className="mr-1 inline size-3 animate-spin" />}
                 {statusLine}
               </span>
@@ -761,7 +761,7 @@ export function ChatStudio({
                 onKeyDown={onKey}
                 rows={1}
                 placeholder={`Message ${backend === "hermes" ? "Hermes" : "Claude Code"} (Enter to send, Shift+Enter for a new line, / for commands)`}
-                className="max-h-72 min-h-9 flex-1 resize-none bg-transparent px-2 py-2 text-[13.5px] leading-relaxed text-slate-100 outline-none placeholder:text-slate-600"
+                className="max-h-72 min-h-9 flex-1 resize-none bg-transparent px-2 py-2 text-chat leading-relaxed text-slate-100 outline-none placeholder:text-slate-600"
               />
               {streaming ? (
                 <button onClick={() => void stop()} title="Stop" aria-label="Stop" className="grid size-9 shrink-0 place-items-center rounded-xl bg-red-500/15 text-red-300 ring-1 ring-red-500/30 hover:bg-red-500/25">
@@ -788,7 +788,7 @@ export function ChatStudio({
           onClose={() => setSkillPicker(false)}
           footer={
             <>
-              <button onClick={() => setSkills([])} className="mr-auto text-[11.5px] text-slate-500 hover:text-slate-300">
+              <button onClick={() => setSkills([])} className="mr-auto text-small text-slate-500 hover:text-slate-300">
                 Clear all
               </button>
               <button onClick={() => setSkillPicker(false)} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400">
@@ -797,7 +797,7 @@ export function ChatStudio({
             </>
           }
         >
-          <p className="mb-3 text-[11.5px] leading-relaxed text-slate-500">
+          <p className="mb-3 text-small leading-relaxed text-slate-500">
             Selected skills are passed to Hermes as <span className="font-mono">-s</span> on every turn in this chat, so the agent starts with that knowledge loaded.
           </p>
           {!skillList && <Loader2 className="mx-auto size-4 animate-spin text-slate-500" />}
@@ -813,8 +813,8 @@ export function ChatStudio({
                     className="mt-0.5 accent-emerald-500"
                   />
                   <span className="min-w-0">
-                    <span className="block text-[12.5px] text-slate-200">{sk.name}</span>
-                    <span className="block line-clamp-1 text-[10.5px] text-slate-500">{sk.description || sk.category}</span>
+                    <span className="block text-body-sm text-slate-200">{sk.name}</span>
+                    <span className="block line-clamp-1 text-caption text-slate-500">{sk.description || sk.category}</span>
                   </span>
                 </label>
               );
@@ -832,7 +832,7 @@ function MemoryUsed({ entries }: { entries: MemoryEntry[] }) {
   const reads = entries.filter((e) => e.op === "read").length;
   const writes = entries.length - reads;
   return (
-    <details className="mt-2 rounded-lg bg-white/[0.02] px-3 py-1.5 text-[11.5px] text-slate-500 ring-1 ring-white/5">
+    <details className="mt-2 rounded-lg bg-white/[0.02] px-3 py-1.5 text-small text-slate-500 ring-1 ring-white/5">
       <summary className="cursor-pointer select-none">
         <ChevronRight className="mr-1 inline size-3" />
         Memory used: {reads} read{reads === 1 ? "" : "s"}
@@ -843,7 +843,7 @@ function MemoryUsed({ entries }: { entries: MemoryEntry[] }) {
           <li key={`${e.tool}-${i}`} className="flex gap-2">
             <span className={e.op === "write" ? "text-amber-300" : "text-sky-300"}>{e.op}</span>
             <span className="text-slate-400">{e.target}</span>
-            <span className="truncate font-mono text-[11px] text-slate-300" title={e.path || e.tool}>
+            <span className="truncate font-mono text-label text-slate-300" title={e.path || e.tool}>
               {e.path || e.tool}
             </span>
           </li>

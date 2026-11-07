@@ -188,17 +188,17 @@ export function Missions({ repos }: { repos: string[] }) {
   );
 
   return (
-    <section className="border-b border-line bg-[#080c12]">
+    <section className="border-b border-line bg-sunken">
       <div className="flex items-center gap-2 px-4 py-2">
         <ClipboardCheck className="size-4 text-emerald-300" />
-        <span className="text-[12.5px] font-semibold text-slate-200">Missions</span>
-        <span className="text-[11px] text-slate-500">
+        <span className="text-body-sm font-semibold text-slate-200">Missions</span>
+        <span className="text-label text-slate-500">
           {rows.length === 0 ? "none yet" : `${rows.filter((r) => r.status !== "done" && r.status !== "failed").length} open`}
         </span>
         <button
           onClick={() => void toggleAuto()}
           title="Start queued missions automatically, one per repository"
-          className={`ml-auto inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] ring-1 transition-colors ${
+          className={`ml-auto inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-small ring-1 transition-colors ${
             auto?.enabled
               ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
               : "text-slate-400 ring-line hover:bg-white/[0.04]"
@@ -207,7 +207,7 @@ export function Missions({ repos }: { repos: string[] }) {
           <Zap className="size-3.5" /> Automations {auto?.enabled ? "on" : "off"}
         </button>
         <label
-          className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[11px] text-slate-400 ring-1 ring-line"
+          className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-label text-slate-400 ring-1 ring-line"
           title="Merging also requires an approving review from another agent, green CI and budget left"
         >
           <input type="checkbox" checked={allowMerge} onChange={(e) => setAllowMerge(e.target.checked)} className="size-3 accent-emerald-500" />
@@ -216,13 +216,13 @@ export function Missions({ repos }: { repos: string[] }) {
         <button
           onClick={() => void tickNow()}
           title="Run one scheduler pass now"
-          className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] text-slate-300 ring-1 ring-line hover:bg-white/[0.04]"
+          className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-small text-slate-300 ring-1 ring-line hover:bg-white/[0.04]"
         >
           Run now
         </button>
         <button
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] text-slate-300 ring-1 ring-line hover:bg-white/[0.04]"
+          className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-small text-slate-300 ring-1 ring-line hover:bg-white/[0.04]"
         >
           {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           <Plus className="size-3.5" /> New mission
@@ -236,7 +236,7 @@ export function Missions({ repos }: { repos: string[] }) {
       </div>
 
       {router.length > 0 && (
-        <div className="px-4 pb-2 text-[11px] text-slate-500">
+        <div className="px-4 pb-2 text-label text-slate-500">
           <span className="text-slate-400">Router (shadow, changes nothing):</span>{" "}
           {router[0].role} would use <span className="font-mono text-slate-300">{router[0].provider}</span>
           {" / "}
@@ -247,7 +247,7 @@ export function Missions({ repos }: { repos: string[] }) {
 
       {open && (
         <div className="grid grid-cols-1 gap-2 px-4 pb-3 md:grid-cols-2">
-          <label className="text-[11px] text-slate-400">
+          <label className="text-label text-slate-400">
             Repository
             <input
               list="mission-repos"
@@ -261,7 +261,7 @@ export function Missions({ repos }: { repos: string[] }) {
               ))}
             </datalist>
           </label>
-          <label className="text-[11px] text-slate-400">
+          <label className="text-label text-slate-400">
             Role and agent
             <div className="mt-1 flex gap-2">
               <select
@@ -283,7 +283,7 @@ export function Missions({ repos }: { repos: string[] }) {
               />
             </div>
           </label>
-          <label className="text-[11px] text-slate-400 md:col-span-2">
+          <label className="text-label text-slate-400 md:col-span-2">
             Goal
             <input
               value={form.goal}
@@ -292,7 +292,7 @@ export function Missions({ repos }: { repos: string[] }) {
               className="mt-1 h-8 w-full rounded-lg bg-white/[0.03] px-2 text-xs text-slate-200 outline-none ring-1 ring-line focus:ring-emerald-500/40"
             />
           </label>
-          <label className="text-[11px] text-slate-400 md:col-span-2">
+          <label className="text-label text-slate-400 md:col-span-2">
             Acceptance criteria (the reviewer judges against these)
             <textarea
               value={form.acceptance}
@@ -301,7 +301,7 @@ export function Missions({ repos }: { repos: string[] }) {
               className="mt-1 w-full rounded-lg bg-white/[0.03] px-2 py-1.5 text-xs text-slate-200 outline-none ring-1 ring-line focus:ring-emerald-500/40"
             />
           </label>
-          <label className="text-[11px] text-slate-400">
+          <label className="text-label text-slate-400">
             Provider
             <select
               value={form.provider}
@@ -319,7 +319,7 @@ export function Missions({ repos }: { repos: string[] }) {
               ))}
             </select>
           </label>
-          <label className="text-[11px] text-slate-400">
+          <label className="text-label text-slate-400">
             Model (empty means the active model)
             <select
               value={form.model}
@@ -334,7 +334,7 @@ export function Missions({ repos }: { repos: string[] }) {
               ))}
             </select>
           </label>
-          <label className="text-[11px] text-slate-400">
+          <label className="text-label text-slate-400">
             Budget in USD (0 means no OpenRouter spend)
             <input
               value={form.budget}
@@ -358,9 +358,9 @@ export function Missions({ repos }: { repos: string[] }) {
       {rows.length > 0 && (
         <ul className="max-h-56 overflow-y-auto border-t border-line/60">
           {rows.map((m) => (
-            <li key={m.id} className="flex items-center gap-2 px-4 py-1.5 text-[11.5px]">
-              <span className="font-mono text-[10.5px] text-slate-500">{m.id}</span>
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ${STATUS_STYLE[m.status] ?? STATUS_STYLE.queued}`}>
+            <li key={m.id} className="flex items-center gap-2 px-4 py-1.5 text-small">
+              <span className="font-mono text-caption text-slate-500">{m.id}</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-2xs font-medium ring-1 ${STATUS_STYLE[m.status] ?? STATUS_STYLE.queued}`}>
                 {m.status}
               </span>
               <span className="truncate text-slate-200" title={m.goal}>
@@ -372,14 +372,14 @@ export function Missions({ repos }: { repos: string[] }) {
                   href={m.pr_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="shrink-0 text-[10px] text-sky-300 hover:underline"
+                  className="shrink-0 text-2xs text-sky-300 hover:underline"
                   onClick={(e) => e.stopPropagation()}
                 >
                   PR
                 </a>
               )}
               {m.review_verdict && (
-                <span className="shrink-0 text-[10px] text-slate-500">
+                <span className="shrink-0 text-2xs text-slate-500">
                   {m.review_verdict} by {m.reviewer}
                 </span>
               )}
@@ -389,7 +389,7 @@ export function Missions({ repos }: { repos: string[] }) {
                     onClick={() => void dispatch(m.id)}
                     disabled={busy}
                     title="Put this mission on the Agent Bus"
-                    className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] text-sky-300 ring-1 ring-sky-500/25 hover:bg-sky-500/10 disabled:opacity-50"
+                    className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-sky-300 ring-1 ring-sky-500/25 hover:bg-sky-500/10 disabled:opacity-50"
                   >
                     <Play className="size-3" /> Dispatch
                   </button>
@@ -399,7 +399,7 @@ export function Missions({ repos }: { repos: string[] }) {
                     onClick={() => void merge(m)}
                     disabled={busy || !allowMerge}
                     title={allowMerge ? "Merge the approved pull request" : "Tick Allow merge first"}
-                    className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/10 disabled:opacity-40"
+                    className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/10 disabled:opacity-40"
                   >
                     <GitMerge className="size-3" /> Merge PR
                   </button>
@@ -410,21 +410,21 @@ export function Missions({ repos }: { repos: string[] }) {
                       onClick={() => void agentReview(m)}
                       disabled={busy}
                       title={`Ask ${m.agent === "hermes" ? "Claude Code" : "Hermes"} to judge the diff`}
-                      className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] text-violet-300 ring-1 ring-violet-500/25 hover:bg-violet-500/10 disabled:opacity-50"
+                      className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-violet-300 ring-1 ring-violet-500/25 hover:bg-violet-500/10 disabled:opacity-50"
                     >
                       <Sparkles className="size-3" /> Agent review
                     </button>
                     <button
                       onClick={() => void judge(m, "approve")}
                       disabled={busy}
-                      className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/10"
+                      className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/10"
                     >
                       <ShieldCheck className="size-3" /> Approve
                     </button>
                     <button
                       onClick={() => void judge(m, "reject")}
                       disabled={busy}
-                      className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] text-amber-300 ring-1 ring-amber-500/25 hover:bg-amber-500/10"
+                      className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-amber-300 ring-1 ring-amber-500/25 hover:bg-amber-500/10"
                     >
                       Reject
                     </button>

@@ -62,9 +62,9 @@ function ChecksSummary({ checks }: { checks: GhCheck[] | null }) {
 
 function RunIcon({ status, conclusion }: { status: string; conclusion: string }) {
   if (status !== "completed") return <Loader2 className="size-3.5 animate-spin text-amber-300" />;
-  if (conclusion === "success") return <CheckCircle2 className="size-3.5 text-emerald-400" />;
+  if (conclusion === "success") return <CheckCircle2 className="size-3.5 text-ok" />;
   if (conclusion === "skipped" || conclusion === "cancelled") return <CircleSlash className="size-3.5 text-slate-500" />;
-  return <XCircle className="size-3.5 text-red-400" />;
+  return <XCircle className="size-3.5 text-danger" />;
 }
 
 export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHermes: (prompt: string, cwd?: string) => void }) {
@@ -169,9 +169,9 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
 
   return (
     <div className="flex h-full min-h-0">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-[#0a0e15]/60">
+      <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-inset/60">
         <div className="space-y-2 p-3">
-          <div className="flex items-center justify-between text-[11px] text-slate-500">
+          <div className="flex items-center justify-between text-label text-slate-500">
             <span title={auth?.scopes ? `Scopes: ${auth.scopes}` : undefined}>{auth ? `Signed in as ${auth.login}` : "Checking gh..."}</span>
             <button onClick={() => void loadAuth()} className="rounded p-1 hover:bg-white/5 hover:text-slate-200" title="Reload repositories" aria-label="Reload repositories">
               <RefreshCw className="size-3" />
@@ -190,12 +190,12 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
               className={`mb-0.5 block w-full rounded-lg px-2.5 py-1.5 text-left ${repo === r.nameWithOwner ? "bg-white/[0.07]" : "hover:bg-white/[0.03]"}`}
               title={r.description ?? r.nameWithOwner}
             >
-              <div className="truncate text-[12px] text-slate-200">{r.nameWithOwner}</div>
-              <div className="flex gap-1.5 text-[10px] text-slate-500">
+              <div className="truncate text-ui text-slate-200">{r.nameWithOwner}</div>
+              <div className="flex gap-1.5 text-2xs text-slate-500">
                 {r.isPrivate && <span>private</span>}
                 {r.primaryLanguage && <span>{r.primaryLanguage.name}</span>}
                 <span>{ts(r.updatedAt)}</span>
-                {localByRepo.has(r.nameWithOwner.toLowerCase()) && <span className="text-emerald-400/80">local</span>}
+                {localByRepo.has(r.nameWithOwner.toLowerCase()) && <span className="text-ok/80">local</span>}
               </div>
             </button>
           ))}
@@ -206,7 +206,7 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-5">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-slate-100">{repo || "Pick a repository"}</div>
-            <div className="truncate text-[11px] text-slate-500">{localPath ? `Local clone: ${localPath}` : "No local clone found by the fleet scan"}</div>
+            <div className="truncate text-label text-slate-500">{localPath ? `Local clone: ${localPath}` : "No local clone found by the fleet scan"}</div>
           </div>
           <Button size="sm" icon={<CircleDot className="size-3.5" />} disabled={!repo} onClick={() => setCreating("issue")} title="Open a new issue">
             New issue
@@ -235,7 +235,7 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
           ))}
           <div className="flex-1" />
           {(tab === "prs" || tab === "issues") && (
-            <select value={state} onChange={(e) => setState(e.target.value)} className="h-7 rounded-md border border-line bg-card px-2 text-[11px] text-slate-300" aria-label="State filter">
+            <select value={state} onChange={(e) => setState(e.target.value)} className="h-7 rounded-md border border-line bg-card px-2 text-label text-slate-300" aria-label="State filter">
               <option value="open">Open</option>
               <option value="closed">Closed</option>
               {tab === "prs" && <option value="merged">Merged</option>}
@@ -243,7 +243,7 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
             </select>
           )}
           {(tab === "actions" || tab === "commits") && (
-            <input value={branch} onChange={(e) => setBranch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void load()} placeholder="branch (default)" aria-label="Branch" list="gh-branches" className="h-7 w-44 rounded-md border border-line bg-card px-2 text-[11px] text-slate-300 outline-none" />
+            <input value={branch} onChange={(e) => setBranch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void load()} placeholder="branch (default)" aria-label="Branch" list="gh-branches" className="h-7 w-44 rounded-md border border-line bg-card px-2 text-label text-slate-300 outline-none" />
           )}
           <datalist id="gh-branches">
             {branches.map((b) => (
@@ -260,17 +260,17 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
                 {prs.map((p) => (
                   <Row key={p.number} active={sel?.id === p.number} onClick={() => setSel({ kind: "prs", id: p.number })}>
                     <div className="flex items-center gap-2">
-                      {p.state === "MERGED" ? <GitMerge className="size-3.5 text-violet-300" /> : <GitPullRequest className={`size-3.5 ${p.state === "OPEN" ? "text-emerald-400" : "text-red-400"}`} />}
-                      <span className="truncate text-[12.5px] text-slate-200">{p.title}</span>
+                      {p.state === "MERGED" ? <GitMerge className="size-3.5 text-violet-300" /> : <GitPullRequest className={`size-3.5 ${p.state === "OPEN" ? "text-ok" : "text-danger"}`} />}
+                      <span className="truncate text-body-sm text-slate-200">{p.title}</span>
                     </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 pl-5 text-[10.5px] text-slate-500">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 pl-5 text-caption text-slate-500">
                       <span>#{p.number}</span>
                       <span>{p.author?.login}</span>
                       <span className="font-mono">
                         {p.headRefName} {"->"} {p.baseRefName}
                       </span>
-                      <span className="text-emerald-400/80">+{p.additions}</span>
-                      <span className="text-red-400/80">-{p.deletions}</span>
+                      <span className="text-ok/80">+{p.additions}</span>
+                      <span className="text-danger/80">-{p.deletions}</span>
                       {p.isDraft && <Badge className="bg-white/5 text-slate-400 ring-white/10">draft</Badge>}
                       <ChecksSummary checks={p.statusCheckRollup} />
                       <span>{ts(p.updatedAt)}</span>
@@ -284,10 +284,10 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
                 {issues.map((i) => (
                   <Row key={i.number} active={sel?.id === i.number} onClick={() => setSel({ kind: "issues", id: i.number })}>
                     <div className="flex items-center gap-2">
-                      <CircleDot className={`size-3.5 ${i.state === "OPEN" ? "text-emerald-400" : "text-violet-300"}`} />
-                      <span className="truncate text-[12.5px] text-slate-200">{i.title}</span>
+                      <CircleDot className={`size-3.5 ${i.state === "OPEN" ? "text-ok" : "text-violet-300"}`} />
+                      <span className="truncate text-body-sm text-slate-200">{i.title}</span>
                     </div>
-                    <div className="mt-0.5 flex flex-wrap gap-1.5 pl-5 text-[10.5px] text-slate-500">
+                    <div className="mt-0.5 flex flex-wrap gap-1.5 pl-5 text-caption text-slate-500">
                       <span>#{i.number}</span>
                       <span>{i.author?.login}</span>
                       {i.labels.map((l) => (
@@ -307,9 +307,9 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
                   <Row key={r.databaseId} active={sel?.id === r.databaseId} onClick={() => setSel({ kind: "actions", id: r.databaseId })}>
                     <div className="flex items-center gap-2">
                       <RunIcon status={r.status} conclusion={r.conclusion} />
-                      <span className="truncate text-[12.5px] text-slate-200">{r.displayTitle}</span>
+                      <span className="truncate text-body-sm text-slate-200">{r.displayTitle}</span>
                     </div>
-                    <div className="mt-0.5 flex flex-wrap gap-1.5 pl-5 text-[10.5px] text-slate-500">
+                    <div className="mt-0.5 flex flex-wrap gap-1.5 pl-5 text-caption text-slate-500">
                       <span>{r.workflowName}</span>
                       <span className="font-mono">{r.headBranch}</span>
                       <span>{r.event}</span>
@@ -329,11 +329,11 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
                       setTab("commits");
                     }}
                   >
-                    <div className="flex items-center gap-2 text-[12.5px] text-slate-200">
+                    <div className="flex items-center gap-2 text-body-sm text-slate-200">
                       <GitBranch className="size-3.5 text-slate-400" />
                       <span className="font-mono">{b.name}</span>
                       {b.protected && <Badge className="bg-amber-500/10 text-amber-300 ring-amber-500/30">protected</Badge>}
-                      <span className="ml-auto font-mono text-[10.5px] text-slate-500">{b.commit.sha.slice(0, 7)}</span>
+                      <span className="ml-auto font-mono text-caption text-slate-500">{b.commit.sha.slice(0, 7)}</span>
                     </div>
                   </Row>
                 ))}
@@ -343,8 +343,8 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
               <List empty="No commits">
                 {commits.map((c) => (
                   <Row key={c.sha}>
-                    <div className="truncate text-[12.5px] text-slate-200">{c.commit.message.split("\n")[0]}</div>
-                    <div className="mt-0.5 flex gap-1.5 text-[10.5px] text-slate-500">
+                    <div className="truncate text-body-sm text-slate-200">{c.commit.message.split("\n")[0]}</div>
+                    <div className="mt-0.5 flex gap-1.5 text-caption text-slate-500">
                       <ExternalLink href={c.html_url} className="font-mono no-underline">
                         {c.sha.slice(0, 7)}
                       </ExternalLink>
@@ -432,7 +432,7 @@ function Thread({ items }: { items: { author: { login: string }; body: string; c
         .filter((c) => c.body?.trim() || c.state)
         .map((c, i) => (
           <div key={i} className="rounded-lg border border-line bg-canvas/60 px-3 py-2">
-            <div className="mb-1 flex gap-2 text-[10.5px] text-slate-500">
+            <div className="mb-1 flex gap-2 text-caption text-slate-500">
               <span className="font-medium text-slate-300">{c.author?.login}</span>
               {c.state && <span>{c.state.toLowerCase().replace("_", " ")}</span>}
               <span>{ts(c.createdAt ?? c.submittedAt ?? new Date().toISOString())}</span>
@@ -470,7 +470,7 @@ function PrDetail({ repo, number, act, localPath, onAskHermes }: DetailProps & {
         <h2 className="text-sm font-semibold text-slate-100">
           {pr.title} <span className="font-normal text-slate-500">#{pr.number}</span>
         </h2>
-        <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
+        <div className="mt-1 flex flex-wrap gap-2 text-label text-slate-500">
           <span>{pr.state.toLowerCase()}</span>
           <span>{pr.author?.login}</span>
           <span className="font-mono">
@@ -508,11 +508,11 @@ function PrDetail({ repo, number, act, localPath, onAskHermes }: DetailProps & {
             {checks.map((c, i) => {
               const st = checkState(c);
               return (
-                <div key={i} className="flex items-center gap-2 text-[11.5px] text-slate-300">
-                  {st === "ok" ? <CheckCircle2 className="size-3.5 text-emerald-400" /> : st === "fail" ? <XCircle className="size-3.5 text-red-400" /> : st === "pending" ? <Loader2 className="size-3.5 animate-spin text-amber-300" /> : <CircleSlash className="size-3.5 text-slate-500" />}
+                <div key={i} className="flex items-center gap-2 text-small text-slate-300">
+                  {st === "ok" ? <CheckCircle2 className="size-3.5 text-ok" /> : st === "fail" ? <XCircle className="size-3.5 text-danger" /> : st === "pending" ? <Loader2 className="size-3.5 animate-spin text-amber-300" /> : <CircleSlash className="size-3.5 text-slate-500" />}
                   <span>{c.name ?? c.context}</span>
                   {(c.detailsUrl || c.targetUrl) && (
-                    <ExternalLink href={c.detailsUrl ?? c.targetUrl} className="ml-auto text-[10.5px]">
+                    <ExternalLink href={c.detailsUrl ?? c.targetUrl} className="ml-auto text-caption">
                       details
                     </ExternalLink>
                   )}
@@ -524,20 +524,20 @@ function PrDetail({ repo, number, act, localPath, onAskHermes }: DetailProps & {
       )}
       <div>
         <h3 className="mb-1.5 text-xs font-semibold text-slate-300">
-          Files ({pr.files.length}) <span className="text-emerald-400/80">+{pr.additions}</span> <span className="text-red-400/80">-{pr.deletions}</span>
+          Files ({pr.files.length}) <span className="text-ok/80">+{pr.additions}</span> <span className="text-danger/80">-{pr.deletions}</span>
         </h3>
-        <div className="max-h-48 overflow-y-auto rounded-lg border border-line font-mono text-[11px]">
+        <div className="max-h-48 overflow-y-auto rounded-lg border border-line font-mono text-label">
           {pr.files.map((f) => (
             <div key={f.path} className="flex gap-2 border-b border-line px-3 py-1 last:border-0">
               <span className="min-w-0 flex-1 truncate text-slate-300">{f.path}</span>
-              <span className="text-emerald-400/80">+{f.additions}</span>
-              <span className="text-red-400/80">-{f.deletions}</span>
+              <span className="text-ok/80">+{f.additions}</span>
+              <span className="text-danger/80">-{f.deletions}</span>
             </div>
           ))}
         </div>
       </div>
       {diff !== null && (
-        <pre className="max-h-[480px] overflow-auto rounded-lg border border-line bg-canvas p-3 font-mono text-[11px] leading-relaxed">
+        <pre className="max-h-[480px] overflow-auto rounded-lg border border-line bg-canvas p-3 font-mono text-label leading-relaxed">
           {diff.split("\n").map((l, i) => (
             <div key={i} className={l.startsWith("+") && !l.startsWith("+++") ? "text-emerald-300" : l.startsWith("-") && !l.startsWith("---") ? "text-red-300" : l.startsWith("@@") ? "text-sky-300" : "text-slate-400"}>
               {l || "\u00a0"}
@@ -611,7 +611,7 @@ function IssueDetail({ repo, number, act, localPath, onAskHermes }: DetailProps 
         <h2 className="text-sm font-semibold text-slate-100">
           {issue.title} <span className="font-normal text-slate-500">#{issue.number}</span>
         </h2>
-        <div className="mt-1 flex gap-2 text-[11px] text-slate-500">
+        <div className="mt-1 flex gap-2 text-label text-slate-500">
           <span>{issue.state.toLowerCase()}</span>
           <span>{issue.author?.login}</span>
           <ExternalLink href={issue.url}>Open on GitHub</ExternalLink>
@@ -671,7 +671,7 @@ function RunDetail({ repo, id, act, localPath, onAskHermes }: DetailProps & { id
         <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-100">
           <RunIcon status={run.status} conclusion={run.conclusion} /> {run.displayTitle}
         </h2>
-        <div className="mt-1 flex gap-2 text-[11px] text-slate-500">
+        <div className="mt-1 flex gap-2 text-label text-slate-500">
           <span>{run.workflowName}</span>
           <span className="font-mono">{run.headBranch}</span>
           <span>{run.conclusion || run.status}</span>
@@ -726,7 +726,7 @@ function RunDetail({ repo, id, act, localPath, onAskHermes }: DetailProps & { id
             </div>
             <div className="mt-1.5 space-y-0.5 pl-5">
               {j.steps.map((s) => (
-                <div key={s.number} className="flex items-center gap-2 text-[11px] text-slate-400">
+                <div key={s.number} className="flex items-center gap-2 text-label text-slate-400">
                   <RunIcon status={s.status} conclusion={s.conclusion} /> {s.name}
                 </div>
               ))}
@@ -734,7 +734,7 @@ function RunDetail({ repo, id, act, localPath, onAskHermes }: DetailProps & { id
           </Card>
         ))}
       </div>
-      {log !== null && <pre className="max-h-[480px] overflow-auto rounded-lg border border-line bg-canvas p-3 font-mono text-[11px] leading-relaxed text-slate-300">{log || "No failed steps produced a log."}</pre>}
+      {log !== null && <pre className="max-h-[480px] overflow-auto rounded-lg border border-line bg-canvas p-3 font-mono text-label leading-relaxed text-slate-300">{log || "No failed steps produced a log."}</pre>}
     </div>
   );
 }
@@ -790,7 +790,7 @@ function CreatePr({ dir, onClose, act }: { dir: string; onClose: () => void; act
       }
     >
       <div className="space-y-3">
-        <p className="text-[11px] text-slate-500">From the current branch of {dir}. Push the branch first.</p>
+        <p className="text-label text-slate-500">From the current branch of {dir}. Push the branch first.</p>
         <Field label="Title">
           <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="feat: ..." className={inputClass} />
         </Field>

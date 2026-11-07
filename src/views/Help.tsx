@@ -46,8 +46,8 @@ export function Help({ doc }: { doc?: { path: string; nonce: number } | null }) 
       <div className="flex items-center gap-3 border-b border-line px-4 py-3">
         <BookOpen className="size-4 text-emerald-300" />
         <div className="text-sm font-semibold text-slate-100">Help</div>
-        <span className="text-[11px] text-slate-500">{docs.length} documents from docs/</span>
-        <div className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">
+        <span className="text-label text-slate-500">{docs.length} documents from docs/</span>
+        <div className="ml-auto flex items-center gap-2 text-label text-slate-500">
           <Lightbulb className="size-3.5" aria-hidden />
           <label className="inline-flex cursor-pointer items-center gap-1.5" title="Short hints that appear when they apply to what you are doing">
             <input type="checkbox" checked={!guides.off} onChange={(e) => guides.setOff(!e.target.checked)} className="size-3 accent-emerald-500" />
@@ -82,12 +82,12 @@ export function Help({ doc }: { doc?: { path: string; nonce: number } | null }) 
             <li key={d.path}>
               <button
                 onClick={() => setSelected(d.path)}
-                className={`block w-full px-4 py-2 text-left text-[12.5px] ${
+                className={`block w-full px-4 py-2 text-left text-body-sm ${
                   current?.path === d.path ? "bg-emerald-500/10 text-emerald-200" : "text-slate-300 hover:bg-white/[0.03]"
                 }`}
               >
                 {d.title}
-                <span className="block font-mono text-[10px] text-slate-600">{d.path}</span>
+                <span className="block font-mono text-2xs text-slate-600">{d.path}</span>
               </button>
             </li>
           ))}
