@@ -238,6 +238,21 @@ Depends on: v0.5 capability metadata, and the cost and outcome data from v0.4.
   kept as a `[ran tool: name]` line. A resumed fork runs on the active model.
 - Verified by `tests/live_fork.rs` against a real session (fork, read back, compare, delete).
 
+## v0.9.1: contextual guides (built, not yet released)
+
+- **One tip at a time, from your own state:** a chat nearing its context limit or already
+  compacted, a reply running past a minute, a new chat about to start in the home folder, a chat
+  long enough to fork, an empty Missions board, queued missions with Automations off, a mission
+  waiting for review, an empty memory index. Each tip names the action and offers it as a button.
+- **Gone when handled:** Got it, or doing what the tip suggests, retires it for good (`studio.db`
+  kv `guides.dismissed`). Help has a Tips switch and Show tips again, which also restores the
+  first-run guide.
+- **Read more opens the right doc:** tips link to `docs/CHAT.md` and `docs/AUTOMATIONS.md` in Help.
+- **Help works in an installed build:** `docs/*.md` ships as a Tauri resource and is resolved from
+  the resource folder when no checkout is present.
+- Rules are pure (`src/lib/guides.ts`) and tested in CI with `npm run test:guides`. The full list is
+  in [`GUIDES.md`](GUIDES.md).
+
 ## Ideas worth considering
 
 - Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.

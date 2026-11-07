@@ -273,6 +273,16 @@ Studio copies built from source (running out of `target\release`) are not replac
 
 `Ctrl+K` opens the command palette: every screen, new terminals, Hermes diagnostics, update checks and more. `Alt+1` to `Alt+9` switch screens, `` Ctrl+` `` toggles the terminal, F2 renames in the chat tree.
 
+## Help and tips
+
+Help renders the Markdown in `docs/`, searchable by title and body. The docs ship inside the
+installer as a Tauri resource, so Help works in an installed build as well as from a checkout.
+
+Tips appear one at a time when your own state makes them relevant: a chat nearly out of context, a
+reply running long, missions queued with Automations off, a mission waiting for review. Each one
+offers the action it describes and disappears once handled. Help has a Tips switch and a Show tips
+again button. The full list is in [`docs/GUIDES.md`](docs/GUIDES.md).
+
 ## The native MCP server
 
 The desktop binary doubles as the MCP server. No GUI starts in this mode, and stdout carries only JSON-RPC.
@@ -368,6 +378,7 @@ templates/CONSTITUTION.md Default constitution bundled into the binary
 ```bash
 npm run build                 # tsc + vite
 npm run check:dashes          # repository-wide em-dash / en-dash gate
+npm run test:guides           # contextual tip rules (node test runner)
 cd src-tauri
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
