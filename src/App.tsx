@@ -35,6 +35,7 @@ import { CommandBar } from "./components/CommandBar";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { StatusBar } from "./components/StatusBar";
 import { Memory } from "./views/Memory";
+import { Onboarding } from "./components/Onboarding";
 import { Help } from "./views/Help";
 import { Missions } from "./views/Missions";
 import { NavRail, type RailGroup, type RailView } from "./components/NavRail";
@@ -382,6 +383,7 @@ function Studio() {
           }}
         />
       )}
+      <Onboarding onGo={(v) => go(v as View)} />
       <div className="flex h-full">
         <NavRail groups={railGroups} view={view as RailView} onGo={(v) => go(v as View)} />
         <main className="flex min-w-0 flex-1 flex-col">
