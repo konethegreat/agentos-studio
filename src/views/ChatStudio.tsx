@@ -468,7 +468,7 @@ export function ChatStudio({
         onClick={() => void forkAt(index)}
         title={label}
         aria-label={label}
-        className="invisible grid size-6 shrink-0 place-items-center rounded-md text-slate-500 ring-1 ring-line hover:bg-white/5 hover:text-slate-200 group-hover:visible focus-visible:visible"
+        className="invisible grid size-6 shrink-0 place-items-center rounded-md bg-card text-slate-500 ring-1 ring-line hover:bg-white/5 hover:text-slate-200 group-hover:visible focus-visible:visible"
       >
         <GitFork className="size-3.5" />
       </button>
@@ -699,7 +699,7 @@ export function ChatStudio({
               if (it.kind === "assistant")
                 return (
                   <div key={it.id} className="group relative my-3">
-                    {!it.streaming && <div className="absolute right-0 top-0 rounded-md bg-card">{forkButton(index, "Fork here: new session with the conversation up to and including this reply")}</div>}
+                    {!it.streaming && <div className="absolute right-0 top-0">{forkButton(index, "Fork here: new session with the conversation up to and including this reply")}</div>}
                     {it.thinking && (
                       <details className="mb-2 rounded-lg bg-white/[0.02] px-3 py-1.5 text-xs text-slate-500 ring-1 ring-white/5">
                         <summary className="cursor-pointer select-none">
