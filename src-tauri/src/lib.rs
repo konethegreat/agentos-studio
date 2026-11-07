@@ -33,6 +33,7 @@ pub mod single;
 pub mod skills;
 pub mod store;
 pub mod updates;
+pub mod usage;
 pub mod vault;
 pub mod workdir;
 
@@ -268,6 +269,8 @@ pub fn run_gui() {
             commands::tool_policies,
             commands::set_tool_policy,
             commands::hub_tools,
+            commands::session_usage,
+            commands::provider_credits,
             commands::provider_connections,
             commands::save_provider_key,
             commands::notion_publish,

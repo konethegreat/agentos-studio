@@ -563,6 +563,21 @@ export const api = {
 
   workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
   missions: () => invoke<Mission[]>("list_missions", { limit: 100 }),
+  sessionUsage: (sessionId: string) =>
+    invoke<{
+      model: string | null;
+      input_tokens: number;
+      output_tokens: number;
+      cost_usd: number;
+      messages: number;
+      compacted_messages: number;
+      context_limit: number | null;
+      context_used_pct: number | null;
+      context_estimated: boolean;
+    } | null>("session_usage", { sessionId }),
+  providerCredits: () =>
+    invoke<{ provider: string; kind: string; remaining_usd: number | null; used_usd: number | null; note: string }[]>("provider_credits"),
+
   providerConnections: () => invoke<{ id: string; label: string; connected: boolean; detail: string; needs: string; env_var: string | null }[]>("provider_connections"),
   saveProviderKey: (provider: string, key: string) =>
     invoke<string>("save_provider_key", { provider, key }),
