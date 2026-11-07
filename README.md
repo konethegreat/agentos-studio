@@ -273,6 +273,12 @@ Studio copies built from source (running out of `target\release`) are not replac
 
 `Ctrl+K` opens the command palette: every screen, new terminals, Hermes diagnostics, update checks and more. `Alt+1` to `Alt+9` switch screens, `` Ctrl+` `` toggles the terminal, F2 renames in the chat tree.
 
+## Themes
+
+Dark, light, or follow Windows, from the button in the status bar. Colours, type sizes and motion
+come from semantic tokens in `src/index.css`; [`docs/DESIGN.md`](docs/DESIGN.md) lists them and the
+rules for new screens.
+
 ## Help and tips
 
 Help renders the Markdown in `docs/`, searchable by title and body. The docs ship inside the

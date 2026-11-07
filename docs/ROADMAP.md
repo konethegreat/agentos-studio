@@ -253,6 +253,19 @@ Depends on: v0.5 capability metadata, and the cost and outcome data from v0.4.
 - Rules are pure (`src/lib/guides.ts`) and tested in CI with `npm run test:guides`. The full list is
   in [`GUIDES.md`](GUIDES.md).
 
+## v0.9.1: design tokens and a light theme (built, not yet released)
+
+- **Semantic tokens** for surfaces, text, status, accent, type scale and motion, in one file. Every
+  hex value and pixel font size in the components was replaced by a token, 1:1, so dark is unchanged.
+- **Light theme**, with Follow Windows, Dark and Light in the status bar, applied before first paint.
+  The neutral ramp and pale accent shades are theme aware, with light values matched to the dark
+  contrast. Code blocks and the terminal follow the theme.
+- **Focus and motion:** a visible keyboard focus ring everywhere, and reduced-motion support.
+- **Audit:** all fourteen screens captured in both themes; dark pixel-diffed against `main`. See
+  [`DESIGN.md`](DESIGN.md).
+
+This completes the design-system bullet listed under v0.4.1, which was never built at the time.
+
 ## Ideas worth considering
 
 - Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.
