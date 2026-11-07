@@ -157,7 +157,7 @@ The home screen. Pick a working directory (any of your repositories, or any fold
 - **Test and Inspect** opens every tool with its JSON schema.
 - **Add from Catalog** installs AgentOS-Hub (Rust), Notion, GitHub, Filesystem, Brave Search, Postgres, SQLite or Playwright, optionally into all four agents at once. The GitHub token can be filled from your `gh` login.
 - Hermes and Claude Code are changed through their CLIs (`hermes mcp add/remove`, `claude mcp add/remove`). Qoder and Antigravity JSON files are merged in place with a one-time backup and their original line endings.
-- If any agent still runs `agentos-hub` from the old Python server, one button points all four at this binary.
+- **Update agentos-hub in every agent** copies this app's exe to `%LOCALAPPDATA%\AgentOS Hub\<version>\` and points Hermes, Claude Code, Qoder and Antigravity at that copy. It appears whenever an agent runs the old Python server or a hub from another version. The app's own install folder is never registered, so updates can always replace it; sessions already open keep the hub they started with.
 
 ## Startup and diagnostics
 
@@ -263,7 +263,7 @@ Every update is backed up first, under `%APPDATA%\agentos-studio\backups` (or th
 | Claude Code | The installed version is recorded | `claude update` | `claude install <version> --force` |
 | Studio | The installed version is recorded | Downloads the release installer, verifies its SHA-256 against GitHub's digest, runs it | Installs the previous release the same way |
 
-Studio copies built from source (running out of `target\release`) are not replaced by an installer, because agents point their `agentos-hub` registration at that path; the card says to pull and rebuild instead.
+Studio copies built from source (running out of `target\release`) are not replaced by an installer; the card says to pull and rebuild instead. Agents do not run the app exe itself: their `agentos-hub` registration points at a versioned copy (see MCP and Providers), so an installed app updates in place.
 
 ## Safety
 
