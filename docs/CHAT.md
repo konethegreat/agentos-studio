@@ -51,6 +51,20 @@ Continue in terminal opens the same conversation with `hermes --resume` (or `cla
 the terminal panel. Reasoning streams live there and interactive prompts can be answered directly.
 The chat in this view keeps working too.
 
+## Plan first
+
+**Plan first** (Hermes chats, above the composer) makes the next message a planning turn. Studio
+sends it as Hermes' `/plan`, limited to the chat's folder: Hermes reads what it needs and writes a
+Markdown plan to `.hermes/plans/` in that folder, and changes nothing else. The plan appears above
+the composer:
+
+- **Approve and run** sends one turn that implements that plan file step by step.
+- **Revise** puts "Revise the plan:" in the composer; your feedback produces a new plan.
+- **Dismiss** keeps the plan file and does nothing.
+
+The toggle stays on until you turn it off, so every request goes through a plan. Messages that start
+with `/` are never wrapped.
+
 ## Undo last turn (checkpoints)
 
 New Hermes chats are created with `--checkpoints`: before a tool writes or deletes files, Hermes
