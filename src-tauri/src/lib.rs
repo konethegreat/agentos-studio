@@ -28,6 +28,7 @@ pub mod procs;
 pub mod projects;
 pub mod pty;
 pub mod review_agent;
+pub mod router;
 pub mod settings;
 pub mod single;
 pub mod skills;
@@ -267,6 +268,7 @@ pub fn run_gui() {
             commands::review_with_agent,
             commands::merge_mission,
             commands::model_catalog,
+            commands::router_suggestions,
             commands::tool_policies,
             commands::set_tool_policy,
             commands::hub_tools,

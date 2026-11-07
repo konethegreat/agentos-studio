@@ -590,6 +590,9 @@ export const api = {
     invoke<void>("set_tool_policy", { server, tool, policy }),
   hubTools: () => invoke<string[]>("hub_tools"),
 
+  routerSuggestions: () =>
+    invoke<{ role: string; provider: string; model: string; attempts: number; approvals: number; score: number; avg_cost_usd: number; reason: string }[]>("router_suggestions"),
+
   modelCatalog: () =>
     invoke<{
       providers: { id: string; label: string; models: string[]; active: boolean }[];

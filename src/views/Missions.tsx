@@ -25,6 +25,7 @@ export function Missions({ repos }: { repos: string[] }) {
   const [busy, setBusy] = useState(false);
   const [auto, setAuto] = useState<{ enabled: boolean; max_concurrent: number } | null>(null);
   const [allowMerge, setAllowMerge] = useState(false);
+  const [router, setRouter] = useState<{ role: string; provider: string; model: string; score: number; reason: string }[]>([]);
   const [providers, setProviders] = useState<{ id: string; label: string; models: string[]; active: boolean }[]>([]);
   const [form, setForm] = useState({
     repo: repos[0] ?? "",
@@ -49,6 +50,7 @@ export function Missions({ repos }: { repos: string[] }) {
     void load();
     void api.automationStatus().then(setAuto).catch(() => undefined);
     void api.modelCatalog().then((c) => setProviders(c.providers)).catch(() => undefined);
+    void api.routerSuggestions().then(setRouter).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -209,6 +211,16 @@ export function Missions({ repos }: { repos: string[] }) {
           <Plus className="size-3.5" /> New mission
         </button>
       </div>
+
+      {router.length > 0 && (
+        <div className="px-4 pb-2 text-[11px] text-slate-500">
+          <span className="text-slate-400">Router (shadow, changes nothing):</span>{" "}
+          {router[0].role} would use <span className="font-mono text-slate-300">{router[0].provider}</span>
+          {" / "}
+          <span className="font-mono text-slate-300">{router[0].model}</span> at score {router[0].score}.{" "}
+          {router[0].reason}
+        </div>
+      )}
 
       {open && (
         <div className="grid grid-cols-1 gap-2 px-4 pb-3 md:grid-cols-2">
