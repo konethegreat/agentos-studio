@@ -312,7 +312,7 @@ function McpHub({ onStatusChanged }: { onStatusChanged: () => void }) {
     }
   }
 
-  const needsCutover = servers?.some((s) => s.is_agentos_hub && (s.legacy_python || s.agents.length < 4 || s.agents.some((a) => !a.matches_primary))) ?? false;
+  const needsCutover = servers?.some((s) => s.is_agentos_hub && (s.hub_outdated || s.legacy_python || s.agents.length < 4 || s.agents.some((a) => !a.matches_primary))) ?? false;
   const hubMissing = servers !== null && !servers.some((s) => s.is_agentos_hub);
 
   return (
@@ -335,7 +335,7 @@ function McpHub({ onStatusChanged }: { onStatusChanged: () => void }) {
             icon={<Wand2 className="size-4 text-emerald-300" />}
             className="ring-emerald-500/40"
           >
-            Point agentos-hub at this Rust binary everywhere
+            {hubMissing ? "Register agentos-hub in every agent" : "Update agentos-hub in every agent to this version"}
           </Button>
         )}
       </div>
