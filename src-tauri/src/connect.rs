@@ -14,7 +14,6 @@ use std::process::Command;
 use anyhow::{bail, Result};
 use serde::Serialize;
 
-use crate::models;
 use crate::procs;
 
 #[derive(Debug, Clone, Serialize)]
@@ -25,6 +24,11 @@ pub struct Connection {
     pub detail: String,
     pub needs: String,
     pub env_var: Option<String>,
+    /// Setup component that connects it (`install_or_repair_component`), with its button label.
+    pub setup: Option<String>,
+    pub setup_label: Option<String>,
+    /// Where to get a key or an account.
+    pub link: Option<String>,
 }
 
 fn hermes_env() -> PathBuf {
@@ -105,23 +109,42 @@ fn claude_connected() -> (bool, String) {
     }
 }
 
+/// `hermes plugins show <name>` prints `Status: enabled` for a plugin Hermes will load. A folder on
+/// disk is not enough: Hermes disables a plugin it cannot read, and the provider then fails.
+pub fn plugin_enabled_in(show_output: &str) -> bool {
+    show_output
+        .lines()
+        .any(|l| l.trim().eq_ignore_ascii_case("status: enabled"))
+}
+
 fn antigravity_connected() -> (bool, String) {
-    let plugin = dirs::data_local_dir()
-        .unwrap_or_else(crate::settings::home)
-        .join("hermes")
-        .join("plugins")
-        .join("antigravity-oauth");
-    let configured = models::catalog()
-        .active_provider
-        .as_deref()
-        .map(|p| p.contains("antigravity"))
-        .unwrap_or(false);
-    if plugin.exists() || configured {
-        (true, "Antigravity provider is installed in Hermes".into())
+    let out = procs::run("hermes", &["plugins", "show", "antigravity-oauth"]);
+    let text = out
+        .as_ref()
+        .map(|o| {
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            )
+        })
+        .unwrap_or_default();
+    let installed = out.as_ref().is_some_and(|o| o.status.success());
+    if installed && plugin_enabled_in(&text) {
+        (
+            true,
+            "The antigravity-oauth plugin is enabled in Hermes".into(),
+        )
+    } else if installed || text.contains("Access is denied") {
+        (
+            false,
+            "The antigravity-oauth plugin is installed but Hermes has disabled it. Run `hermes plugins show antigravity-oauth` for the reason".into(),
+        )
     } else {
         (
             false,
-            "Install the antigravity-oauth Hermes plugin, then sign in".into(),
+            "Optional. Needs the community antigravity-oauth plugin and your Antigravity login"
+                .into(),
         )
     }
 }
@@ -138,14 +161,35 @@ pub fn status() -> Vec<Connection> {
             detail: claude_detail,
             needs: "Your Claude Pro or Max login, through the Claude CLI".into(),
             env_var: None,
+            setup: Some(
+                if procs::find("claude").is_some() {
+                    "claude-auth"
+                } else {
+                    "claude-cli"
+                }
+                .into(),
+            ),
+            setup_label: Some(
+                if procs::find("claude").is_some() {
+                    "Sign in"
+                } else {
+                    "Install Claude Code"
+                }
+                .into(),
+            ),
+            link: Some("https://claude.ai/upgrade".into()),
         },
         Connection {
             id: "antigravity-oauth".into(),
             label: "Antigravity (Argon)".into(),
             connected: anti,
-            detail: anti_detail,
-            needs: "The antigravity-oauth Hermes plugin and your Antigravity login".into(),
+            detail: anti_detail.clone(),
+            needs: anti_detail,
             env_var: None,
+            setup: (!anti && procs::find("hermes").is_some()).then(|| "antigravity-plugin".into()),
+            setup_label: (!anti && procs::find("hermes").is_some())
+                .then(|| "Install plugin and sign in".into()),
+            link: Some(crate::bootstrapper::ANTIGRAVITY_PLUGIN_URL.into()),
         },
         Connection {
             id: "openrouter".into(),
@@ -158,6 +202,9 @@ pub fn status() -> Vec<Connection> {
             },
             needs: "An OpenRouter API key, metered per token".into(),
             env_var: Some("OPENROUTER_API_KEY".into()),
+            setup: None,
+            setup_label: None,
+            link: Some("https://openrouter.ai/keys".into()),
         },
     ]
 }
@@ -186,6 +233,19 @@ pub fn save_key(provider: &str, key: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_status_needs_enabled_not_just_present() {
+        assert!(plugin_enabled_in(
+            "antigravity-oauth v0.4\nStatus: enabled\n"
+        ));
+        assert!(!plugin_enabled_in(
+            "antigravity-oauth v0.4\nStatus: disabled\n"
+        ));
+        assert!(!plugin_enabled_in(
+            "Skipping unreadable plugin directory antigravity-oauth"
+        ));
+    }
 
     #[test]
     fn upsert_replaces_without_duplicating_or_touching_others() {

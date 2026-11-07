@@ -25,8 +25,16 @@ pub const GI_LINES: [&str; 5] = [
 ];
 const DISABLED_PREFIX: &str = "<!-- agentos:disabled-laws";
 
-/// Bundled default used when the vault has no CONSTITUTION.md yet.
+/// Bundled default used when the vault has no CONSTITUTION.md yet. It is generic: `{{VAULT}}` is
+/// replaced with the user's own vault by `default_for`, so no machine-specific path ships.
 pub const DEFAULT_CONSTITUTION: &str = include_str!("../../templates/CONSTITUTION.md");
+
+/// The bundled default for this vault, LF line endings.
+pub fn default_for(vault: &Path) -> String {
+    DEFAULT_CONSTITUTION
+        .replace("\r\n", "\n")
+        .replace("{{VAULT}}", &vault.display().to_string())
+}
 
 /// The three agent context files every repository receives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,7 +93,7 @@ pub fn constitution_path(vault: &Path) -> PathBuf {
 pub fn load_raw(vault: &Path) -> String {
     fs::read_to_string(constitution_path(vault))
         .map(|s| s.replace("\r\n", "\n"))
-        .unwrap_or_else(|_| DEFAULT_CONSTITUTION.replace("\r\n", "\n"))
+        .unwrap_or_else(|_| default_for(vault))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -364,6 +372,19 @@ pub fn undash(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_default_is_generic_and_uses_the_users_vault() {
+        for personal in ["Konet", "04_Agent_Engine", "DISK_BUDGET", "fleet_deploy"] {
+            assert!(
+                !DEFAULT_CONSTITUTION.contains(personal),
+                "{personal} in the bundled default"
+            );
+        }
+        let text = default_for(Path::new("D:/Notes/My Vault"));
+        assert!(text.contains("vault: `D:/Notes/My Vault`"));
+        assert!(!text.contains("{{VAULT}}"));
+    }
 
     const RAW: &str = "## AgentOS Constitution v2\n\nIntro.\n\n### Law 1 - Full autonomy\n- one\n\n### Law 2 - Anti-slop\n- two\n\n### Security floor (never overridden by Law 1)\n- floor\n";
 

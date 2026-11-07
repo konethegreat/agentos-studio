@@ -62,8 +62,12 @@ export function StatusBar({
   const [offline, setOffline] = useState<{ online: boolean; local_models: string[]; note: string } | null>(null);
 
   useEffect(() => {
-    void api.studioUpdateCheck().then(setAvailable).catch(() => undefined);
+    const check = () => void api.studioUpdateCheck().then(setAvailable).catch(() => undefined);
+    check();
     void api.offlineStatus().then(setOffline).catch(() => undefined);
+    // An app left open for days still hears about a release: check again every six hours.
+    const t = window.setInterval(check, 6 * 60 * 60 * 1000);
+    return () => window.clearInterval(t);
   }, []);
 
   async function install() {

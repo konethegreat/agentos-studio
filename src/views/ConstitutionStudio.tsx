@@ -21,7 +21,8 @@ export function ConstitutionStudio({ memoryTick }: { memoryTick: number }) {
   const [laws, setLaws] = useState<Law[]>([]);
   const [path, setPath] = useState("");
   const [tab, setTab] = useState<"constitution" | "system">("constitution");
-  const [includeRepos, setIncludeRepos] = useState(true);
+  // Off by default: writing rule files into every repository on the machine is a deliberate choice.
+  const [includeRepos, setIncludeRepos] = useState(false);
   const [saving, setSaving] = useState(false);
   const [report, setReport] = useState<BroadcastReport | null>(null);
   const [dirty, setDirty] = useState(false);

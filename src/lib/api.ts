@@ -52,6 +52,8 @@ export interface Component {
   ok: boolean;
   detail: string;
   action: string;
+  /** Not needed to use the app; never counts against Healthy. */
+  optional: boolean;
 }
 
 export interface Pillar {
@@ -596,7 +598,8 @@ export const api = {
   providerCredits: () =>
     invoke<{ provider: string; kind: string; remaining_usd: number | null; used_usd: number | null; note: string }[]>("provider_credits"),
 
-  providerConnections: () => invoke<{ id: string; label: string; connected: boolean; detail: string; needs: string; env_var: string | null }[]>("provider_connections"),
+  providerConnections: () =>
+    invoke<{ id: string; label: string; connected: boolean; detail: string; needs: string; env_var: string | null; setup: string | null; setup_label: string | null; link: string | null }[]>("provider_connections"),
   saveProviderKey: (provider: string, key: string) =>
     invoke<string>("save_provider_key", { provider, key }),
 

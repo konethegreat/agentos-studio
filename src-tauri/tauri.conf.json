@@ -41,7 +41,11 @@
     "longDescription": "AgentOS Studio is the native control plane for multi-agent engineering: Hermes, Claude Code, Qoder and Antigravity in one window, with a shared brain, real terminals, projects, skills and a Rust MCP bus. Built by Kone Tshivhinda at K-ONE IT SOLUTIONS.",
     "createUpdaterArtifacts": true,
     "resources": {
-      "../docs/*.md": "docs/"
+      "../docs/GETTING-STARTED.md": "docs/GETTING-STARTED.md",
+      "../docs/CHAT.md": "docs/CHAT.md",
+      "../docs/GUIDES.md": "docs/GUIDES.md",
+      "../docs/AUTOMATIONS.md": "docs/AUTOMATIONS.md",
+      "../docs/ROUTING.md": "docs/ROUTING.md"
     }
   },
   "plugins": {

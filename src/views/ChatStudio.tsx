@@ -16,6 +16,7 @@ import { Modal } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { Guide, useGuides, useReportGuides } from "../components/Guides";
 import { chatGuides } from "../lib/guides";
+import { goTo } from "../lib/nav";
 
 type Backend = "hermes" | "claude-code";
 
@@ -671,6 +672,14 @@ export function ChatStudio({
                   <Brain className="size-6 text-emerald-300" />
                 </div>
                 <h2 className="text-lg font-semibold text-slate-100">What should the fleet do?</h2>
+                {(backend === "hermes" ? hermes && !hermes.installed : hermes && !hermes.claude_path) && (
+                  <div className="mx-auto mt-3 flex max-w-md items-center justify-center gap-3 rounded-xl bg-amber-500/10 px-4 py-2.5 text-small text-amber-200 ring-1 ring-amber-500/25">
+                    {backend === "hermes" ? "Hermes is not installed yet." : "Claude Code is not installed yet."}
+                    <button onClick={() => goTo("setup")} className="font-medium text-amber-100 underline-offset-2 hover:underline">
+                      Open Setup
+                    </button>
+                  </div>
+                )}
                 <p className="mt-1 text-xs text-slate-500">
                   {backend === "hermes" ? "Hermes" : "Claude Code"} works inside <span className="text-slate-300">{basename(cwd) || cwd}</span> with every MCP server you have connected.
                 </p>

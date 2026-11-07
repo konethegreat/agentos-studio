@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
+import { goTo } from "../lib/nav";
 import { Markdown } from "../components/Markdown";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card, ExternalLink, Field, Modal, inputClass } from "../components/ui";
@@ -152,7 +153,18 @@ export function GitHubView({ repos, onAskHermes }: { repos: RepoInfo[]; onAskHer
   const shown = all.filter((r) => !filter || r.nameWithOwner.toLowerCase().includes(filter.toLowerCase()));
 
   if (auth && !auth.installed)
-    return <Centered title="GitHub CLI not installed" hint="Install gh from Setup and Integrations, then come back." />;
+    return (
+      <Centered title="GitHub CLI not installed" hint="Studio reads GitHub through the GitHub CLI (gh). Setup installs it and signs you in.">
+        <div className="mt-4 flex justify-center gap-2">
+          <Button variant="primary" onClick={() => goTo("setup")}>
+            Open Setup
+          </Button>
+          <Button icon={<RefreshCw className="size-4" />} onClick={() => void loadAuth()}>
+            Check again
+          </Button>
+        </div>
+      </Centered>
+    );
   if (auth && !auth.logged_in)
     return (
       <Centered title="Sign in to GitHub" hint="Studio uses your gh login. Your token stays in gh's own keyring.">
