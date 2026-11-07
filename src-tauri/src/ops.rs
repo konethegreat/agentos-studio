@@ -797,3 +797,13 @@ pub async fn folder_models() -> CmdResult<Vec<FolderModel>> {
 pub async fn set_folder_models(entries: Vec<FolderModel>) -> CmdResult<()> {
     blocking(move || model_layer::set_folder_models(&entries)).await
 }
+
+#[tauri::command]
+pub async fn missions_parallel_per_repo() -> CmdResult<usize> {
+    blocking(|| Ok(crate::kanban::parallel_per_repo())).await
+}
+
+#[tauri::command]
+pub async fn set_missions_parallel_per_repo(n: usize) -> CmdResult<()> {
+    blocking(move || crate::kanban::set_parallel_per_repo(n)).await
+}

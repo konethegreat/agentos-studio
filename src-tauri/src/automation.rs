@@ -46,9 +46,26 @@ pub fn set_max_concurrent(n: usize) {
     kv_set(KV_MAX, &n.clamp(1, 12).to_string());
 }
 
-/// Which queued missions may start now: never two in the same repository, never past the cap.
-pub fn startable(queued: &[&Mission], running: &[&Mission], max: usize) -> Vec<String> {
-    let mut busy: Vec<String> = running.iter().map(|m| m.repo.to_lowercase()).collect();
+/// Which queued missions may start now, never past the global cap. Per repository: a mission that
+/// shares the checkout (anything but Hermes, or Hermes with `hermes_per_repo` 1) runs alone; Hermes
+/// missions on worktrees may run up to `hermes_per_repo` side by side. Pure.
+pub fn startable(
+    queued: &[&Mission],
+    running: &[&Mission],
+    max: usize,
+    hermes_per_repo: usize,
+) -> Vec<String> {
+    let parallel = hermes_per_repo.max(1);
+    // (repo, is a parallel-safe Hermes worktree mission)
+    let mut busy: Vec<(String, bool)> = running
+        .iter()
+        .map(|m| {
+            (
+                m.repo.to_lowercase(),
+                parallel > 1 && missions::uses_kanban(m),
+            )
+        })
+        .collect();
     let mut room = max.saturating_sub(running.len());
     let mut out = Vec::new();
     for m in queued {
@@ -56,10 +73,21 @@ pub fn startable(queued: &[&Mission], running: &[&Mission], max: usize) -> Vec<S
             break;
         }
         let repo = m.repo.to_lowercase();
-        if busy.contains(&repo) {
+        let here: Vec<bool> = busy
+            .iter()
+            .filter(|(r, _)| *r == repo)
+            .map(|(_, p)| *p)
+            .collect();
+        let safe = parallel > 1 && missions::uses_kanban(m);
+        let ok = if here.is_empty() {
+            true
+        } else {
+            safe && here.iter().all(|p| *p) && here.len() < parallel
+        };
+        if !ok {
             continue;
         }
-        busy.push(repo);
+        busy.push((repo, safe));
         out.push(m.id.clone());
         room -= 1;
     }
@@ -128,7 +156,12 @@ pub fn tick(v: &Vault) -> TickReport {
     // 2. Start what can start.
     if report.enabled {
         let queued: Vec<&Mission> = all.iter().filter(|m| m.status == "queued").collect();
-        for id in startable(&queued, &running, report.max_concurrent) {
+        for id in startable(
+            &queued,
+            &running,
+            report.max_concurrent,
+            crate::kanban::parallel_per_repo(),
+        ) {
             match missions::start(v, &id) {
                 Ok(_) => report.dispatched.push(id),
                 Err(e) => report.error = Some(e.to_string()),
@@ -174,7 +207,14 @@ fn advance_kanban(m: &Mission, task: &str) -> anyhow::Result<bool> {
             if let Some(url) = missions::pull_url(&summaries) {
                 missions::set_pr(&m.id, &url)?;
             }
-            if let Some(dir) = crate::review_agent::project_dir(&m.repo).filter(|d| d.is_dir()) {
+            // Verify where the work was done: the task's worktree when it had one.
+            let dir = view
+                .workspace_path
+                .as_deref()
+                .map(std::path::PathBuf::from)
+                .filter(|d| d.is_dir())
+                .or_else(|| crate::review_agent::project_dir(&m.repo).filter(|d| d.is_dir()));
+            if let Some(dir) = dir {
                 missions::set_verify(&m.id, &kanban::verify(&dir))?;
             }
             missions::submit_for_review(&m.id, spent)?;
@@ -272,9 +312,53 @@ mod tests {
         }];
         let queued: Vec<&Mission> = q.iter().collect();
         assert_eq!(
-            startable(&queued, &[], 5),
+            startable(&queued, &[], 5, 1),
             vec!["M-1"],
             "one per repository, any agent"
+        );
+    }
+
+    #[test]
+    fn hermes_worktree_missions_share_a_repository_others_never_do() {
+        let cc = |id: &str, repo: &str, status: &str| {
+            let mut x = m(id, repo, status);
+            x.agent = "claude-code".into();
+            x
+        };
+        let q = [
+            m("M-1", "a", "queued"),
+            m("M-2", "a", "queued"),
+            m("M-3", "a", "queued"),
+        ];
+        let queued: Vec<&Mission> = q.iter().collect();
+        assert_eq!(
+            startable(&queued, &[], 9, 2),
+            vec!["M-1", "M-2"],
+            "two worktrees in a"
+        );
+        assert_eq!(
+            startable(&queued, &[], 9, 1),
+            vec!["M-1"],
+            "parallel off: one per repo"
+        );
+        let busy = [cc("M-9", "a", "running")];
+        let r: Vec<&Mission> = busy.iter().collect();
+        assert!(
+            startable(&queued, &r, 9, 3).is_empty(),
+            "never beside a shared checkout"
+        );
+        let q2 = [cc("M-4", "a", "queued")];
+        let queued2: Vec<&Mission> = q2.iter().collect();
+        let hr = [m("M-8", "a", "running")];
+        let r2: Vec<&Mission> = hr.iter().collect();
+        assert!(
+            startable(&queued2, &r2, 9, 3).is_empty(),
+            "a shared checkout waits for worktrees"
+        );
+        assert_eq!(
+            startable(&queued, &r2, 2, 3),
+            vec!["M-1"],
+            "global cap still applies"
         );
     }
 
@@ -297,15 +381,15 @@ mod tests {
             m("M-4", "c", "queued"),
         ];
         let queued: Vec<&Mission> = q.iter().collect();
-        let started = startable(&queued, &[], 3);
+        let started = startable(&queued, &[], 3, 1);
         assert_eq!(started, vec!["M-1", "M-3", "M-4"]);
 
         let running = [m("M-9", "b", "running")];
         let r: Vec<&Mission> = running.iter().collect();
-        let started = startable(&queued, &r, 2);
+        let started = startable(&queued, &r, 2, 1);
         assert_eq!(started, vec!["M-1"], "b is busy and the cap is 2");
 
-        assert!(startable(&queued, &r, 1).is_empty());
+        assert!(startable(&queued, &r, 1, 1).is_empty());
     }
 
     #[test]

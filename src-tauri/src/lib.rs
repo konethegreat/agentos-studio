@@ -267,6 +267,8 @@ pub fn run_gui() {
             ops::hermes_set_active_moa,
             ops::folder_models,
             ops::set_folder_models,
+            ops::missions_parallel_per_repo,
+            ops::set_missions_parallel_per_repo,
             commands::boot_snapshot,
             commands::boot_run,
             commands::boot_logs_dir,
