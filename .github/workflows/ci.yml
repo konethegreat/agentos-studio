@@ -29,6 +29,9 @@ jobs:
       - name: Frontend build (tsc + vite)
         run: npm run build
 
+      - name: Guide rules (node test runner)
+        run: npm run test:guides
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
