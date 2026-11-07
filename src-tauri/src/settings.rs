@@ -25,6 +25,11 @@ fn settings_file() -> PathBuf {
         .join("settings.json")
 }
 
+/// The configured vault, resolved without an AppState. Used by background work and tests.
+pub fn vault_path() -> PathBuf {
+    Settings::load().vault_path()
+}
+
 impl Settings {
     pub fn load() -> Settings {
         fs::read_to_string(settings_file())

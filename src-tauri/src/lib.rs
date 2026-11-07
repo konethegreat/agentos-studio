@@ -17,6 +17,7 @@ pub mod mcp_stdio;
 pub mod memory_index;
 pub mod memory_ledger;
 pub mod missions;
+pub mod notion;
 pub mod ops;
 pub mod org;
 pub mod permissions;
@@ -260,6 +261,9 @@ pub fn run_gui() {
             commands::mission_merge_blockers,
             commands::review_with_agent,
             commands::merge_mission,
+            commands::notion_publish,
+            commands::notion_pull_inbox,
+            commands::notion_status,
             commands::automation_status,
             commands::set_automation,
             commands::automation_tick,

@@ -733,6 +733,31 @@ pub async fn dispatch_mission(
 }
 
 #[tauri::command]
+pub async fn notion_publish(
+    state: State<'_, AppState>,
+    dry_run: Option<bool>,
+) -> CmdResult<crate::notion::PublishReport> {
+    let v = current_vault(&state);
+    blocking(move || Ok(crate::notion::publish(&v, dry_run.unwrap_or(false)))).await
+}
+
+#[tauri::command]
+pub async fn notion_pull_inbox(state: State<'_, AppState>) -> CmdResult<usize> {
+    let v = current_vault(&state);
+    blocking(move || crate::notion::pull_inbox(&v)).await
+}
+
+#[tauri::command]
+pub fn notion_status() -> serde_json::Value {
+    serde_json::json!({
+        "connected": crate::notion::token().is_some(),
+        "has_parent": crate::notion::setting(crate::notion::KV_PARENT).is_some()
+            || std::env::var("NOTION_PARENT_PAGE").is_ok(),
+        "token_var": "NOTION_API_KEY",
+    })
+}
+
+#[tauri::command]
 pub async fn review_with_agent(
     state: State<'_, AppState>,
     id: String,
