@@ -23,7 +23,11 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Checkpoints and rollback of file edits | yes | new Hermes chats use `--checkpoints`; Undo last turn opens the Hermes TUI on the chat with `/rollback` typed (the gateway refuses it for single-query turns) | |
 | Approve dangerous commands from the chat | no | single-query turns deny them (`approvals.single_query_mode`); ACP can ask, but is not the transport yet ([ACP spike](ACP-SPIKE.md)) | after Hermes adds creation policy to ACP |
 | Stop a running turn | part | the run process is ended; ACP `session/cancel` works in the spike | with ACP |
-| Background and scheduled tasks | part | headless workers today; no scheduler UI | v0.6.0 |
+| Background and scheduled tasks | yes | Hermes cron jobs listed from `cron/jobs.json`; create, pause, resume, run and remove through `hermes cron` (MCP and Providers > Hermes) | |
+| Hermes built-in memory and journey | yes | MEMORY.md, USER.md, `hermes memory status` and `hermes journey --json` in Memory > Hermes; edit and delete only through `hermes journey` | |
+| Hermes usage report | yes | `hermes insights` on demand (MCP and Providers > Hermes) | |
+| Supply-chain audit | yes | `hermes security audit --json` in Safety | |
+| Mission notices to a phone | yes | `hermes send` to a target you set, when a mission is done or fails | |
 | Parallel agents on one repo | part | worktree flag exists in Hermes, no UI | v0.6.0 |
 
 ## Models

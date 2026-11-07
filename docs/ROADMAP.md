@@ -299,8 +299,11 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
   Code and Antigravity missions keep `automation.rs`. The Studio review gate stays the only merge.
 - Budgets from usage data; time caps through `agent.run_budget_seconds`.
 - `hermes verify --json` as a pre-review check stored on the mission.
-- Hermes built-in memory and `hermes journey` beside the vault in Brain, read-only.
-- Surface cron, profiles, `hermes send`, `hermes security` and `hermes insights`.
+- Hermes built-in memory and `hermes journey` beside the vault in Brain, read-only (shipped). The
+  memory ledger records Hermes' `memory` tool as target `hermes`, file MEMORY.md or USER.md.
+- Surface cron, profiles (implementer and reviewer roles), `hermes send` on mission done or failed,
+  `hermes security` in Safety and `hermes insights` as a panel (shipped, verified by
+  `tests/live_hermes_surfaces.rs`).
 
 ## Ideas worth considering
 

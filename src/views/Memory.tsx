@@ -3,6 +3,7 @@ import { Brain, FileText, RefreshCw, Search, Sparkles, Upload } from "lucide-rea
 import { api, errorText, type MemoryEntry, type MemoryNote } from "../lib/api";
 import { useToast } from "../components/Toasts";
 import { Guide, useReportGuides } from "../components/Guides";
+import { HermesMemoryPanel } from "../components/HermesMemory";
 
 const KIND_STYLE: Record<string, string> = {
   decision: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25",
@@ -25,6 +26,7 @@ export function Memory() {
   const [notes, setNotes] = useState<MemoryNote[] | null>(null);
   const [recent, setRecent] = useState<MemoryEntry[]>([]);
   const [query, setQuery] = useState("");
+  const [source, setSource] = useState<"vault" | "hermes">("vault");
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [notion, setNotion] = useState<{ connected: boolean; has_parent: boolean } | null>(null);
@@ -104,6 +106,22 @@ export function Memory() {
       <div className="flex items-center gap-3 border-b border-line px-4 py-3">
         <Brain className="size-4 text-emerald-300" />
         <div className="text-sm font-semibold text-slate-100">Memory</div>
+        <div className="flex rounded-lg bg-white/[0.04] p-0.5 ring-1 ring-line">
+          {(
+            [
+              ["vault", "Vault"],
+              ["hermes", "Hermes"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setSource(id)}
+              className={`h-7 rounded-md px-2.5 text-xs font-medium ${source === id ? "bg-emerald-500/15 text-emerald-300" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <span className="text-label text-slate-500">
           {notes === null ? "indexing" : `${notes.length} notes in the index`}
         </span>
@@ -145,6 +163,9 @@ export function Memory() {
         </button>
       </div>
 
+      {source === "hermes" ? (
+        <HermesMemoryPanel />
+      ) : (
       <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-line lg:grid-cols-[1fr_360px] lg:divide-x lg:divide-y-0">
         <div className="min-h-0 overflow-y-auto">
           <div className="flex flex-wrap gap-1.5 border-b border-line px-4 py-2">
@@ -218,6 +239,7 @@ export function Memory() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

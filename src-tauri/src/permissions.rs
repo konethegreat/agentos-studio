@@ -44,6 +44,22 @@ const fn def(
 
 pub const ACTIONS: &[ActionDef] = &[
     def(
+        "hermes.journey.delete",
+        "Hermes",
+        "Delete a Hermes memory or archive a learned skill (hermes journey delete)",
+        "high",
+        "ask",
+        false,
+    ),
+    def(
+        "hermes.cron.change",
+        "Hermes",
+        "Create, pause, resume, run or remove a Hermes cron job",
+        "medium",
+        "ask",
+        true,
+    ),
+    def(
         "github.pr.merge",
         "GitHub",
         "Merge a pull request",
