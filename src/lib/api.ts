@@ -563,6 +563,13 @@ export const api = {
 
   workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
   missions: () => invoke<Mission[]>("list_missions", { limit: 100 }),
+  modelCatalog: () =>
+    invoke<{
+      providers: { id: string; label: string; models: string[]; active: boolean }[];
+      active_provider: string | null;
+      active_model: string | null;
+    }>("model_catalog"),
+
   notionStatus: () =>
     invoke<{ connected: boolean; has_parent: boolean; token_var: string }>("notion_status"),
   notionPublish: (dryRun = false) =>

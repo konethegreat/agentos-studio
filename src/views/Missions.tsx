@@ -25,6 +25,7 @@ export function Missions({ repos }: { repos: string[] }) {
   const [busy, setBusy] = useState(false);
   const [auto, setAuto] = useState<{ enabled: boolean; max_concurrent: number } | null>(null);
   const [allowMerge, setAllowMerge] = useState(false);
+  const [providers, setProviders] = useState<{ id: string; label: string; models: string[]; active: boolean }[]>([]);
   const [form, setForm] = useState({
     repo: repos[0] ?? "",
     goal: "",
@@ -32,6 +33,7 @@ export function Missions({ repos }: { repos: string[] }) {
     role: "implementer",
     agent: "hermes",
     provider: "claude-subscription",
+    model: "",
     budget: "0",
   });
 
@@ -46,6 +48,7 @@ export function Missions({ repos }: { repos: string[] }) {
   useEffect(() => {
     void load();
     void api.automationStatus().then(setAuto).catch(() => undefined);
+    void api.modelCatalog().then((c) => setProviders(c.providers)).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -92,7 +95,7 @@ export function Missions({ repos }: { repos: string[] }) {
         role: form.role,
         agent: form.agent.trim(),
         provider: form.provider,
-        model: "",
+        model: form.model,
         budgetUsd: Number(form.budget) || 0,
       });
       setForm({ ...form, goal: "", acceptance: "" });
@@ -267,12 +270,33 @@ export function Missions({ repos }: { repos: string[] }) {
             Provider
             <select
               value={form.provider}
-              onChange={(e) => setForm({ ...form, provider: e.target.value })}
+              onChange={(e) => setForm({ ...form, provider: e.target.value, model: "" })}
               className="mt-1 h-8 w-full rounded-lg bg-white/[0.03] px-2 text-xs text-slate-200 outline-none ring-1 ring-line"
             >
-              <option value="claude-subscription">Claude subscription</option>
-              <option value="antigravity">Antigravity subscription</option>
-              <option value="openrouter">OpenRouter (metered)</option>
+              {form.provider && !providers.some((p) => p.id === form.provider) && (
+                <option value={form.provider}>{form.provider}</option>
+              )}
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                  {p.active ? " (active)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-[11px] text-slate-400">
+            Model (empty means the active model)
+            <select
+              value={form.model}
+              onChange={(e) => setForm({ ...form, model: e.target.value })}
+              className="mt-1 h-8 w-full rounded-lg bg-white/[0.03] px-2 text-xs text-slate-200 outline-none ring-1 ring-line"
+            >
+              <option value="">Inherit active model</option>
+              {(providers.find((p) => p.id === form.provider)?.models ?? []).map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
             </select>
           </label>
           <label className="text-[11px] text-slate-400">
