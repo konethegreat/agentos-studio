@@ -153,10 +153,40 @@ fn insert(c: &Connection, e: &Entry) -> Result<()> {
     Ok(())
 }
 
+/// Hermes' built-in `memory` tool (MEMORY.md and USER.md under the Hermes home): its action decides
+/// read or write, and its `target` (`memory` or `user`) names the file.
+pub fn classify_hermes_memory(input: Option<&Value>) -> (&'static str, String) {
+    let action = input
+        .and_then(|v| v.get("action"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let op = if matches!(
+        action,
+        "add" | "replace" | "remove" | "batch" | "delete" | "update"
+    ) {
+        "write"
+    } else {
+        "read"
+    };
+    let file = match input.and_then(|v| v.get("target")).and_then(Value::as_str) {
+        Some("user") => "USER.md",
+        _ => "MEMORY.md",
+    };
+    (op, file.to_string())
+}
+
 /// Called from the chat event loop for every tool event.
 pub fn note_event(run_id: &str, tool: &str, input: Option<&Value>, output: Option<&str>) {
-    let Some((op, target)) = classify(tool) else {
-        return;
+    let short = tool.rsplit("__").next().unwrap_or(tool);
+    let hermes_memory = short.eq_ignore_ascii_case("memory");
+    let (op, target, path) = if hermes_memory {
+        let (op, file) = classify_hermes_memory(input);
+        (op, "hermes", file)
+    } else {
+        let Some((op, target)) = classify(tool) else {
+            return;
+        };
+        (op, target, path_of(input))
     };
     // A tool that errored did not read or write anything worth claiming.
     if let Some(out) = output {
@@ -175,7 +205,7 @@ pub fn note_event(run_id: &str, tool: &str, input: Option<&Value>, output: Optio
         turn: ctx.1,
         op: op.to_string(),
         target: target.to_string(),
-        path: path_of(input),
+        path,
         tool: tool.rsplit("__").next().unwrap_or(tool).to_string(),
         at: chrono::Utc::now().timestamp(),
     };
@@ -226,6 +256,30 @@ pub fn recent(limit: usize) -> Result<Vec<Entry>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hermes_memory_tool_is_ledgered_by_action_and_file() {
+        let add = serde_json::json!({"action": "add", "target": "user", "content": "x"});
+        assert_eq!(
+            classify_hermes_memory(Some(&add)),
+            ("write", "USER.md".to_string())
+        );
+        let batch = serde_json::json!({"action": "batch", "target": "memory", "operations": []});
+        assert_eq!(
+            classify_hermes_memory(Some(&batch)),
+            ("write", "MEMORY.md".to_string())
+        );
+        let read = serde_json::json!({"action": "read"});
+        assert_eq!(
+            classify_hermes_memory(Some(&read)),
+            ("read", "MEMORY.md".to_string())
+        );
+        assert_eq!(
+            classify("memory"),
+            None,
+            "the generic classifier does not claim it"
+        );
+    }
 
     // The store location is process-global; the shared lock lives in `store`.
 
