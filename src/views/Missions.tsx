@@ -383,12 +383,24 @@ export function Missions({ repos }: { repos: string[] }) {
                   {m.review_verdict} by {m.reviewer}
                 </span>
               )}
+              <VerifyBadge json={m.verify} />
+              {m.task_id?.startsWith("kanban:") && (
+                <span className="shrink-0 font-mono text-2xs text-slate-500" title="Runs on Hermes' kanban board (hermes kanban --board agentos-studio)">
+                  {m.task_id.slice(7)}
+                </span>
+              )}
+              {m.spent_usd > 0 && (
+                <span className={`shrink-0 text-2xs ${m.budget_usd > 0 && m.spent_usd > m.budget_usd ? "text-rose-300" : "text-slate-500"}`} title="Metered spend from Hermes usage data; subscriptions count zero">
+                  ${m.spent_usd.toFixed(2)}
+                  {m.budget_usd > 0 ? ` / $${m.budget_usd.toFixed(2)}` : ""}
+                </span>
+              )}
               <div className="ml-auto flex shrink-0 gap-1">
                 {m.status === "queued" && (
                   <button
                     onClick={() => void dispatch(m.id)}
                     disabled={busy}
-                    title="Put this mission on the Agent Bus"
+                    title={m.agent === "hermes" ? "Put this mission on Hermes' kanban board" : "Put this mission on the Agent Bus"}
                     className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-sky-300 ring-1 ring-sky-500/25 hover:bg-sky-500/10 disabled:opacity-50"
                   >
                     <Play className="size-3" /> Dispatch
@@ -436,5 +448,27 @@ export function Missions({ repos }: { repos: string[] }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/** The recorded `hermes verify` result: passed, failed (blocks merge) or not applicable. */
+function VerifyBadge({ json }: { json: string | null }) {
+  if (!json) return null;
+  let v: { ok?: boolean; error?: string; phases?: { phase: string; ok: boolean; command: string }[] } = {};
+  try {
+    v = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (v.error === "no-recipe") return <span className="shrink-0 text-2xs text-slate-500" title="hermes verify found no build or test recipe in this repository">verify n/a</span>;
+  const failed = v.phases?.find((p) => !p.ok);
+  return v.ok ? (
+    <span className="shrink-0 text-2xs text-emerald-300" title={(v.phases ?? []).map((p) => `${p.phase}: ${p.command}`).join("\n")}>
+      verified
+    </span>
+  ) : (
+    <span className="shrink-0 text-2xs text-rose-300" title={failed ? `${failed.phase}: ${failed.command}` : (v.error ?? "failed")}>
+      verify failed
+    </span>
   );
 }

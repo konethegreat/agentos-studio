@@ -1,4 +1,4 @@
-import { BarChart3, Bell, CalendarClock, Loader2, Pause, Play, Plus, RefreshCw, Trash2, Users, Zap } from "lucide-react";
+import { BarChart3, Bell, CalendarClock, Loader2, Pause, Play, Plus, RefreshCw, Timer, Trash2, Users, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
 import { useToast } from "../components/Toasts";
@@ -16,6 +16,7 @@ export function HermesPanel() {
         <ProfilesCard />
         <NoticesCard />
       </div>
+      <TimeCapsCard />
       <InsightsCard />
     </div>
   );
@@ -312,6 +313,58 @@ function InsightsCard() {
       }
     >
       {text ? <pre className="max-h-[28rem] overflow-auto rounded-lg bg-inset p-3 font-mono text-label leading-relaxed text-slate-300">{text}</pre> : <p className="text-small text-slate-500">Runs on demand; it reads the whole session history, so it can take a few seconds.</p>}
+    </Section>
+  );
+}
+
+function TimeCapsCard() {
+  const toast = useToast();
+  const [mission, setMission] = useState("");
+  const [run, setRun] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void studio.hermes
+      .timeCaps()
+      .then((c) => {
+        setMission(c.mission_max_runtime ? String(Math.round(c.mission_max_runtime / 60)) : "");
+        setRun(c.run_budget_seconds ? String(Math.round(c.run_budget_seconds / 60)) : "");
+      })
+      .catch(() => undefined);
+  }, []);
+  const secs = (m: string) => {
+    const n = Number(m);
+    return m.trim() && n > 0 ? Math.round(n * 60) : null;
+  };
+  async function save() {
+    setBusy(true);
+    try {
+      await studio.hermes.setTimeCaps(secs(mission), secs(run));
+      toast("ok", "Time caps saved");
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Section
+      icon={<Timer className="size-4 text-emerald-300" />}
+      title="Time caps"
+      hint="Budgets in dollars come from Hermes usage data and count only metered providers. Time caps stop runaway runs on any provider."
+    >
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Field label="Hermes mission cap (minutes)" hint="Passed to hermes kanban create --max-runtime for each Hermes mission. Empty: no cap.">
+          <input className={inputClass} inputMode="numeric" value={mission} onChange={(e) => setMission(e.target.value.replace(/[^0-9]/g, ""))} placeholder="60" />
+        </Field>
+        <Field label="Every Hermes run (minutes)" hint="agent.run_budget_seconds in Hermes' config, set with hermes config set. Applies to chats too. Empty: Hermes default.">
+          <input className={inputClass} inputMode="numeric" value={run} onChange={(e) => setRun(e.target.value.replace(/[^0-9]/g, ""))} placeholder="none" />
+        </Field>
+      </div>
+      <div className="mt-3">
+        <Button size="sm" variant="primary" busy={busy} onClick={() => void save()}>
+          Save
+        </Button>
+      </div>
     </Section>
   );
 }

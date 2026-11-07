@@ -367,6 +367,8 @@ export interface Mission {
   pr_url: string | null;
   created_at: number;
   updated_at: number;
+  /** `hermes verify --json` from the repository, recorded before review. */
+  verify: string | null;
 }
 
 export interface MemoryEntry {
