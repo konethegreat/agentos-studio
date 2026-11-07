@@ -51,6 +51,13 @@ pub fn parse_verdict(text: &str) -> Option<(String, String)> {
 
 /// The folder a mission's repository lives in, from Hermes projects.
 pub fn repo_dir(repo: &str) -> PathBuf {
+    project_dir(repo).unwrap_or_else(crate::settings::home)
+}
+
+/// The repository's folder from Hermes projects, with no fallback. Anything that lets an agent
+/// work in the folder (kanban workers, `hermes verify`) must use this: the home folder is never a
+/// valid workspace.
+pub fn project_dir(repo: &str) -> Option<PathBuf> {
     if let Ok(list) = projects::list() {
         if let Some(p) = list
             .iter()
@@ -61,11 +68,11 @@ pub fn repo_dir(repo: &str) -> PathBuf {
                 .clone()
                 .or_else(|| p.folders.first().map(|f| f.path.clone()))
             {
-                return PathBuf::from(path);
+                return Some(PathBuf::from(path));
             }
         }
     }
-    crate::settings::home()
+    None
 }
 
 /// Run the reviewer and record its verdict. Returns the updated mission.
@@ -119,18 +126,15 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
     let (bin, args): (&str, Vec<String>) = if reviewer.eq_ignore_ascii_case("claude-code") {
         ("claude", vec!["-p".into(), prompt_text.clone()])
     } else {
-        (
-            "hermes",
-            vec![
-                "chat".into(),
-                "-Q".into(),
-                "--oneshot".into(),
-                "--query-file".into(),
-                qpath.display().to_string(),
-                "--in".into(),
-                dir.display().to_string(),
-            ],
-        )
+        // The reviewer profile chosen in MCP and Providers > Hermes, so the review runs with its
+        // own model and memory rather than the implementer's.
+        let mut a: Vec<String> = crate::hermes_surfaces::profile_for_role("reviewer")
+            .map(|p| vec!["-p".into(), p])
+            .unwrap_or_default();
+        a.extend(["chat", "-Q", "--oneshot", "--query-file"].map(String::from));
+        a.push(qpath.display().to_string());
+        a.extend(["--in".into(), dir.display().to_string()]);
+        ("hermes", a)
     };
     let exe = procs::find(bin)
         .ok_or_else(|| anyhow::anyhow!("{bin} is not installed, so it cannot review"))?;
@@ -152,6 +156,15 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
+    // A Hermes review prints its session id on stderr; its metered cost counts toward the budget.
+    if bin == "hermes" {
+        if let Some(sid) = session_id_in(&String::from_utf8_lossy(&out.stderr)) {
+            let cost = crate::usage::metered_cost(&[sid]);
+            if cost > 0.0 {
+                missions::set_spent(id, m.spent_usd + cost)?;
+            }
+        }
+    }
     let (verdict, note) = parse_verdict(&text).ok_or_else(|| {
         anyhow::anyhow!(
             "the reviewer did not return a verdict. It said: {}",
@@ -161,9 +174,25 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
     missions::review(id, reviewer, &verdict, &note)
 }
 
+/// `session_id: <id>` as Hermes prints it on stderr after a one-shot turn. Pure.
+pub fn session_id_in(stderr: &str) -> Option<String> {
+    stderr
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("session_id:"))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_the_session_id_hermes_prints() {
+        let e = "Skipping unreadable plugin directory x\nsession_id: local-58238a4e\n";
+        assert_eq!(session_id_in(e).as_deref(), Some("local-58238a4e"));
+        assert_eq!(session_id_in("nothing"), None);
+    }
 
     fn mission() -> Mission {
         Mission {
@@ -185,6 +214,7 @@ mod tests {
             pr_url: Some("https://github.com/konethegreat/agentos-studio/pull/42".into()),
             created_at: 0,
             updated_at: 0,
+            verify: None,
         }
     }
 
