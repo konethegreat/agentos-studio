@@ -348,6 +348,7 @@ export interface Mission {
   reviewer: string | null;
   review_verdict: "approve" | "reject" | null;
   review_note: string | null;
+  pr_url: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -590,6 +591,10 @@ export const api = {
       budgetUsd: input.budgetUsd,
     }),
   dispatchMission: (id: string) => invoke<Mission>("dispatch_mission", { id }),
+  reviewWithAgent: (id: string, reviewer = "claude-code") =>
+    invoke<Mission>("review_with_agent", { id, reviewer }),
+  mergeMission: (id: string, allowlisted: boolean) =>
+    invoke<string>("merge_mission", { id, allowlisted }),
   reviewMission: (id: string, reviewer: string, verdict: "approve" | "reject", note: string) =>
     invoke<Mission>("review_mission", { id, reviewer, verdict, note }),
   missionBlockers: (id: string, ciGreen: boolean, allowlisted: boolean) =>

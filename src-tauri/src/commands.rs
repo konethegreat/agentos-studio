@@ -733,6 +733,34 @@ pub async fn dispatch_mission(
 }
 
 #[tauri::command]
+pub async fn review_with_agent(
+    state: State<'_, AppState>,
+    id: String,
+    reviewer: Option<String>,
+) -> CmdResult<crate::missions::Mission> {
+    let v = current_vault(&state);
+    let who = reviewer.unwrap_or_else(|| "claude-code".into());
+    blocking(move || crate::review_agent::review(&v, &id, &who)).await
+}
+
+/// Merge a mission's pull request only if every gate passes. Returns the merge output.
+#[tauri::command]
+pub async fn merge_mission(id: String, allowlisted: bool) -> CmdResult<String> {
+    blocking(move || {
+        let m = crate::missions::get(&id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
+        let number = crate::missions::pr_number(&m)
+            .ok_or_else(|| anyhow::anyhow!("{} has no pull request", m.id))?;
+        let green = crate::github::pr_checks_green(&m.repo, number).unwrap_or(false);
+        let blockers = crate::missions::merge_blockers(&m, green, allowlisted);
+        if !blockers.is_empty() {
+            anyhow::bail!("not merging: {}", blockers.join("; "));
+        }
+        crate::github::pr_merge(&m.repo, number, "squash", true, true)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn automation_status() -> CmdResult<serde_json::Value> {
     blocking(|| {
         Ok(serde_json::json!({

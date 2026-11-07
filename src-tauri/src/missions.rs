@@ -39,6 +39,7 @@ pub struct Mission {
     pub task_id: Option<String>,
     pub reviewer: Option<String>,
     pub review_verdict: Option<String>,
+    pub pr_url: Option<String>,
     pub review_note: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -107,7 +108,7 @@ pub fn get(id: &str) -> Result<Option<Mission>> {
     Ok(c.query_row(
         "SELECT id, repo, goal, acceptance, role, agent, status, provider, model,
                 budget_usd, spent_usd, task_id, reviewer, review_verdict, review_note,
-                created_at, updated_at
+                created_at, updated_at, pr_url
          FROM missions WHERE id = ?1",
         params![id],
         row,
@@ -131,6 +132,7 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Mission> {
         task_id: r.get(11)?,
         reviewer: r.get(12)?,
         review_verdict: r.get(13)?,
+        pr_url: r.get(17)?,
         review_note: r.get(14)?,
         created_at: r.get(15)?,
         updated_at: r.get(16)?,
@@ -142,7 +144,7 @@ pub fn list(limit: usize) -> Result<Vec<Mission>> {
     let mut st = c.prepare(
         "SELECT id, repo, goal, acceptance, role, agent, status, provider, model,
                 budget_usd, spent_usd, task_id, reviewer, review_verdict, review_note,
-                created_at, updated_at
+                created_at, updated_at, pr_url
          FROM missions
          ORDER BY CASE status WHEN 'review' THEN 0 WHEN 'running' THEN 1 WHEN 'queued' THEN 2
                               WHEN 'blocked' THEN 3 ELSE 4 END, updated_at DESC
@@ -204,6 +206,39 @@ pub fn dispatch(id: &str, task_id: &str) -> Result<Mission> {
         params![task_id, now(), id],
     )?;
     get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+}
+
+/// The pull request a mission produced. Used by the reviewer and the merge gate.
+pub fn set_pr(id: &str, url: &str) -> Result<()> {
+    let c = store::open()?;
+    c.execute(
+        "UPDATE missions SET pr_url = ?1, updated_at = ?2 WHERE id = ?3",
+        params![url.trim(), now(), id],
+    )?;
+    Ok(())
+}
+
+/// The first GitHub pull request URL in a piece of text.
+pub fn pull_url(text: &str) -> Option<String> {
+    let mut rest = text;
+    while let Some(i) = rest.find("https://github.com/") {
+        let tail = &rest[i..];
+        let end = tail
+            .find(|c: char| c.is_whitespace() || c == ')' || c == '>' || c == '"')
+            .unwrap_or(tail.len());
+        let url = &tail[..end];
+        if url.contains("/pull/") {
+            return Some(url.trim_end_matches(['.', ',']).to_string());
+        }
+        rest = &tail[end..];
+    }
+    None
+}
+
+/// The pull request number in a mission URL, if any.
+pub fn pr_number(m: &Mission) -> Option<u64> {
+    let url = m.pr_url.as_deref()?;
+    url.rsplit('/').next()?.parse().ok()
 }
 
 /// The worker reported back. Nothing is approved here; the reviewer decides.

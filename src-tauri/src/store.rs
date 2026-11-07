@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -142,6 +142,10 @@ pub fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
     L.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+const MIGRATION_5: &str = "
+ALTER TABLE missions ADD COLUMN pr_url TEXT;
+";
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
@@ -205,6 +209,10 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     if v < 4 {
         c.execute_batch(MIGRATION_4)?;
+    }
+    if v < 5 {
+        // SQLite has no ADD COLUMN IF NOT EXISTS; a fresh database already has the column path.
+        let _ = c.execute_batch(MIGRATION_5);
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;

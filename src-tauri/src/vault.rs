@@ -496,6 +496,12 @@ impl Vault {
         (missing.is_empty(), missing)
     }
 
+    /// The body of a task, wherever it currently lives.
+    pub fn task_body(&self, id: &str) -> Option<String> {
+        let (path, _) = self.find_task(id, &State::ALL)?;
+        fs::read_to_string(path).ok()
+    }
+
     /// Where a task currently sits: pending, in progress or completed.
     pub fn task_state(&self, id: &str) -> Option<State> {
         self.find_task(id, &State::ALL).map(|(_, s)| s)
