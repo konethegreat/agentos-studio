@@ -84,14 +84,25 @@ deliberately boring.
 - **Parallel missions in one repository:** with "Hermes missions per repository" above 1, each
   Hermes mission gets its own git worktree (`--workspace worktree --project <repo>`, so
   `<repo>/.worktrees/<task>` on branch `<repo>/<task>-...`) and `hermes verify` runs in that
-  worktree. Missions for other agents share the checkout, so they never start beside anything in
-  their repository, and nothing starts beside them.
+  worktree. Missions for other agents get a Studio worktree (below).
 - **Claude Code, Antigravity and Qoder missions** keep the Agent Bus: a bus task completion with a
   summary and a PR URL moves them to review. Every bus task a mission writes carries a
   `Repository: <project folder>` line and the context files that exist (`03_Memory/SYSTEM_CONTEXT.md`
   and the repository's `README.md`, `CLAUDE.md`, `AGENTS.md`). A mission whose repository is not a
   known project with a folder does not start, and no worker ever runs in the home folder: a task
   with no `Repository:` line gets no worker, and the reviewer refuses a repository it cannot find.
+- **Worktrees for every bus mission.** Each attempt gets `<repo>/.worktrees/<mission>-<attempt>` on
+  branch `agentos/<mission>-<attempt>`, cut from the remote default branch. `.worktrees/` is added
+  to the repository's local `.git/info/exclude`, so no tracked file changes. The task carries
+  `Worktree:` and `Branch:` lines, the worker runs there, and the worktree is removed when the
+  mission is done or failed (the branch stays, it is the pull request).
+- **Workers start themselves.** `missions::start` (the board button and the scheduler alike) starts
+  a headless Claude Code worker as soon as the bus task exists: `claude -p` with
+  `--permission-mode acceptEdits` and the repository's tool allowlist (see `ROUTING.md`), never
+  `--dangerously-skip-permissions`. IDE agents pick their task up from the bus.
+- **Parallel missions per repository** applies to every agent now that every mission has its own
+  worktree: with the setting at 1 a mission runs alone in its repository, above 1 up to that many
+  share it.
 - **Budgets** count only metered providers: the spend is read from Hermes usage data in `state.db`
   (worker sessions and Hermes reviewer sessions); subscriptions count zero. A Hermes mission whose
   metered spend passes its budget is blocked.
