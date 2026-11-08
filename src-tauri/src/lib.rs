@@ -5,6 +5,7 @@ pub mod acp_host;
 pub mod agent_log;
 pub mod agents;
 pub mod ask;
+pub mod assign;
 pub mod automation;
 pub mod boot;
 pub mod bootstrapper;
@@ -345,6 +346,7 @@ pub fn run_gui() {
             commands::agent_events,
             commands::mission_kinds,
             commands::set_mission_kind,
+            commands::set_mission_urgent,
             commands::router_auto,
             commands::set_router_auto,
             commands::help_docs,

@@ -266,7 +266,13 @@ pub fn tick(v: &Vault) -> TickReport {
 
     // 2. Start what can start.
     if report.enabled {
-        let queued: Vec<&Mission> = all.iter().filter(|m| m.status == "queued").collect();
+        let now = chrono::Utc::now().timestamp();
+        // A mission the router deferred to a quota reset waits; it does not take a slot.
+        let queued: Vec<&Mission> = all
+            .iter()
+            .filter(|m| m.status == "queued")
+            .filter(|m| crate::assign::deferred_until(&m.id).map_or(true, |t| t <= now))
+            .collect();
         for id in startable(
             &queued,
             &running,
