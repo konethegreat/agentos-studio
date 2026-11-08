@@ -326,6 +326,13 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
   Providers > Hermes). Verified by `tests/live_kanban_mission.rs`: two missions dispatched in one
   tick, each in `<repo>/.worktrees/<task>` on its own branch, both to Studio review.
 
+## v0.11: Hermes chat over ACP
+
+- Shipped: ACP is the Hermes chat transport (Providers > Hermes > Chat transport), with sessions
+  created through interactive `hermes chat` so model, skills and checkpoints are fixed at
+  creation. Approvals in a dialog, Stop as `session/cancel`, reasoning in the Thinking panel,
+  automatic `chat -q` fallback. Verified by `tests/live_acp_chat.rs`.
+
 ## Ideas worth considering
 
 - Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.

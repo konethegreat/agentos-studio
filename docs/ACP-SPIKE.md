@@ -1,8 +1,31 @@
 # ACP spike: Hermes chat over the Agent Client Protocol
 
-Status: spike done 2026-11-07, verdict **not yet**. `hermes chat -q` stays the Hermes chat transport.
-The client (`src-tauri/src/acp.rs`) and its live test (`tests/live_acp_spike.rs`) stay in the tree,
-unwired, so the check can be re-run against each Hermes release.
+Status: spike done 2026-11-07, verdict **not yet**. Superseded 2026-11-08: ACP **is** the Hermes chat
+transport, through the hybrid below (`src-tauri/src/acp_host.rs`, `tests/live_acp_chat.rs`).
+
+## 2026-11-08: the hybrid that closed the gaps
+
+Interactive `hermes chat` with creation flags (`-m`, `--provider`, `-s`, `--checkpoints`, `--in`)
+stores the session with that policy and prints `Session: <short id>` in its banner before any
+turn. Studio resolves the full id from `state.db`, ends the process, and runs every turn over one
+long-lived `hermes acp` connection with `session/load`. So the first turn is not a `chat -q` turn
+and is not silently denied, which was the objection to the hybrid below.
+
+Measured live on Hermes v0.23.0 (2bd378ed1b8d), Claude Haiku 5.5 through the Claude subscription:
+
+| Check | Result |
+|---|---|
+| Model fixed at creation | stored model `claude-haiku-5-5[1m]` after ACP turns |
+| Approval with `approvals.mode: manual` | asked (`recursive delete: rm -rf ...`), deny honoured, folder survived |
+| Reasoning | 20 thought chunks in the first turn (the spike saw none; Hermes now streams `reasoning.delta` to ACP viewers) |
+| Cancel | stop reason `cancelled` |
+| Session creation | 6.8 to 7.8 s |
+| First turn on a cold connection | 6.2 s setup (start plus load), first token at 11 s |
+| Warm turn | first token 2.9 s (chat -q: 6.9 s) |
+
+With `approvals.mode: smart`, Hermes' guardian approved the same deletes itself, so Studio only sees
+the questions Hermes escalates. Skills added mid-chat still go through `chat -q`, because ACP passes
+`/<skill>` to the model as text. The earlier findings follow.
 
 Principle this follows: Hermes owns execution of Hermes work; Studio owns cross-agent orchestration,
 the review and merge policy, the vault and visibility.

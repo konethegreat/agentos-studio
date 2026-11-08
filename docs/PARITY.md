@@ -21,8 +21,8 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Slash commands | yes | plus a command palette | |
 | Plan or step mode | yes | Plan first runs the turn as Hermes `/plan` (read-only, scoped to the folder); the plan shows in the chat and runs only after Approve | |
 | Checkpoints and rollback of file edits | yes | new Hermes chats use `--checkpoints`; Undo last turn opens the Hermes TUI on the chat with `/rollback` typed (the gateway refuses it for single-query turns) | |
-| Approve dangerous commands from the chat | no | single-query turns deny them (`approvals.single_query_mode`); ACP can ask, but is not the transport yet ([ACP spike](ACP-SPIKE.md)) | after Hermes adds creation policy to ACP |
-| Stop a running turn | part | the run process is ended; ACP `session/cancel` works in the spike | with ACP |
+| Approve dangerous commands from the chat | yes | over ACP: Hermes' five choices in a dialog; `chat -q` fallback denies them | |
+| Stop a running turn | yes | ACP `session/cancel`; the partial reply stays | |
 | Missions that run with the app closed | yes | Hermes missions run on `hermes kanban`; the dispatcher lives in the Hermes gateway | |
 | Background and scheduled tasks | yes | Hermes cron jobs listed from `cron/jobs.json`; create, pause, resume, run and remove through `hermes cron` (MCP and Providers > Hermes) | |
 | Hermes built-in memory and journey | yes | MEMORY.md, USER.md, `hermes memory status` and `hermes journey --json` in Memory > Hermes; edit and delete only through `hermes journey` | |
@@ -78,9 +78,9 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Capability | Studio | Notes | Plan |
 |---|---|---|---|
 | Live tool timeline | yes | cards plus worker and PTY output | |
-| Reasoning panel | no | Hermes streams no reasoning to `chat -q` or ACP; it shows live in the terminal | when Hermes streams it |
+| Reasoning panel | yes | ACP thought chunks in the collapsible Thinking panel | |
 | Token and cost per turn | part | usage strip: context, session spend, compactions, credits | |
-| Pause, stop, intervene | part | stop ends the run; ACP cancel is proven but not wired | with ACP |
+| Pause, stop, intervene | part | stop cancels the turn and approvals let you intervene; there is no pause | |
 | Router decision explanation | part | the shadow router prints its reason | |
 
 ## Where we deliberately differ

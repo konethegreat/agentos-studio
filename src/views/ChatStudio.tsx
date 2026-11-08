@@ -2,7 +2,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ArrowUp, Brain, ChevronRight, ClipboardList, Cloud, FolderOpen, GitFork, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Undo2, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api, errorText, events, type HermesStatus, type MemoryEntry, type RepoInfo, type Skill } from "../lib/api";
-import { studio, type Folder, type OrgSnapshot, type PlacedChat } from "../lib/studio";
+import { studio, type Folder, type OrgSnapshot, type PermissionOption, type PlacedChat } from "../lib/studio";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
 import { WorkspaceTree } from "../components/WorkspaceTree";
 import { applyEvent, forkPoint, fromHistory, newId, type ChatItem } from "../lib/chat";
@@ -126,6 +126,8 @@ export function ChatStudio({
   const guides = useGuides();
   const [usageSig, setUsageSig] = useState<{ contextPct: number | null; compacted: number } | null>(null);
   const [streamStart, setStreamStart] = useState<number | null>(null);
+  const [permission, setPermission] = useState<{ requestId: string; title: string; options: PermissionOption[] } | null>(null);
+  const [answering, setAnswering] = useState(false);
   const [nowTick, setNowTick] = useState(0);
   useEffect(() => {
     if (!streaming) {
@@ -193,6 +195,10 @@ export function ChatStudio({
   reloadRef.current = loadSessions;
 
   useEffect(() => {
+    if (backend === "hermes") void studio.chat.warm().catch(() => undefined);
+  }, [backend]);
+
+  useEffect(() => {
     void api.activeChat().then((id) => {
       if (id) {
         runRef.current = id;
@@ -211,6 +217,11 @@ export function ChatStudio({
       if ((e.kind === "status" || e.kind === "stderr") && e.text) setStatusLine(e.text);
       if (e.kind === "tool_start") setStatusLine(`Calling ${e.server ? `${e.server.replace(/_/g, "-")} / ` : ""}${e.tool_name}`);
       if (e.kind === "token") setStatusLine("Writing");
+      if (e.kind === "permission" && e.tool_id) {
+        setPermission({ requestId: e.tool_id, title: e.text ?? "Hermes asks for permission", options: Array.isArray(e.input) ? (e.input as PermissionOption[]) : [] });
+        setStatusLine("Waiting for your approval");
+        return;
+      }
       if ((e.kind === "session" || e.kind === "complete") && e.session_id) {
         if (backendRef.current === "hermes") {
           setCurrent(e.session_id);
@@ -232,6 +243,7 @@ export function ChatStudio({
       }
       setItems((prev) => applyEvent(prev, e));
       if (e.kind === "complete") {
+        setPermission(null);
         streamingRef.current = false;
         runRef.current = null;
         setStreaming(false);
@@ -432,6 +444,20 @@ export function ChatStudio({
       }
     } catch (e) {
       note("error", errorText(e));
+    }
+  }
+
+  async function answerPermission(optionId: string | null) {
+    if (!permission) return;
+    setAnswering(true);
+    try {
+      await studio.chat.answerPermission(permission.requestId, optionId);
+      setStatusLine(optionId && permission.options.find((o) => o.id === optionId)?.kind.startsWith("allow") ? "Approved, running" : "Denied");
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setAnswering(false);
+      setPermission(null);
     }
   }
 
@@ -887,6 +913,34 @@ export function ChatStudio({
           </div>
         </div>
       </section>
+      {permission && (
+        <Modal
+          title="Hermes asks to run this"
+          onClose={() => void answerPermission(null)}
+          footer={
+            <>
+              {permission.options
+                .filter((o) => o.kind.startsWith("reject"))
+                .map((o) => (
+                  <button key={o.id} disabled={answering} onClick={() => void answerPermission(o.id)} className={`rounded-lg px-3 py-2 text-sm ring-1 ring-line hover:bg-white/[0.05] ${o.kind === "reject_once" ? "text-slate-200" : "text-slate-400"}`} autoFocus={o.kind === "reject_once"}>
+                    {o.name}
+                  </button>
+                ))}
+              <span className="flex-1" />
+              {permission.options
+                .filter((o) => o.kind.startsWith("allow"))
+                .map((o) => (
+                  <button key={o.id} disabled={answering} onClick={() => void answerPermission(o.id)} className={o.kind === "allow_once" ? "rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-400" : "rounded-lg px-3 py-2 text-sm text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-500/10"}>
+                    {o.name}
+                  </button>
+                ))}
+            </>
+          }
+        >
+          <p className="mb-2 text-small leading-relaxed text-slate-400">Hermes flagged this as dangerous and is waiting for you. Nothing runs until you choose; closing this window denies it.</p>
+          <pre className="whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-xs text-slate-200 ring-1 ring-line">{permission.title}</pre>
+        </Modal>
+      )}
       {skillPicker && (
         <Modal
           title="Skills for this chat"

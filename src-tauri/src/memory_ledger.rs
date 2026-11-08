@@ -52,6 +52,15 @@ pub fn begin_run(run_id: &str, session: &str, turn: u32) {
     }
 }
 
+/// Attach a run to its session once the id is known (a new chat learns it before the turn).
+pub fn rename_run(run_id: &str, session: &str) {
+    if let Ok(mut m) = runs().lock() {
+        if let Some(c) = m.get_mut(run_id) {
+            c.session = session.to_string();
+        }
+    }
+}
+
 pub fn end_run(run_id: &str) {
     if let Ok(mut m) = runs().lock() {
         m.remove(run_id);

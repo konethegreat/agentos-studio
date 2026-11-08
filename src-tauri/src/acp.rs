@@ -116,14 +116,14 @@ fn text_of(block: &ContentBlock) -> Option<String> {
     }
 }
 
-fn kind_name(k: &PermissionOptionKind) -> String {
+pub(crate) fn kind_name(k: &PermissionOptionKind) -> String {
     serde_json::to_value(k)
         .ok()
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_else(|| format!("{k:?}").to_lowercase())
 }
 
-fn debug_name<T: Serialize + std::fmt::Debug>(v: &T) -> String {
+pub(crate) fn debug_name<T: Serialize + std::fmt::Debug>(v: &T) -> String {
     serde_json::to_value(v)
         .ok()
         .and_then(|v| v.as_str().map(String::from))

@@ -33,17 +33,31 @@ The fork is created by `hermes sessions import`, read back to check every turn l
 `[ran tool: name]` line per tool call. Tool outputs, reasoning and the system prompt are not copied.
 The original chat is never changed.
 
-## Approvals for dangerous commands
+## Approvals, Stop and reasoning (ACP)
 
-Studio sends each Hermes turn with `hermes chat -q`, a single-query turn. Hermes resolves a
-dangerous-command approval in that mode with `approvals.single_query_mode`, which defaults to
-**deny**: the command is refused and the agent is told so, and no prompt appears in Studio. When a
-reply says a command was blocked, run that step in the terminal (Continue in terminal), where
-Hermes asks you directly.
+Hermes chats run over the Agent Client Protocol by default (Providers > Hermes > Chat transport):
 
-The Agent Client Protocol (`hermes acp`) can route these approvals to a Studio dialog and stop a
-running turn. It was tested and is not used yet, because it cannot preload skills or fix the model
-and checkpoints at session creation. See [ACP spike](ACP-SPIKE.md).
+- **Approvals.** When Hermes flags a command as dangerous and its own policy does not settle it
+  (`approvals.mode`: `smart` lets Hermes' guardian approve low-risk commands itself, `manual`
+  always asks), Studio shows the command with Hermes' choices: allow once, allow for the session,
+  allow always, deny, deny always. Nothing runs until you choose; closing the dialog denies it.
+- **Stop** cancels the turn in Hermes (`session/cancel`); the reply so far stays. If Hermes has not
+  stopped within 20 seconds, Studio drops the connection.
+- **Thinking.** Reasoning streams into the collapsible Thinking panel above each reply, when the
+  model produces it.
+
+How it works: a new chat is created with interactive `hermes chat` and its creation flags (model,
+skills, `--checkpoints`), which stores the session before any turn; Studio reads the id and ends
+that process. Every turn then runs on one long-lived `hermes acp` connection, started when the
+Chat view opens. A warm turn reaches its first token in about 3 seconds; the first turn of a new
+chat also pays for creating the session (about 7 seconds).
+
+Falls back to `hermes chat -q` for one turn when ACP cannot create or load the session (before the
+message is sent, so nothing is lost), for slash commands, and for a skill added mid-chat (sent as
+`/<skill>`, which ACP would pass to the model as text). With the transport set to
+`hermes chat -q`, every dangerous command is denied (`approvals.single_query_mode`) and Stop ends
+the process. Tool cards over ACP carry Hermes' title (`terminal: rm -rf x`) rather than structured
+input.
 
 ## Continue in terminal
 

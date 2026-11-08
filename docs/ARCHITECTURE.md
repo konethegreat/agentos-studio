@@ -97,6 +97,7 @@ the first paint is never competing with a full probe.
 | Module | Responsibility |
 |---|---|
 | `chat_stream.rs` | One streaming chat turn per message for Hermes or Claude Code; parses stream-json into UI events. |
+| `acp_host.rs` | Hermes chat over ACP: creates sessions with interactive `hermes chat` (creation policy), runs turns on one long-lived `hermes acp` connection, routes updates and approval questions per session. `chat_stream.rs` drives it and falls back to `chat -q`. |
 | `model_layer.rs` | Hermes' model layer: fallback chain (`hermes config get/set fallback_providers`), credential pools (parsed `hermes auth list`; `auth.json` is never read), MoA presets, and Studio's per-folder default model for new chats. |
 | `plans.rs` | Plan mode: the `/plan` prompt scoped to the chat folder, the newest plan in `.hermes/plans`, and the run prompt after approval. |
 | `kanban.rs` | Hermes missions on Hermes' kanban board: create (model pinned at creation, implementer profile, `dir:` workspace, time cap), read runs, decide wait, review or block, collect worker session ids for spend, and run `hermes verify`. Kanban `done` is never Studio approval. |
