@@ -1111,3 +1111,35 @@ pub async fn notion_sync_missions(
 pub async fn notion_archive_board() -> CmdResult<()> {
     blocking(crate::notion_sync::archive_board).await
 }
+
+/// Release a blocked mission to the queue; for a Notion proposal, optionally trust its author.
+#[tauri::command]
+pub async fn approve_mission(
+    id: String,
+    trust_author: Option<bool>,
+) -> CmdResult<crate::missions::Mission> {
+    blocking(move || crate::notion_sync::approve(&id, trust_author.unwrap_or(false))).await
+}
+
+#[tauri::command]
+pub async fn mission_notion_authors(
+    ids: Vec<String>,
+) -> CmdResult<std::collections::BTreeMap<String, String>> {
+    blocking(move || {
+        Ok(ids
+            .into_iter()
+            .filter_map(|id| crate::notion_sync::proposal_author(&id).map(|a| (id, a)))
+            .collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn notion_trusted_authors() -> CmdResult<Vec<String>> {
+    blocking(|| Ok(crate::notion_sync::trusted_authors())).await
+}
+
+#[tauri::command]
+pub async fn set_notion_trusted_authors(ids: Vec<String>) -> CmdResult<Vec<String>> {
+    blocking(move || crate::notion_sync::set_trusted_authors(&ids)).await
+}

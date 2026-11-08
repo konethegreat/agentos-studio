@@ -44,6 +44,7 @@ export function Missions({ repos }: { repos: string[] }) {
   const [loaded, setLoaded] = useState(false);
   const [pins, setPins] = useState<Record<string, { provider: string; model: string; source: string; reason: string }>>({});
   const [routerAuto, setRouterAuto] = useState(false);
+  const [authors, setAuthors] = useState<Record<string, string>>({});
   async function load() {
     try {
       const list = await api.missions();
@@ -51,6 +52,11 @@ export function Missions({ repos }: { repos: string[] }) {
       void invoke<Record<string, { provider: string; model: string; source: string; reason: string }>>("mission_pins", { ids: list.map((m) => m.id) })
         .then(setPins)
         .catch(() => undefined);
+      const blocked = list.filter((m) => m.status === "blocked").map((m) => m.id);
+      if (blocked.length)
+        void invoke<Record<string, string>>("mission_notion_authors", { ids: blocked })
+          .then(setAuthors)
+          .catch(() => undefined);
     } catch (e) {
       toast("error", errorText(e));
     } finally {
@@ -116,6 +122,19 @@ export function Missions({ repos }: { repos: string[] }) {
       setForm({ ...form, goal: "", acceptance: "" });
       setOpen(false);
       toast("ok", "Mission queued. Dispatch it to put it on the bus.");
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approve(id: string, trust: boolean) {
+    setBusy(true);
+    try {
+      await invoke("approve_mission", { id, trustAuthor: trust });
+      toast("ok", trust ? `${id} approved; this Notion author is now trusted` : `${id} is back in the queue`);
       await load();
     } catch (e) {
       toast("error", errorText(e));
@@ -430,6 +449,28 @@ export function Missions({ repos }: { repos: string[] }) {
                 </span>
               )}
               <div className="ml-auto flex shrink-0 gap-1">
+                {m.status === "blocked" && (
+                  <>
+                    <button
+                      onClick={() => void approve(m.id, false)}
+                      disabled={busy}
+                      title={m.review_note ?? "Release this mission to the queue"}
+                      className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/10 disabled:opacity-50"
+                    >
+                      <ShieldCheck className="size-3" /> {authors[m.id] ? "Approve" : "Requeue"}
+                    </button>
+                    {authors[m.id] && (
+                      <button
+                        onClick={() => void approve(m.id, true)}
+                        disabled={busy}
+                        title={`Approve, and queue future proposals from Notion user ${authors[m.id]} without asking`}
+                        className="inline-flex h-6 items-center rounded-md px-1.5 text-caption text-slate-300 ring-1 ring-line hover:bg-white/[0.04] disabled:opacity-50"
+                      >
+                        Approve and trust author
+                      </button>
+                    )}
+                  </>
+                )}
                 {m.status === "queued" && (
                   <button
                     onClick={() => void dispatch(m.id)}

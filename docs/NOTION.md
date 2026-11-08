@@ -25,10 +25,15 @@ use, then keeps it in step:
 - **Out:** every mission is a row (ID, goal, repository, acceptance, role, agent, status, verdict,
   PR, spend). A row is updated only when its mission changed.
 - **Propose from Notion:** add a row with a Goal, Repo and Acceptance and leave ID empty. On the
-  next sync Studio queues it as a mission (Agent defaults to hermes, Role to implementer; the model
+  next sync Studio creates a mission (Agent defaults to hermes, Role to implementer; the model
   follows the same order as the New mission form: routing.json, then the router if allowed) and
-  writes the mission ID and "Queued by Studio as M-..." back to the row. A row missing Repo or
-  Acceptance gets a note saying what it needs.
+  writes the mission ID back to the row. A row missing Repo or Acceptance, or naming an Agent
+  Studio does not know (hermes, claude-code, qoder, antigravity), gets a note saying what is wrong.
+- **Trust:** anyone who can edit the board can propose, and a mission starts agents. So a
+  proposal is **blocked, "needs approval in Studio"** unless the Notion user who created the row is
+  trusted. In Missions, a blocked proposal has **Approve** (queue it) and **Approve and trust
+  author** (queue it, and queue that author's future proposals directly). Trusted ids are stored in
+  `notion.trusted_authors`.
 - **Cancel from Notion:** set Request to Cancel. A queued or blocked mission becomes failed with
   "Cancelled from Notion". A running or in-review mission is refused with a note, because only
   Studio can end its run.

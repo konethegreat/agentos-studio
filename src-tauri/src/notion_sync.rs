@@ -3,8 +3,10 @@
 //! Studio owns the mission. Out, every mission is a row (ID, goal, repository, status, verdict,
 //! PR, spend), updated only when its content hash changes. In, Notion may do exactly two things:
 //!
-//! - **Propose:** a row with a Goal, Repo and Acceptance and no ID becomes a queued mission, with
-//!   the same model precedence as the New mission form; Studio writes the ID back to the row.
+//! - **Propose:** a row with a Goal, Repo and Acceptance and no ID becomes a mission, with the same
+//!   model precedence as the New mission form; Studio writes the ID back to the row. It is queued
+//!   only when the row's Notion author is on the trusted list (`notion.trusted_authors`); otherwise
+//!   it is blocked with "needs approval in Studio" until someone approves it there.
 //! - **Cancel:** `Request = Cancel` on a queued or blocked mission marks it failed. A running or
 //!   in-review mission is refused with a note, because only Studio can end its run.
 //!
@@ -21,6 +23,43 @@ use crate::notion::{hash, ledger_get, ledger_put, request};
 
 pub const KV_DB: &str = "notion.missions_db";
 pub const DB_TITLE: &str = "AgentOS missions board";
+/// Comma-separated Notion user ids whose proposals queue without approval.
+pub const KV_TRUSTED: &str = "notion.trusted_authors";
+
+pub fn trusted_authors() -> Vec<String> {
+    parse_ids(&crate::notion::setting(KV_TRUSTED).unwrap_or_default())
+}
+
+/// Notion ids from a comma, space or newline separated list, deduplicated. Pure.
+pub fn parse_ids(s: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for id in s.split(|c: char| c == ',' || c.is_whitespace()) {
+        let id = id.trim().to_lowercase();
+        if !id.is_empty()
+            && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+            && !out.contains(&id)
+        {
+            out.push(id);
+        }
+    }
+    out
+}
+
+pub fn set_trusted_authors(ids: &[String]) -> Result<Vec<String>> {
+    let clean = parse_ids(&ids.join(","));
+    let c = crate::store::open()?;
+    crate::store::kv_set(&c, KV_TRUSTED, &clean.join(","))?;
+    Ok(clean)
+}
+
+fn author_key(id: &str) -> String {
+    format!("mission.notion_author.{id}")
+}
+
+/// The Notion author of a proposal Studio blocked, so Studio can offer to trust them.
+pub fn proposal_author(mission_id: &str) -> Option<String> {
+    crate::notion::setting(&author_key(mission_id))
+}
 
 #[derive(Serialize, Debug, Default, Clone)]
 pub struct SyncReport {
@@ -32,6 +71,8 @@ pub struct SyncReport {
     pub unchanged_rows: usize,
     /// Missions created from Notion proposals.
     pub proposed: Vec<String>,
+    /// Of those, the ones blocked until someone approves them in Studio.
+    pub awaiting_approval: Vec<String>,
     /// Missions cancelled from Notion.
     pub cancelled: Vec<String>,
     /// Requests Studio declined, with the reason written back to the row.
@@ -103,6 +144,8 @@ pub struct Row {
     pub agent: String,
     pub request: String,
     pub note: String,
+    /// Notion user id of whoever created the row.
+    pub author: String,
 }
 
 fn plain(p: &Value) -> String {
@@ -142,6 +185,12 @@ pub fn parse_row(page: &Value) -> Option<Row> {
         agent: sel("Agent"),
         request: sel("Request"),
         note: get("Studio note"),
+        author: page
+            .get("created_by")
+            .and_then(|c| c.get("id"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_lowercase(),
     })
 }
 
@@ -166,6 +215,13 @@ pub fn classify(r: &Row) -> Inbound {
         }
         if r.acceptance.is_empty() {
             missing.push("Acceptance");
+        }
+        if !r.agent.is_empty() && !missions::KNOWN_AGENTS.contains(&r.agent.as_str()) {
+            return Inbound::Incomplete(format!(
+                "Agent {} is not one Studio knows ({})",
+                r.agent,
+                missions::KNOWN_AGENTS.join(", ")
+            ));
         }
         return if missing.is_empty() {
             Inbound::Propose
@@ -282,6 +338,7 @@ fn sync_connected(r: &mut SyncReport, tok: &str, parent: &str) -> Result<()> {
     r.database = Some(db.clone());
 
     // In: the two things Notion may ask for.
+    let trusted = trusted_authors();
     for row in query_rows(tok, &db)? {
         match classify(&row) {
             Inbound::Propose => {
@@ -310,15 +367,41 @@ fn sync_connected(r: &mut SyncReport, tok: &str, parent: &str) -> Result<()> {
                     0.0,
                 ) {
                     Ok(m) => {
+                        let is_trusted = !row.author.is_empty() && trusted.contains(&row.author);
+                        let m = if is_trusted {
+                            m
+                        } else {
+                            crate::notion::set_setting(&author_key(&m.id), &row.author);
+                            let who = if row.author.is_empty() {
+                                "an unknown author"
+                            } else {
+                                row.author.as_str()
+                            };
+                            missions::block(
+                                &m.id,
+                                &format!("Proposed in Notion by {who}; needs approval in Studio"),
+                                false,
+                            )?
+                        };
+                        let note = if is_trusted {
+                            format!("Queued by Studio as {}", m.id)
+                        } else {
+                            format!(
+                                "Created as {}, waiting for approval in Studio (author not trusted)",
+                                m.id
+                            )
+                        };
                         let mut props = row_props(&m);
-                        props["Studio note"] =
-                            json!({ "rich_text": text(&format!("Queued by Studio as {}", m.id)) });
+                        props["Studio note"] = json!({ "rich_text": text(&note) });
                         patch_row(tok, &row.page_id, props)?;
                         ledger_put(
                             &ledger_key(&m.id),
                             &row.page_id,
                             &hash(&row_props(&m).to_string()),
                         )?;
+                        if !is_trusted {
+                            r.awaiting_approval.push(m.id.clone());
+                        }
                         r.proposed.push(m.id);
                     }
                     Err(e) => {
@@ -419,6 +502,18 @@ pub fn archive_board() -> Result<()> {
     Ok(())
 }
 
+/// Approve a blocked mission in Studio; optionally trust its Notion author from now on.
+pub fn approve(mission_id: &str, trust_author: bool) -> Result<Mission> {
+    if trust_author {
+        if let Some(a) = proposal_author(mission_id).filter(|a| !a.is_empty()) {
+            let mut ids = trusted_authors();
+            ids.push(a);
+            set_trusted_authors(&ids)?;
+        }
+    }
+    missions::unblock(mission_id, "Approved in Studio")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,6 +554,18 @@ mod tests {
         })))
         .unwrap();
         assert_eq!(classify(&edited), Inbound::Nothing);
+        let bad_agent = Row {
+            agent: "cursor".into(),
+            ..proposal.clone()
+        };
+        assert!(
+            matches!(classify(&bad_agent), Inbound::Incomplete(n) if n.contains("not one Studio knows"))
+        );
+        let ok_agent = Row {
+            agent: "qoder".into(),
+            ..proposal.clone()
+        };
+        assert_eq!(classify(&ok_agent), Inbound::Propose);
         assert_eq!(classify(&Row::default()), Inbound::Nothing);
     }
 
@@ -495,6 +602,17 @@ mod tests {
         let mut m2 = m.clone();
         m2.status = "running".into();
         assert_ne!(hash(&p.to_string()), hash(&row_props(&m2).to_string()));
+    }
+
+    #[test]
+    fn trusted_author_ids_are_cleaned() {
+        assert_eq!(
+            parse_ids("A1B2-c3, a1b2-c3\n  ffff  , not an id!, "),
+            vec!["a1b2-c3".to_string(), "ffff".to_string()]
+        );
+        let p = parse_row(&json!({ "id": "p", "created_by": { "id": "ABC-1" }, "properties": {} }))
+            .unwrap();
+        assert_eq!(p.author, "abc-1");
     }
 
     #[test]
