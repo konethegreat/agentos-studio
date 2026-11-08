@@ -40,7 +40,9 @@ export function Missions({ repos }: { repos: string[] }) {
     provider: "claude-subscription",
     model: "",
     budget: "0",
+    decision: false,
   });
+  const [kinds, setKinds] = useState<Record<string, string>>({});
 
   const [loaded, setLoaded] = useState(false);
   const [pins, setPins] = useState<Record<string, { provider: string; model: string; source: string; reason: string; shadow?: string }>>({});
@@ -52,6 +54,9 @@ export function Missions({ repos }: { repos: string[] }) {
       setRows(list);
       void invoke<Record<string, { provider: string; model: string; source: string; reason: string; shadow?: string }>>("mission_pins", { ids: list.map((m) => m.id) })
         .then(setPins)
+        .catch(() => undefined);
+      void invoke<Record<string, string>>("mission_kinds", { ids: list.map((m) => m.id) })
+        .then(setKinds)
         .catch(() => undefined);
       const blocked = list.filter((m) => m.status === "blocked").map((m) => m.id);
       if (blocked.length)
@@ -133,7 +138,7 @@ export function Missions({ repos }: { repos: string[] }) {
     }
     setBusy(true);
     try {
-      await api.createMission({
+      const made = await api.createMission({
         repo: form.repo.trim(),
         goal: form.goal.trim(),
         acceptance: form.acceptance.trim(),
@@ -143,7 +148,8 @@ export function Missions({ repos }: { repos: string[] }) {
         model: form.model,
         budgetUsd: Number(form.budget) || 0,
       });
-      setForm({ ...form, goal: "", acceptance: "" });
+      if (form.decision) await invoke<void>("set_mission_kind", { id: made.id, kind: "decision" });
+      setForm({ ...form, goal: "", acceptance: "", decision: false });
       setOpen(false);
       toast("ok", "Mission queued. Dispatch it to put it on the bus.");
       await load();
@@ -443,6 +449,14 @@ export function Missions({ repos }: { repos: string[] }) {
               className="mt-1 h-8 w-full rounded-lg bg-white/[0.03] px-2 text-xs text-slate-200 outline-none ring-1 ring-line"
             />
           </label>
+          <label className="flex items-center gap-2 text-label text-slate-400 md:col-span-2" title="Two or three agents on different providers answer the question, a synthesizer writes an ADR, and it goes through review as a pull request">
+            <input
+              type="checkbox"
+              checked={form.decision}
+              onChange={(e) => setForm({ ...form, decision: e.target.checked })}
+            />
+            Design decision: run a council of agents and write an ADR instead of one worker
+          </label>
           <div className="md:col-span-2">
             <button
               onClick={() => void create()}
@@ -467,6 +481,11 @@ export function Missions({ repos }: { repos: string[] }) {
                 {m.goal}
               </span>
               <span className="hidden shrink-0 text-slate-500 md:inline">{m.repo}</span>
+              {kinds[m.id] === "decision" && (
+                <span className="shrink-0 rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-2xs text-indigo-200 ring-1 ring-indigo-500/25" title="Decided by a council of agents">
+                  council
+                </span>
+              )}
               {pins[m.id] && (pins[m.id].source !== "inherit" || pins[m.id].reason) && (
                 <span className={`shrink-0 text-2xs ${pins[m.id].source === "router" ? "text-sky-300" : "text-slate-500"}`} title={[pins[m.id].reason, pins[m.id].shadow ? `Router: ${pins[m.id].shadow}` : ""].filter(Boolean).join("\n")}>
                   {pins[m.id].source === "inherit" ? "default model" : `${pins[m.id].model || pins[m.id].provider} via ${pins[m.id].source}`}

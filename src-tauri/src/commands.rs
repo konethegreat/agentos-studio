@@ -1177,3 +1177,25 @@ pub async fn agent_events(
     })
     .await
 }
+
+/// Each mission's kind: `work`, or `decision` for a council.
+#[tauri::command]
+pub async fn mission_kinds(
+    ids: Vec<String>,
+) -> CmdResult<std::collections::BTreeMap<String, String>> {
+    blocking(move || {
+        Ok(ids
+            .into_iter()
+            .map(|id| {
+                let k = crate::missions::kind(&id);
+                (id, k)
+            })
+            .collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_mission_kind(id: String, kind: String) -> CmdResult<()> {
+    blocking(move || crate::missions::set_kind(&id, &kind)).await
+}
