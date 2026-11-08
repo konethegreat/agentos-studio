@@ -363,6 +363,13 @@ pub fn render_agy_event(line: &str) -> Vec<String> {
     }
 }
 
+/// Kill the task's worker if one runs in this app session (stuck retry or block).
+pub fn stop_task_worker(task_id: &str) {
+    if let Some((_, workers)) = HOST.get() {
+        let _ = stop_worker(workers, task_id);
+    }
+}
+
 /// Whether a worker for this task is alive in this app session.
 pub fn worker_running(task_id: &str) -> bool {
     HOST.get()

@@ -231,6 +231,14 @@ pub struct TaskView {
     pub result: Option<String>,
     #[serde(default)]
     pub runs: Vec<Run>,
+    /// Newest sign of life in epoch seconds: task creation or start, any run start or end, any
+    /// event (heartbeats included). `show --json` carries no `last_heartbeat_at`.
+    #[serde(default)]
+    pub last_activity: Option<i64>,
+}
+
+fn epoch(v: Option<&Value>) -> Option<i64> {
+    v.and_then(Value::as_f64).map(|f| f as i64)
 }
 
 /// Parse `hermes kanban show --json` (`{task, runs, ...}`).
@@ -256,7 +264,34 @@ pub fn parse_show(json: &str) -> Result<TaskView> {
             .map(serde_json::from_value)
             .transpose()?
             .unwrap_or_default(),
+        last_activity: {
+            let mut times = vec![epoch(task.get("created_at")), epoch(task.get("started_at"))];
+            for key in ["runs", "events", "comments"] {
+                for item in v.get(key).and_then(Value::as_array).into_iter().flatten() {
+                    times.push(epoch(item.get("started_at")));
+                    times.push(epoch(item.get("ended_at")));
+                    times.push(epoch(item.get("created_at")));
+                }
+            }
+            times.into_iter().flatten().max()
+        },
     })
+}
+
+/// Release a wedged worker's claim so the dispatcher runs the task again (one stuck retry).
+pub fn reclaim(task_id: &str, reason: &str) -> Result<()> {
+    hermes(&board_args(&[
+        "reclaim",
+        strip(task_id),
+        "--reason",
+        reason,
+    ]))
+    .map(|_| ())
+}
+
+/// One dispatcher pass on the board, for a ready task nobody has picked up.
+pub fn dispatch_pass() -> Result<()> {
+    hermes(&board_args(&["dispatch"])).map(|_| ())
 }
 
 pub fn show(task_id: &str) -> Result<TaskView> {
@@ -429,6 +464,14 @@ mod tests {
             other => panic!("expected review, got {other:?}"),
         }
         assert_eq!(session_ids(&v), vec!["s1", "s2"]);
+        assert_eq!(v.last_activity, None, "no times in this fixture");
+        let timed = parse_show(
+            r#"{"task":{"status":"running","created_at":100,"started_at":150},
+                "runs":[{"status":"running","started_at":160}],
+                "events":[{"kind":"heartbeat","created_at":900},{"kind":"claimed","created_at":155}]}"#,
+        )
+        .unwrap();
+        assert_eq!(timed.last_activity, Some(900), "the newest heartbeat wins");
         for status in ["ready", "running", "review", "todo", "triage", "scheduled"] {
             let v = TaskView {
                 status: status.into(),

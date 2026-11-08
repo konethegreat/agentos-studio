@@ -211,6 +211,8 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
             m.status
         );
     }
+    // A new attempt starts with a clean heartbeat history.
+    crate::stuck::reset(id);
     if uses_kanban(&m) {
         let task_id = crate::kanban::create_task(&m)?;
         return dispatch(id, &task_id);

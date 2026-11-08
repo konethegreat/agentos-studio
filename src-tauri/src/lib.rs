@@ -46,6 +46,7 @@ pub mod settings;
 pub mod single;
 pub mod skills;
 pub mod store;
+pub mod stuck;
 pub mod updates;
 pub mod usage;
 pub mod vault;

@@ -91,6 +91,33 @@ pub fn context_limit(v: &Value, model: &str) -> Option<i64> {
     walk(v, model, 0)
 }
 
+/// The newest message time (epoch seconds) across Hermes sessions, read only. A worker that is
+/// still talking to its model keeps this fresh, so it is the Hermes heartbeat Studio can see.
+pub fn last_message_at(session_ids: &[String]) -> Option<i64> {
+    if session_ids.is_empty() {
+        return None;
+    }
+    let path = state_db();
+    let c = Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    session_ids
+        .iter()
+        .filter_map(|sid| {
+            c.query_row(
+                "SELECT MAX(timestamp) FROM messages WHERE session_id = ?1",
+                [sid],
+                |r| r.get::<_, Option<f64>>(0),
+            )
+            .ok()
+            .flatten()
+        })
+        .map(|t| t as i64)
+        .max()
+}
+
 pub fn usage(session_id: &str) -> Result<Option<SessionUsage>> {
     let path = state_db();
     if !path.exists() {
