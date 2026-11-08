@@ -365,6 +365,21 @@ pub fn review(id: &str, reviewer: &str, verdict: &str, note: &str) -> Result<Mis
     get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
 }
 
+/// A person in Studio releases a blocked mission back to the queue (an untrusted Notion proposal,
+/// or a mission blocked for any other reason once it is resolved).
+pub fn unblock(id: &str, note: &str) -> Result<Mission> {
+    let c = store::open()?;
+    set_status(&c, id, &["blocked"], "queued")?;
+    c.execute(
+        "UPDATE missions SET review_note = ?1, updated_at = ?2 WHERE id = ?3",
+        params![note.trim(), now(), id],
+    )?;
+    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+}
+
+/// Agents Studio knows how to address. Until the agent registry exists (Phase C), this list is it.
+pub const KNOWN_AGENTS: [&str; 4] = ["hermes", "claude-code", "qoder", "antigravity"];
+
 /// Cancel a mission that has not started work or is waiting on a human: queued or blocked to
 /// failed. Running and in-review missions are stopped in Studio, where the run can be ended.
 pub fn cancel(id: &str, reason: &str) -> Result<Mission> {
