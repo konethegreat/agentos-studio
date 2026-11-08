@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, FolderOpen, KeyRound, Layers, Loader2, Plus, RotateCcw, Route as RouteIcon, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, AtSign, FolderOpen, KeyRound, Layers, Loader2, Plus, RotateCcw, Route as RouteIcon, Trash2 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
@@ -6,7 +6,7 @@ import { useCli } from "../components/CliDrawer";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card, inputClass } from "../components/ui";
 import { api, errorText } from "../lib/api";
-import { studio, type Credential, type FolderModel, type Moa, type Route } from "../lib/studio";
+import { studio, type Credential, type FolderModel, type Moa, type ModelAlias, type Route } from "../lib/studio";
 
 type Catalog = { id: string; label: string; models: string[] }[];
 
@@ -27,6 +27,7 @@ export function ModelLayer() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <FallbackCard catalog={catalog} />
         <FolderDefaultsCard catalog={catalog} />
+        <AliasesCard catalog={catalog} />
         <CredentialsCard />
         <MoaCard />
       </div>
@@ -377,5 +378,72 @@ function CatalogChanges() {
       )}
       {c.gone.length > pinnedGone.length && <p className="mt-2 text-label text-slate-500">{c.gone.length - pinnedGone.length} model(s) left the catalog; nothing here uses them.</p>}
     </Card>
+  );
+}
+
+function AliasesCard({ catalog }: { catalog: Catalog }) {
+  const toast = useToast();
+  const [list, setList] = useState<ModelAlias[] | null>(null);
+  const [draft, setDraft] = useState({ name: "", provider: "", model: "", baseUrl: "" });
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => {
+    void studio.models.aliases().then(setList).catch((e) => toast("error", errorText(e)));
+  }, [toast]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  async function run(fn: () => Promise<void>, ok: string) {
+    setBusy(true);
+    try {
+      await fn();
+      toast("ok", ok);
+      load();
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Section icon={<AtSign className="size-4 text-emerald-300" />} title="Model aliases" hint="Short names for a model and provider: hermes chat -m fast, /model fast, or a mission pin. Saved to model_aliases with hermes config set. A base URL is only for endpoints outside the catalog (a local server); keys for those stay in Hermes and are never shown here.">
+      {list && list.length > 0 && (
+        <ul className="mb-3 divide-y divide-line rounded-lg ring-1 ring-line">
+          {list.map((a) => (
+            <li key={a.name} className="flex items-center gap-2 px-3 py-2 text-small">
+              <span className="w-24 shrink-0 truncate font-mono text-emerald-300">{a.name}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-slate-200" title={a.base_url || undefined}>
+                {a.model}
+              </span>
+              <span className="text-slate-500">{a.provider}</span>
+              {(a.has_key || a.key_env) && <Badge className="bg-white/5 text-slate-400 ring-white/10">own key</Badge>}
+              <Button size="sm" variant="ghost" disabled={busy} icon={<Trash2 className="size-3.5" />} onClick={() => void run(() => studio.models.removeAlias(a.name), `Alias ${a.name} removed`)} aria-label="Remove" />
+            </li>
+          ))}
+        </ul>
+      )}
+      {list?.length === 0 && <p className="mb-2 text-small text-slate-500">No aliases yet.</p>}
+      <div className="mb-2 flex gap-2">
+        <input className={`${inputClass} w-28 font-mono text-xs`} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value.toLowerCase() })} placeholder="fast" aria-label="Alias name" />
+        <div className="min-w-0 flex-1">
+          <ModelPicker catalog={catalog} value={draft} onChange={(v) => setDraft({ ...draft, ...v })} />
+        </div>
+      </div>
+      <input className={`${inputClass} mb-2 w-full font-mono text-xs`} value={draft.baseUrl} onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })} placeholder="Base URL (optional, local or custom endpoints only)" aria-label="Base URL" />
+      <Button
+        size="sm"
+        variant="primary"
+        busy={busy}
+        disabled={!draft.name.trim() || !draft.provider || !draft.model.trim()}
+        icon={<Plus className="size-3.5" />}
+        onClick={() =>
+          void run(async () => {
+            await studio.models.setAlias(draft.name.trim(), draft.model.trim(), draft.provider, draft.baseUrl.trim());
+            setDraft({ name: "", provider: "", model: "", baseUrl: "" });
+          }, `Alias ${draft.name.trim()} saved`)
+        }
+      >
+        Save alias
+      </Button>
+    </Section>
   );
 }

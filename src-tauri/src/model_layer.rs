@@ -98,6 +98,119 @@ pub fn set_fallback_chain(chain: &[Route]) -> Result<()> {
     }
 }
 
+// --------------------------------------------------------------------------------- aliases
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct Alias {
+    pub name: String,
+    pub model: String,
+    pub provider: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub base_url: String,
+    /// The env var holding the endpoint's key, when set. A literal `api_key` is never shown.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub key_env: String,
+    pub has_key: bool,
+}
+
+/// `model_aliases:` from resolved config. Pure. Mirrors Hermes: a missing provider is `custom`,
+/// names are case-insensitive, entries without a model are ignored.
+pub fn parse_aliases(v: &Yaml) -> Vec<Alias> {
+    let s = |e: &Yaml, k: &str| {
+        e.get(k)
+            .and_then(Yaml::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    let mut out: Vec<Alias> = v
+        .as_mapping()
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, e)| {
+                    let model = s(e, "model");
+                    if model.is_empty() {
+                        return None;
+                    }
+                    Some(Alias {
+                        name: k.as_str()?.trim().to_lowercase(),
+                        provider: Some(s(e, "provider"))
+                            .filter(|p| !p.is_empty())
+                            .unwrap_or_else(|| "custom".into()),
+                        model,
+                        base_url: s(e, "base_url"),
+                        key_env: s(e, "key_env"),
+                        has_key: !s(e, "api_key").is_empty(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+pub fn aliases() -> Vec<Alias> {
+    parse_aliases(&config_get("model_aliases"))
+}
+
+pub fn valid_alias_name(n: &str) -> bool {
+    !n.is_empty()
+        && n.len() <= 40
+        && n.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && n.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "-_.".contains(c))
+}
+
+/// The JSON written for one alias. Pure. A base URL is only for endpoints outside the catalog.
+pub fn alias_value(model: &str, provider: &str, base_url: &str) -> Result<String> {
+    if !safe_id(model) || !safe_id(provider) {
+        bail!("Invalid model {provider}:{model}");
+    }
+    let mut v = serde_json::json!({ "model": model.trim(), "provider": provider.trim() });
+    let b = base_url.trim();
+    if !b.is_empty() {
+        if !(b.starts_with("http://") || b.starts_with("https://"))
+            || b.contains(char::is_whitespace)
+        {
+            bail!("The base URL must start with http:// or https://");
+        }
+        v["base_url"] = serde_json::json!(b);
+    }
+    Ok(v.to_string())
+}
+
+pub fn set_alias(name: &str, model: &str, provider: &str, base_url: &str) -> Result<()> {
+    let name = name.trim().to_lowercase();
+    if !valid_alias_name(&name) {
+        bail!("Alias names use lowercase letters, digits, - _ and . (up to 40)");
+    }
+    // An existing entry may carry a key Studio never sees; replacing it would drop that key.
+    if aliases()
+        .iter()
+        .any(|a| a.name == name && (a.has_key || !a.key_env.is_empty()))
+    {
+        bail!("{name} has its own API key; edit it with hermes config, so the key is kept");
+    }
+    hermes(&[
+        "config",
+        "set",
+        &format!("model_aliases.{name}"),
+        &alias_value(model, provider, base_url)?,
+    ])
+    .map(|_| ())
+}
+
+pub fn remove_alias(name: &str) -> Result<()> {
+    let name = name.trim().to_lowercase();
+    if !valid_alias_name(&name) {
+        bail!("Invalid alias");
+    }
+    hermes(&["config", "unset", &format!("model_aliases.{name}")]).map(|_| ())
+}
+
 // ---------------------------------------------------------------------------- credential pools
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -369,6 +482,33 @@ mod tests {
             m.presets[0].aggregator.as_ref().unwrap().provider,
             "openrouter"
         );
+    }
+
+    #[test]
+    fn aliases_follow_hermes_rules_and_never_expose_a_key() {
+        let y: Yaml = serde_yaml::from_str("Fast:\n  model: deepseek/x\n  provider: openrouter\nlocal:\n  model: qwen3\n  base_url: http://localhost:11434/v1\n  api_key: secret\nbroken:\n  provider: openrouter\n").unwrap();
+        let a = parse_aliases(&y);
+        assert_eq!(a.len(), 2);
+        assert_eq!(
+            (a[0].name.as_str(), a[0].provider.as_str()),
+            ("fast", "openrouter")
+        );
+        assert_eq!((a[1].provider.as_str(), a[1].has_key), ("custom", true));
+        assert!(!serde_json::to_string(&a).unwrap().contains("secret"));
+        assert!(
+            valid_alias_name("ds-flash")
+                && !valid_alias_name("Fast")
+                && !valid_alias_name("-x")
+                && !valid_alias_name("a b")
+        );
+        assert_eq!(
+            alias_value("m", "openrouter", "").unwrap(),
+            r#"{"model":"m","provider":"openrouter"}"#
+        );
+        assert!(alias_value("m", "custom", "ftp://x").is_err());
+        assert!(alias_value("m", "custom", "http://localhost:11434/v1")
+            .unwrap()
+            .contains("base_url"));
     }
 
     #[test]
