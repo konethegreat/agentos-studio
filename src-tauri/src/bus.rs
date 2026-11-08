@@ -91,6 +91,11 @@ pub fn start_watcher(app: AppHandle, state: &BusState, vault_root: &Path) -> Res
             // Keep the FTS index in step with the files. Cheap: unchanged files are skipped by mtime.
             let v = crate::vault::Vault::new(&root);
             let _ = crate::memory_index::refresh(&v);
+            // Event-driven bus: new work for a headless agent starts within seconds, and finished
+            // work moves to review, instead of waiting for the minute tick (kept as a safety net).
+            if rel.iter().any(|r| r.starts_with("02_Agent_Bus/")) {
+                on_bus_change(root.clone());
+            }
             if app
                 .emit(EV_VAULT, json!({"paths": rel, "memory": memory}))
                 .is_err()
@@ -104,6 +109,87 @@ pub fn start_watcher(app: AppHandle, state: &BusState, vault_root: &Path) -> Res
         .lock()
         .map_err(|_| anyhow!("watcher lock poisoned"))? = Some(watcher);
     Ok(())
+}
+
+/// Minimum gap between two event-driven passes; a burst of file events becomes one pass.
+pub const BUS_PASS_GAP: Duration = Duration::from_secs(3);
+static BUS_PASS_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Set by every bus event; a running pass loop picks it up after the gap, so no event is lost.
+static BUS_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Tasks the watcher could not start this session. Not retried from events: the failure note it
+/// writes is itself a bus event, and retrying would loop. Stuck detection still covers them.
+static BUS_FAILED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Pending tasks a headless agent should start now: assigned to an agent whose CLI is installed
+/// and naming a folder to work in. Pure over its inputs.
+pub fn auto_start_candidates(
+    tasks: &[crate::vault::Task],
+    available: impl Fn(&str) -> bool,
+    has_workdir: impl Fn(&str) -> bool,
+) -> Vec<(String, String)> {
+    tasks
+        .iter()
+        .filter(|t| t.state == State::Pending)
+        .filter(|t| is_headless(&t.assigned_to) && available(&t.assigned_to))
+        .filter(|t| has_workdir(&t.body))
+        .map(|t| (t.id.clone(), t.assigned_to.clone()))
+        .collect()
+}
+
+/// One event-driven pass: start headless workers for new Pending tasks, then run the scheduler
+/// tick so completed work goes to review. Only while Automations are on, never two at once, and
+/// at most one per `BUS_PASS_GAP`.
+pub fn on_bus_change(root: PathBuf) {
+    use std::sync::atomic::Ordering::SeqCst;
+    if !crate::automation::enabled() {
+        return;
+    }
+    BUS_DIRTY.store(true, SeqCst);
+    if BUS_PASS_RUNNING.swap(true, SeqCst) {
+        return; // the running loop will see the flag
+    }
+    std::thread::spawn(move || {
+        // Let the writer finish (claim, completion) before reading the bus.
+        std::thread::sleep(Duration::from_millis(400));
+        while BUS_DIRTY.swap(false, SeqCst) {
+            bus_pass(&Vault::new(&root));
+            std::thread::sleep(BUS_PASS_GAP);
+        }
+        BUS_PASS_RUNNING.store(false, SeqCst);
+        // An event that landed between the last check and the reset starts a new loop.
+        if BUS_DIRTY.load(SeqCst) {
+            on_bus_change(root);
+        }
+    });
+}
+
+fn bus_pass(v: &Vault) {
+    if let Ok(tasks) = v.fetch_pending_tasks("all") {
+        let failed = BUS_FAILED.lock().map(|f| f.clone()).unwrap_or_default();
+        for (id, agent) in auto_start_candidates(&tasks, headless_available, |b| {
+            workdir_from_body(b).is_some()
+        }) {
+            if worker_running(&id) || failed.contains(&id) {
+                continue;
+            }
+            match start_worker(v, &id, &agent) {
+                Ok(w) => {
+                    let _ = v.log_activity(
+                        &id,
+                        &format!("started by the bus watcher ({agent}, pid {})", w.pid),
+                    );
+                }
+                Err(e) => {
+                    if let Ok(mut f) = BUS_FAILED.lock() {
+                        f.push(id.clone());
+                    }
+                    let _ =
+                        v.log_activity(&id, &format!("bus watcher could not start {agent}: {e:#}"));
+                }
+            }
+        }
+    }
+    let _ = crate::automation::tick(v);
 }
 
 fn emit_line(app: &AppHandle, task_id: &str, stream: &str, line: &str) {
@@ -745,6 +831,47 @@ mod tests {
         assert_eq!(
             render_claude_event("plain text"),
             vec!["plain text".to_string()]
+        );
+    }
+
+    #[test]
+    fn the_watcher_starts_only_pending_headless_work_with_a_folder() {
+        let d = tempfile::tempdir().unwrap();
+        let v = Vault::new(d.path().join("vault"));
+        v.scaffold().unwrap();
+        let repo = d.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let mk = |agent: &str, with_repo: bool| {
+            let mut instructions = "do it".to_string();
+            if with_repo {
+                instructions.push_str(&format!("\n\nRepository: {}", repo.display()));
+            }
+            v.delegate_task(DelegateArgs {
+                title: format!("{agent} {with_repo}"),
+                assigned_to: agent.into(),
+                creator: "test".into(),
+                project: "repo".into(),
+                context_files: Vec::new(),
+                instructions,
+                priority: "high".into(),
+            })
+            .unwrap()["id"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let cc = mk("claude-code", true);
+        let _no_folder = mk("claude-code", false);
+        let _ide = mk("qoder", true);
+        let _human = mk("human", true);
+        let claimed = mk("antigravity", true);
+        v.claim_task(&claimed, "antigravity").unwrap();
+        let tasks = v.fetch_pending_tasks("all").unwrap();
+        let got = auto_start_candidates(&tasks, |_| true, |b| workdir_from_body(b).is_some());
+        assert_eq!(got, vec![(cc, "claude-code".to_string())]);
+        assert!(
+            auto_start_candidates(&tasks, |_| false, |_| true).is_empty(),
+            "nothing starts for an agent whose CLI is missing"
         );
     }
 
