@@ -326,6 +326,7 @@ pub fn run_gui() {
             commands::merge_mission,
             commands::model_catalog,
             commands::router_suggestions,
+            commands::router_verdicts,
             commands::routing_policy,
             commands::mission_pins,
             commands::router_auto,

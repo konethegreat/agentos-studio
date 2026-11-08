@@ -41,6 +41,47 @@ pub fn suggestions() -> Result<Vec<Suggestion>> {
     Ok(suggestions_from(&missions::list(500)?))
 }
 
+/// What the router decides right now for one role: the pin, or why it declines.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct Verdict {
+    pub role: String,
+    pub pick: Option<Suggestion>,
+    pub decline: Option<String>,
+}
+
+/// The router's current decision for every role that has Hermes history. Pure.
+pub fn verdicts_from(all: &[missions::Mission], now: i64) -> Vec<Verdict> {
+    let mut roles: Vec<String> = all
+        .iter()
+        .filter(|m| m.agent == "hermes")
+        .map(|m| m.role.clone())
+        .collect();
+    roles.sort();
+    roles.dedup();
+    roles
+        .into_iter()
+        .map(|role| match pick(all, &role, now) {
+            Ok(s) => Verdict {
+                role,
+                pick: Some(s),
+                decline: None,
+            },
+            Err(why) => Verdict {
+                role,
+                pick: None,
+                decline: Some(why),
+            },
+        })
+        .collect()
+}
+
+pub fn verdicts() -> Result<Vec<Verdict>> {
+    Ok(verdicts_from(
+        &missions::list(500)?,
+        chrono::Utc::now().timestamp(),
+    ))
+}
+
 /// Scores from a set of missions. Pure.
 pub fn suggestions_from(all: &[missions::Mission]) -> Vec<Suggestion> {
     let mut buckets: std::collections::BTreeMap<(String, String, String), (usize, usize, f64)> =
@@ -459,6 +500,23 @@ mod tests {
             x
         }));
         assert!(pick(&pending, "implementer", NOW).is_err());
+    }
+
+    #[test]
+    fn verdicts_decline_until_the_evidence_is_there() {
+        let few = verdicts_from(&history(3, 0, "a"), NOW);
+        assert_eq!(few.len(), 1);
+        assert!(few[0].pick.is_none());
+        assert!(
+            few[0].decline.as_deref().unwrap().contains("needs 5"),
+            "{few:?}"
+        );
+        let many = verdicts_from(&history(9, 1, "a"), NOW);
+        assert_eq!(
+            many[0].pick.as_ref().map(|s| s.model.as_str()),
+            Some("a"),
+            "{many:?}"
+        );
     }
 
     #[test]

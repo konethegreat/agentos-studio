@@ -7,6 +7,9 @@ import { Badge, Button, Card } from "../components/ui";
 import { errorText } from "../lib/api";
 import { studio, type ComputerAction, type ComputerUseStatus } from "../lib/studio";
 
+/** The Commands panel is PowerShell on Windows, where a quoted path needs the call operator. */
+const callOp = /Windows/i.test(navigator.userAgent) ? "& " : "";
+
 /** What Hermes did on the desktop, the cua-driver behind it, and the switch for it. */
 export function ComputerUse() {
   const toast = useToast();
@@ -105,12 +108,12 @@ export function ComputerUse() {
                 </Button>
               )}
               {status.driver_path && status.update_available && (
-                <Button size="sm" onClick={() => void cli.run(`"${status.driver_path}" update --apply`)}>
+                <Button size="sm" onClick={() => void cli.run(`${callOp}"${status.driver_path}" update --apply`)}>
                   Update driver
                 </Button>
               )}
               {status.driver_path && (
-                <Button size="sm" onClick={() => void cli.run(`"${status.driver_path}" doctor`)}>
+                <Button size="sm" onClick={() => void cli.run(`${callOp}"${status.driver_path}" doctor`)}>
                   Run doctor
                 </Button>
               )}

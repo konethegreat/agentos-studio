@@ -28,7 +28,7 @@ export function Missions({ repos }: { repos: string[] }) {
   const [busy, setBusy] = useState(false);
   const [auto, setAuto] = useState<{ enabled: boolean; max_concurrent: number } | null>(null);
   const [allowMerge, setAllowMerge] = useState(false);
-  const [router, setRouter] = useState<{ role: string; provider: string; model: string; score: number; reason: string }[]>([]);
+  const [router, setRouter] = useState<{ role: string; pick: { provider: string; model: string; score: number; reason: string } | null; decline: string | null }[]>([]);
   const [providers, setProviders] = useState<{ id: string; label: string; models: string[]; active: boolean }[]>([]);
   const [form, setForm] = useState({
     repo: repos[0] ?? "",
@@ -68,7 +68,7 @@ export function Missions({ repos }: { repos: string[] }) {
     void load();
     void api.automationStatus().then(setAuto).catch(() => undefined);
     void api.modelCatalog().then((c) => setProviders(c.providers)).catch(() => undefined);
-    void api.routerSuggestions().then(setRouter).catch(() => undefined);
+    void api.routerVerdicts().then(setRouter).catch(() => undefined);
     void invoke<boolean>("router_auto").then(setRouterAuto).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -285,10 +285,21 @@ export function Missions({ repos }: { repos: string[] }) {
         </label>
         {router.length > 0 && (
           <span>
-            <span className="text-slate-400">{routerAuto ? "Router:" : "Router (shadow, changes nothing):"}</span> {router[0].role} would use{" "}
-            <span className="font-mono text-slate-300">{router[0].provider}</span>
-            {" / "}
-            <span className="font-mono text-slate-300">{router[0].model}</span> at score {router[0].score}. {router[0].reason}
+            <span className="text-slate-400">{routerAuto ? "Router:" : "Router (shadow, changes nothing):"}</span>{" "}
+            {router.map((v, i) => (
+              <span key={v.role}>
+                {i > 0 && "; "}
+                {v.pick ? (
+                  <>
+                    {v.role} would use <span className="font-mono text-slate-300">{v.pick.provider}</span>
+                    {" / "}
+                    <span className="font-mono text-slate-300">{v.pick.model}</span> ({v.pick.reason})
+                  </>
+                ) : (
+                  <>{v.decline}</>
+                )}
+              </span>
+            ))}
           </span>
         )}
       </div>

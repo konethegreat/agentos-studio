@@ -849,6 +849,11 @@ pub async fn router_suggestions() -> CmdResult<Vec<crate::router::Suggestion>> {
 }
 
 #[tauri::command]
+pub async fn router_verdicts() -> CmdResult<Vec<crate::router::Verdict>> {
+    blocking(crate::router::verdicts).await
+}
+
+#[tauri::command]
 pub fn model_catalog() -> crate::models::Catalog {
     crate::models::catalog()
 }
