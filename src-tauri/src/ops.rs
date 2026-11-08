@@ -856,3 +856,26 @@ pub async fn warm_hermes_chat() -> CmdResult<()> {
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn hermes_model_aliases() -> CmdResult<Vec<crate::model_layer::Alias>> {
+    blocking(|| Ok(crate::model_layer::aliases())).await
+}
+
+#[tauri::command]
+pub async fn hermes_set_model_alias(
+    name: String,
+    model: String,
+    provider: String,
+    base_url: Option<String>,
+) -> CmdResult<()> {
+    blocking(move || {
+        crate::model_layer::set_alias(&name, &model, &provider, base_url.as_deref().unwrap_or(""))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn hermes_remove_model_alias(name: String) -> CmdResult<()> {
+    blocking(move || crate::model_layer::remove_alias(&name)).await
+}
