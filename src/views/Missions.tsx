@@ -42,14 +42,14 @@ export function Missions({ repos }: { repos: string[] }) {
   });
 
   const [loaded, setLoaded] = useState(false);
-  const [pins, setPins] = useState<Record<string, { provider: string; model: string; source: string; reason: string }>>({});
+  const [pins, setPins] = useState<Record<string, { provider: string; model: string; source: string; reason: string; shadow?: string }>>({});
   const [routerAuto, setRouterAuto] = useState(false);
   const [authors, setAuthors] = useState<Record<string, string>>({});
   async function load() {
     try {
       const list = await api.missions();
       setRows(list);
-      void invoke<Record<string, { provider: string; model: string; source: string; reason: string }>>("mission_pins", { ids: list.map((m) => m.id) })
+      void invoke<Record<string, { provider: string; model: string; source: string; reason: string; shadow?: string }>>("mission_pins", { ids: list.map((m) => m.id) })
         .then(setPins)
         .catch(() => undefined);
       const blocked = list.filter((m) => m.status === "blocked").map((m) => m.id);
@@ -416,7 +416,7 @@ export function Missions({ repos }: { repos: string[] }) {
               </span>
               <span className="hidden shrink-0 text-slate-500 md:inline">{m.repo}</span>
               {pins[m.id] && (pins[m.id].source !== "inherit" || pins[m.id].reason) && (
-                <span className={`shrink-0 text-2xs ${pins[m.id].source === "router" ? "text-sky-300" : "text-slate-500"}`} title={pins[m.id].reason}>
+                <span className={`shrink-0 text-2xs ${pins[m.id].source === "router" ? "text-sky-300" : "text-slate-500"}`} title={[pins[m.id].reason, pins[m.id].shadow ? `Router: ${pins[m.id].shadow}` : ""].filter(Boolean).join("\n")}>
                   {pins[m.id].source === "inherit" ? "default model" : `${pins[m.id].model || pins[m.id].provider} via ${pins[m.id].source}`}
                 </span>
               )}
