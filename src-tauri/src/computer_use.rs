@@ -148,9 +148,29 @@ pub fn parse_result(session_id: &str, at: f64, content: &str) -> Action {
             let p = rest[..end].trim().replace("\\\\", "\\");
             (!p.is_empty()).then_some(p)
         });
-    let (action, summary, ok) = match serde_json::from_str::<Value>(content) {
+    // The first JSON value; Hermes sometimes appends text after it (an approval refusal does).
+    let first_json = serde_json::Deserializer::from_str(content.trim_start())
+        .into_iter::<Value>()
+        .next()
+        .and_then(|r| r.ok())
+        .filter(Value::is_object);
+    let (action, summary, ok) = match first_json.ok_or(()) {
         Ok(v) => {
             let s = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+            if !s("error").is_empty() && s("action").is_empty() {
+                let e = s("error");
+                let e = e
+                    .trim_start_matches(['\u{26a0}', '\u{fe0f}', ' '])
+                    .to_string();
+                return Action {
+                    session_id: session_id.to_string(),
+                    at,
+                    action: "refused".into(),
+                    summary: e.chars().take(240).collect(),
+                    ok: Some(false),
+                    screenshot: shot,
+                };
+            }
             let action = if !s("action").is_empty() {
                 s("action")
             } else if v.get("windows").is_some() {
@@ -347,5 +367,22 @@ mod tests {
         assert_eq!(b64(b"Man"), "TWFu");
         assert_eq!(b64(b"Ma"), "TWE=");
         assert_eq!(b64(b"M"), "TQ==");
+    }
+
+    #[test]
+    fn a_refusal_with_trailing_text_is_one_refused_row() {
+        let a = parse_result(
+            "s1",
+            1.0,
+            "{\"error\": \"\u{26a0}\u{fe0f} This action is potentially dangerous (Allow computer_use to perform set_value?).\"}\n\nAsking the user.",
+        );
+        assert_eq!(a.action, "refused");
+        assert!(
+            a.summary
+                .starts_with("This action is potentially dangerous"),
+            "{}",
+            a.summary
+        );
+        assert_eq!(a.ok, Some(false));
     }
 }
