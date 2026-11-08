@@ -812,3 +812,47 @@ pub async fn set_missions_parallel_per_repo(n: usize) -> CmdResult<()> {
 pub async fn model_changes() -> CmdResult<crate::model_watch::Changes> {
     blocking(crate::model_watch::check).await
 }
+
+// ------------------------------------------------------------------ Hermes chat over ACP
+
+#[tauri::command]
+pub fn answer_chat_permission(
+    state: tauri::State<'_, crate::commands::AppState>,
+    request_id: String,
+    option_id: Option<String>,
+) -> CmdResult<()> {
+    crate::chat_stream::answer_permission(&state.chat, &request_id, option_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn hermes_chat_transport() -> CmdResult<String> {
+    blocking(|| {
+        Ok(if crate::acp_host::enabled() {
+            "acp".to_string()
+        } else {
+            "cli".to_string()
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_hermes_chat_transport(acp: bool) -> CmdResult<()> {
+    blocking(move || {
+        if !acp {
+            crate::acp_host::reset();
+        }
+        crate::acp_host::set_enabled(acp)
+    })
+    .await
+}
+
+/// Start `hermes acp` ahead of the first message, so a new chat does not pay for it.
+#[tauri::command]
+pub async fn warm_hermes_chat() -> CmdResult<()> {
+    if crate::acp_host::enabled() {
+        crate::acp_host::warm();
+    }
+    Ok(())
+}

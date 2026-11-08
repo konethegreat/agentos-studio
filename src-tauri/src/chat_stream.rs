@@ -381,11 +381,17 @@ struct ActiveChat {
     run_id: String,
     pid: u32,
     stopped: Arc<AtomicBool>,
+    /// Set for an ACP turn: Stop sends `session/cancel` instead of ending a process.
+    cancel: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
-#[derive(Default)]
+type PermissionReply = tokio::sync::oneshot::Sender<Option<String>>;
+
+#[derive(Default, Clone)]
 pub struct ChatState {
     active: Arc<Mutex<Option<ActiveChat>>>,
+    /// Approval questions waiting for the user, by request id.
+    pending: Arc<Mutex<HashMap<String, PermissionReply>>>,
 }
 
 pub fn normalize_backend(b: &str) -> Result<&'static str> {
@@ -605,8 +611,331 @@ pub fn send_chat_message(
         _ => req.prompt.clone(),
     };
     fs::write(&query_file, &prompt)?;
-    let args = build_args(backend, &req, &query_file, &cwd);
-    let new_hermes_skills = (resumed.is_none() && backend == "hermes").then(|| req.skills.clone());
+    // Hermes turns go over ACP (approvals asked, real cancel, reasoning) unless the user chose
+    // `chat -q` or the prompt is a slash command, which ACP would hand to the model as text.
+    if backend == "hermes" && crate::acp_host::enabled() && !prompt.trim_start().starts_with('/') {
+        let stopped = Arc::new(AtomicBool::new(false));
+        *state
+            .active
+            .lock()
+            .map_err(|_| anyhow!("chat lock poisoned"))? = Some(ActiveChat {
+            run_id: run_id.clone(),
+            pid: 0,
+            stopped: stopped.clone(),
+            cancel: None,
+        });
+        emit(
+            &app,
+            &run_id,
+            ChatEvent::text("status", format!("Hermes is working in {}", cwd.display())),
+        );
+        let (app2, state2, rid) = (app.clone(), state.clone(), run_id.clone());
+        let cwd2 = cwd.clone();
+        tauri::async_runtime::spawn(async move {
+            acp_turn(app2, state2, rid, req, prompt, cwd2, query_file, stopped).await;
+        });
+        return Ok(ChatStarted {
+            run_id,
+            backend: backend.into(),
+            working_dir: cwd.display().to_string(),
+            pid: 0,
+        });
+    }
+    spawn_cli(
+        &app,
+        state,
+        &req,
+        backend,
+        &cwd,
+        &run_id,
+        query_file,
+        resumed.is_none(),
+    )
+}
+
+/// One Hermes turn over ACP. Falls back to `hermes chat -q` when the session cannot be created
+/// or loaded, before anything was sent, so a broken ACP path never loses a message.
+#[allow(clippy::too_many_arguments)]
+async fn acp_turn(
+    app: AppHandle,
+    state: ChatState,
+    run_id: String,
+    mut req: ChatRequest,
+    prompt: String,
+    cwd: PathBuf,
+    query_file: PathBuf,
+    stopped: Arc<AtomicBool>,
+) {
+    let fallback = |app: &AppHandle, state: &ChatState, req: &ChatRequest, why: String| {
+        emit(
+            app,
+            &run_id,
+            ChatEvent::text(
+                "status",
+                format!("ACP unavailable ({why}); using hermes chat -q"),
+            ),
+        );
+        let new = req
+            .session_id
+            .as_deref()
+            .map_or(true, |s| s.trim().is_empty());
+        if let Err(e) = spawn_cli(
+            app,
+            state,
+            req,
+            "hermes",
+            &cwd,
+            &run_id,
+            query_file.clone(),
+            new,
+        ) {
+            emit(app, &run_id, ChatEvent::text("error", e.to_string()));
+            finish(app, state, &run_id, None, false);
+        }
+    };
+    let sid = match req.session_id.clone().filter(|s| !s.trim().is_empty()) {
+        Some(s) => s,
+        None => {
+            let (c, m, p, sk) = (
+                cwd.clone(),
+                req.model.clone(),
+                req.provider.clone(),
+                req.skills.clone(),
+            );
+            match tauri::async_runtime::spawn_blocking(move || {
+                crate::acp_host::create_session(&c, m.as_deref(), p.as_deref(), &sk)
+            })
+            .await
+            {
+                Ok(Ok(s)) => {
+                    save_launch_skills(&s, &req.skills);
+                    crate::memory_ledger::rename_run(&run_id, &s);
+                    emit(
+                        &app,
+                        &run_id,
+                        ChatEvent {
+                            kind: "session".into(),
+                            session_id: Some(s.clone()),
+                            ..Default::default()
+                        },
+                    );
+                    // From here on this is a resume: the session already has its policy.
+                    req.session_id = Some(s.clone());
+                    s
+                }
+                Ok(Err(e)) => return fallback(&app, &state, &req, e.to_string()),
+                Err(e) => return fallback(&app, &state, &req, e.to_string()),
+            }
+        }
+    };
+    if stopped.load(Ordering::SeqCst) {
+        let _ = fs::remove_file(&query_file);
+        return finish(&app, &state, &run_id, Some(sid), true);
+    }
+    let mut turn = match crate::acp_host::start_turn(&sid, &cwd, &prompt).await {
+        Ok(t) => t,
+        Err(e) => return fallback(&app, &state, &req, e.to_string()),
+    };
+    let _ = fs::remove_file(&query_file);
+    if let Ok(mut a) = state.active.lock() {
+        if let Some(c) = a.as_mut().filter(|c| c.run_id == run_id) {
+            c.cancel = Some(turn.cancel);
+        }
+    }
+    // A Stop pressed while the session was being created or loaded applies now.
+    if stopped.load(Ordering::SeqCst) {
+        if let Some(c) = state
+            .active
+            .lock()
+            .ok()
+            .and_then(|mut a| a.as_mut().and_then(|c| c.cancel.take()))
+        {
+            let _ = c.send(());
+        }
+    }
+    let mut clock: HashMap<String, Instant> = HashMap::new();
+    let handle = |e: crate::acp::AcpEvent, clock: &mut HashMap<String, Instant>| {
+        for ev in acp_chat_events(e, clock) {
+            emit(&app, &run_id, ev);
+        }
+    };
+    let outcome = loop {
+        tokio::select! {
+            Some(e) = turn.events.recv() => handle(e, &mut clock),
+            Some(p) = turn.permissions.recv() => {
+                if let Ok(mut m) = state.pending.lock() {
+                    m.insert(p.request_id.clone(), p.reply);
+                }
+            }
+            r = &mut turn.done => break r,
+        }
+    };
+    while let Ok(e) = turn.events.try_recv() {
+        handle(e, &mut clock);
+    }
+    if let Ok(mut m) = state.pending.lock() {
+        m.clear();
+    }
+    match outcome {
+        Ok(Ok(stop)) => {
+            let was_stopped = stop == "cancelled" || stopped.load(Ordering::SeqCst);
+            if stop == "refusal" {
+                emit(
+                    &app,
+                    &run_id,
+                    ChatEvent::text("error", "Hermes refused this turn"),
+                );
+            }
+            finish(&app, &state, &run_id, Some(sid), was_stopped);
+        }
+        Ok(Err(e)) => {
+            if !stopped.load(Ordering::SeqCst) {
+                emit(
+                    &app,
+                    &run_id,
+                    ChatEvent::text("error", format!("Hermes: {e}")),
+                );
+            }
+            finish(
+                &app,
+                &state,
+                &run_id,
+                Some(sid),
+                stopped.load(Ordering::SeqCst),
+            );
+        }
+        Err(_) => {
+            if !stopped.load(Ordering::SeqCst) {
+                emit(
+                    &app,
+                    &run_id,
+                    ChatEvent::text("error", "The Hermes ACP connection closed during the turn"),
+                );
+            }
+            finish(
+                &app,
+                &state,
+                &run_id,
+                Some(sid),
+                stopped.load(Ordering::SeqCst),
+            );
+        }
+    }
+}
+
+fn finish(app: &AppHandle, state: &ChatState, run_id: &str, sid: Option<String>, stopped: bool) {
+    if let Ok(mut a) = state.active.lock() {
+        if a.as_ref().is_some_and(|c| c.run_id == run_id) {
+            *a = None;
+        }
+    }
+    emit(
+        app,
+        run_id,
+        ChatEvent {
+            kind: "complete".into(),
+            stopped: stopped.then_some(true),
+            session_id: sid,
+            ..Default::default()
+        },
+    );
+}
+
+/// ACP updates as the chat events the UI already renders. Built-in tools arrive as a title like
+/// `terminal: rm -rf x` with no structured input, so the title's detail becomes the card input.
+pub fn acp_chat_events(
+    e: crate::acp::AcpEvent,
+    clock: &mut HashMap<String, Instant>,
+) -> Vec<ChatEvent> {
+    use crate::acp::AcpEvent as A;
+    match e {
+        A::Text { text } => vec![ChatEvent::text("token", text)],
+        A::Thought { text } => vec![ChatEvent::text("thinking", text)],
+        A::ToolCall {
+            id, title, status, ..
+        } => {
+            clock.insert(id.clone(), Instant::now());
+            let (name, detail) = match title.split_once(": ") {
+                Some((n, d)) if !n.contains(' ') => (n.to_string(), Some(d.to_string())),
+                _ => (title.clone(), None),
+            };
+            let mut out = vec![tool_start(
+                &id,
+                &name,
+                detail.map(|d| serde_json::json!({ "detail": d })),
+            )];
+            if status == "completed" || status == "failed" {
+                out.push(ChatEvent {
+                    kind: "tool_result".into(),
+                    tool_id: Some(id),
+                    is_error: Some(status == "failed"),
+                    output: Some(String::new()),
+                    ..Default::default()
+                });
+            }
+            out
+        }
+        A::ToolUpdate { id, status, output } if status == "completed" || status == "failed" => {
+            vec![ChatEvent {
+                kind: "tool_result".into(),
+                duration_ms: clock.get(&id).map(|t| t.elapsed().as_millis() as u64),
+                tool_id: Some(id),
+                is_error: Some(status == "failed"),
+                output: Some(output),
+                ..Default::default()
+            }]
+        }
+        A::Plan { entries } if !entries.is_empty() => vec![ChatEvent::text(
+            "status",
+            format!("Plan: {}", entries.join(" / ")),
+        )],
+        A::Permission {
+            request_id,
+            title,
+            options,
+        } => vec![ChatEvent {
+            kind: "permission".into(),
+            tool_id: Some(request_id),
+            text: Some(title),
+            input: serde_json::to_value(options).ok(),
+            ..Default::default()
+        }],
+        _ => vec![],
+    }
+}
+
+/// Answer a Hermes approval question: an option id from the `permission` event, or `None` to
+/// cancel it (Hermes treats that as a denial).
+pub fn answer_permission(
+    state: &ChatState,
+    request_id: &str,
+    option_id: Option<String>,
+) -> Result<()> {
+    let reply = state
+        .pending
+        .lock()
+        .map_err(|_| anyhow!("chat lock poisoned"))?
+        .remove(request_id)
+        .ok_or_else(|| anyhow!("That approval is no longer waiting"))?;
+    let _ = reply.send(option_id);
+    Ok(())
+}
+
+/// Start `hermes chat -q` or `claude -p` for one turn.
+#[allow(clippy::too_many_arguments)]
+fn spawn_cli(
+    app: &AppHandle,
+    state: &ChatState,
+    req: &ChatRequest,
+    backend: &'static str,
+    cwd: &Path,
+    run_id: &str,
+    query_file: PathBuf,
+    new_session: bool,
+) -> Result<ChatStarted> {
+    let (app, cwd, run_id) = (app.clone(), cwd.to_path_buf(), run_id.to_string());
+    let args = build_args(backend, req, &query_file, &cwd);
+    let new_hermes_skills = (new_session && backend == "hermes").then(|| req.skills.clone());
     let tool = if backend == "hermes" {
         "hermes"
     } else {
@@ -640,6 +969,7 @@ pub fn send_chat_message(
         run_id: run_id.clone(),
         pid,
         stopped: stopped.clone(),
+        cancel: None,
     });
     if backend == "claude-code" {
         if let Some(mut stdin) = child.stdin.take() {
@@ -834,16 +1164,38 @@ pub fn send_chat_message(
 }
 
 pub fn stop_active_chat(state: &ChatState) -> Result<String> {
-    let guard = state
+    let mut guard = state
         .active
         .lock()
         .map_err(|_| anyhow!("chat lock poisoned"))?;
-    let Some(active) = guard.as_ref() else {
+    let Some(active) = guard.as_mut() else {
         bail!("Nothing is streaming");
     };
     active.stopped.store(true, Ordering::SeqCst);
-    procs::kill_tree(active.pid);
-    Ok(active.run_id.clone())
+    // Deny anything waiting for an answer, so the turn can end.
+    if let Ok(mut m) = state.pending.lock() {
+        m.clear();
+    }
+    let run_id = active.run_id.clone();
+    if let Some(cancel) = active.cancel.take() {
+        let _ = cancel.send(());
+        // Hermes stops at the next safe point; if it does not within 20 s, drop the connection.
+        let (state, rid) = (state.clone(), run_id.clone());
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+            let still = state
+                .active
+                .lock()
+                .map(|a| a.as_ref().is_some_and(|c| c.run_id == rid))
+                .unwrap_or(false);
+            if still {
+                crate::acp_host::reset();
+            }
+        });
+    } else if active.pid != 0 {
+        procs::kill_tree(active.pid);
+    }
+    Ok(run_id)
 }
 
 pub fn active_run(state: &ChatState) -> Option<String> {
@@ -927,6 +1279,94 @@ pub fn apply_code_to_file(working_dir: &str, rel_path: &str, content: &str) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn acp_updates_become_the_chat_events_the_ui_renders() {
+        use crate::acp::{AcpEvent, PermissionChoice};
+        let mut clock = HashMap::new();
+        let start = acp_chat_events(
+            AcpEvent::ToolCall {
+                id: "t1".into(),
+                title: "terminal: rm -rf x".into(),
+                tool_kind: "execute".into(),
+                status: "pending".into(),
+            },
+            &mut clock,
+        );
+        assert_eq!(start.len(), 1);
+        assert_eq!(start[0].kind, "tool_start");
+        assert_eq!(start[0].tool_name.as_deref(), Some("terminal"));
+        assert_eq!(start[0].input.as_ref().unwrap()["detail"], "rm -rf x");
+        let mcp = acp_chat_events(
+            AcpEvent::ToolCall {
+                id: "t2".into(),
+                title: "mcp__agentos_hub__recall".into(),
+                tool_kind: "other".into(),
+                status: "pending".into(),
+            },
+            &mut clock,
+        );
+        assert_eq!(
+            (mcp[0].server.as_deref(), mcp[0].tool_name.as_deref()),
+            (Some("agentos_hub"), Some("recall"))
+        );
+        let done = acp_chat_events(
+            AcpEvent::ToolUpdate {
+                id: "t1".into(),
+                status: "failed".into(),
+                output: "denied".into(),
+            },
+            &mut clock,
+        );
+        assert_eq!(
+            (done[0].kind.as_str(), done[0].is_error),
+            ("tool_result", Some(true))
+        );
+        assert!(done[0].duration_ms.is_some());
+        assert!(acp_chat_events(
+            AcpEvent::ToolUpdate {
+                id: "t1".into(),
+                status: "in_progress".into(),
+                output: String::new()
+            },
+            &mut clock
+        )
+        .is_empty());
+        assert_eq!(
+            acp_chat_events(AcpEvent::Thought { text: "hm".into() }, &mut clock)[0].kind,
+            "thinking"
+        );
+        let p = acp_chat_events(
+            AcpEvent::Permission {
+                request_id: "r1".into(),
+                title: "recursive delete".into(),
+                options: vec![PermissionChoice {
+                    id: "deny".into(),
+                    name: "Deny".into(),
+                    kind: "reject_once".into(),
+                }],
+            },
+            &mut clock,
+        );
+        assert_eq!(
+            (p[0].kind.as_str(), p[0].tool_id.as_deref()),
+            ("permission", Some("r1"))
+        );
+        assert_eq!(p[0].input.as_ref().unwrap()[0]["kind"], "reject_once");
+    }
+
+    #[test]
+    fn answering_an_approval_reaches_the_turn_once() {
+        let state = ChatState::default();
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        state.pending.lock().unwrap().insert("r1".into(), tx);
+        answer_permission(&state, "r1", Some("allow".into())).unwrap();
+        assert_eq!(rx.try_recv().unwrap(), Some("allow".to_string()));
+        assert!(
+            answer_permission(&state, "r1", None).is_err(),
+            "a second answer is refused"
+        );
+    }
 
     #[test]
     fn splits_mcp_tool_names() {
