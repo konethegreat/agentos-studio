@@ -51,9 +51,29 @@ fn now() -> i64 {
     chrono::Utc::now().timestamp()
 }
 
+/// The next free id: one above the highest number in use, so a deleted mission never makes a
+/// later one collide with an existing id (a row count would).
 fn next_id(c: &Connection) -> Result<String> {
-    let n: i64 = c.query_row("SELECT COUNT(*) FROM missions", [], |r| r.get(0))?;
-    Ok(format!("M-{:03}", n + 1))
+    let mut st = c.prepare("SELECT id FROM missions")?;
+    let max = st
+        .query_map([], |r| r.get::<_, String>(0))?
+        .flatten()
+        .filter_map(|id| id.strip_prefix("M-").and_then(|n| n.parse::<i64>().ok()))
+        .max()
+        .unwrap_or(0);
+    Ok(format!("M-{:03}", max + 1))
+}
+
+/// Remove a mission that is not in flight (queued, blocked, done or failed). Used by live tests to
+/// leave nothing behind; a running or in-review mission must be stopped or judged first.
+pub fn delete(id: &str) -> Result<()> {
+    let m = get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
+    if m.status == "running" || m.status == "review" {
+        bail!("{id} is {}; stop or judge it before deleting", m.status);
+    }
+    let c = store::open()?;
+    c.execute("DELETE FROM missions WHERE id = ?1", params![id])?;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -204,13 +224,15 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
                 m.repo
             )
         })?;
+    // Every attempt gets its own worktree and branch, so a mission never shares a checkout.
+    let wt = crate::worktree::create(&dir, &m)?;
     let args = crate::vault::DelegateArgs {
         title: m.goal.chars().take(90).collect(),
         assigned_to: m.agent.clone(),
         creator: "agentos-studio".into(),
         project: m.repo.clone(),
         context_files: context_files(&dir),
-        instructions: bus_instructions(&m, &dir),
+        instructions: bus_instructions(&m, &dir, Some(&wt)),
         priority: "high".into(),
     };
     let task = v.delegate_task(args)?;
@@ -219,7 +241,15 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         .and_then(|x| x.as_str())
         .map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("the bus did not return a task id"))?;
-    dispatch(id, &task_id)
+    let started = dispatch(id, &task_id)?;
+    // Headless agents get a worker now; IDE agents pick the task up from the bus.
+    let agent = m.agent.trim().to_lowercase();
+    if crate::bus::is_headless(&agent) {
+        if let Err(e) = crate::bus::start_worker(v, &task_id, &agent) {
+            let _ = v.log_activity(&task_id, &format!("no worker started: {e:#}"));
+        }
+    }
+    Ok(started)
 }
 
 /// The files an agent should read before starting: the shared system context and the
@@ -237,7 +267,11 @@ pub fn context_files(dir: &std::path::Path) -> Vec<String> {
 
 /// The bus task body for a mission. Carries the `Repository:` line every worker resolves its
 /// working folder from, the acceptance criteria and, on rework, the reviewer's note. Pure.
-pub fn bus_instructions(m: &Mission, dir: &std::path::Path) -> String {
+pub fn bus_instructions(
+    m: &Mission,
+    dir: &std::path::Path,
+    worktree: Option<&std::path::Path>,
+) -> String {
     let mut b = format!(
         "{}\n\nAcceptance criteria:\n{}\n\nMission: {}. Role: {}. Provider: {}.\n\nWork in a branch, open a pull request with gh, and put the pull request URL in your complete_task summary. Do not merge: AgentOS Studio reviews and merges.",
         m.goal.trim(),
@@ -255,6 +289,16 @@ pub fn bus_instructions(m: &Mission, dir: &std::path::Path) -> String {
         }
     }
     b.push_str(&format!("\n\nRepository: {}", dir.display()));
+    if let Some(wt) = worktree {
+        b.push_str(&format!(
+            "\nWorktree: {}\nBranch: {}",
+            wt.display(),
+            crate::worktree::branch_for(m)
+        ));
+    }
+    if !m.model.trim().is_empty() {
+        b.push_str(&format!("\nModel: {}", m.model.trim()));
+    }
     b
 }
 
@@ -535,11 +579,24 @@ mod tests {
             let d = tempfile::tempdir().unwrap();
             std::fs::write(d.path().join("README.md"), "# r").unwrap();
             let mut m = make();
-            let body = bus_instructions(&m, d.path());
+            let body = bus_instructions(&m, d.path(), None);
             assert!(body.contains("Acceptance criteria:"));
             assert!(body.contains(&m.id));
             // The worker resolves its folder from exactly this line.
             assert_eq!(crate::bus::repo_from_body(&body).unwrap(), d.path());
+            assert_eq!(crate::bus::workdir_from_body(&body).unwrap(), d.path());
+            // With a worktree the worker runs there; the repository line still names the checkout.
+            let wt = d.path().join("wt");
+            std::fs::create_dir_all(&wt).unwrap();
+            m.model = "claude-opus-5-5".into();
+            let body = bus_instructions(&m, d.path(), Some(&wt));
+            assert_eq!(crate::bus::workdir_from_body(&body).unwrap(), wt);
+            assert_eq!(crate::bus::repo_from_body(&body).unwrap(), d.path());
+            assert_eq!(
+                crate::bus::model_from_body(&body).as_deref(),
+                Some("claude-opus-5-5")
+            );
+            assert!(body.contains(&format!("Branch: {}", crate::worktree::branch_for(&m))));
             let ctx = context_files(d.path());
             assert_eq!(ctx[0], "03_Memory/SYSTEM_CONTEXT.md");
             assert!(ctx.iter().any(|c| c.ends_with("README.md")));
@@ -550,7 +607,7 @@ mod tests {
 
             m.review_verdict = Some("reject".into());
             m.review_note = Some("cover the empty case".into());
-            assert!(bus_instructions(&m, d.path()).contains("cover the empty case"));
+            assert!(bus_instructions(&m, d.path(), None).contains("cover the empty case"));
         });
     }
 
@@ -578,6 +635,19 @@ mod tests {
                 v.fetch_pending_tasks("all").unwrap().is_empty(),
                 "no task written"
             );
+        });
+    }
+
+    #[test]
+    fn deleting_a_mission_never_reuses_an_id() {
+        with_db(|| {
+            let a = make();
+            let b = make();
+            assert!(delete(&a.id).is_ok());
+            let c = make();
+            assert_ne!(c.id, b.id, "a row count would hand out {} again", b.id);
+            let r = dispatch(&c.id, "TASK-009").unwrap();
+            assert!(delete(&r.id).is_err(), "a running mission is not deleted");
         });
     }
 

@@ -19,6 +19,28 @@ A repository can commit the model choices its team agrees on, so nobody has to r
 - `allow_merge` is the repository's standing answer to "may a mission merge here at all".
 - A malformed file is ignored rather than half applied, and the mission falls back to the active model.
 
+## Tool allowlist for headless workers
+
+Claude Code mission workers run `claude -p --permission-mode acceptEdits` in the mission's worktree,
+which allows file edits there and nothing else. Shell commands need an allow rule, because a
+headless session has nobody to ask. Every worker gets `mcp__agentos-hub`, `Bash(git *)` and
+`Bash(gh pr *)`, which is enough to commit, push and open the pull request. A repository adds what
+its own checks need:
+
+```json
+{
+  "allowed_tools": ["Bash(npm test*)", "Bash(cargo *)"]
+}
+```
+
+- Each `Bash(...)` rule is also passed as `PowerShell(...)`: Claude Code on Windows runs shell
+  commands through either tool, and a rule for only one of them is denied half the time.
+- A rule with no pattern (`Bash`, `Bash(*)`, `PowerShell(*)`, `*`) or anything that mentions
+  skipping permissions makes the file invalid, so the whole policy is ignored. Studio never passes
+  `--dangerously-skip-permissions`.
+- The list is read from the main checkout, so a worker cannot widen its own permissions by editing
+  the file in its worktree.
+
 ## Order of precedence
 
 When a mission is created, its provider and model come from the first of these that applies:

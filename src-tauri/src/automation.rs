@@ -46,25 +46,20 @@ pub fn set_max_concurrent(n: usize) {
     kv_set(KV_MAX, &n.clamp(1, 12).to_string());
 }
 
-/// Which queued missions may start now, never past the global cap. Per repository: a mission that
-/// shares the checkout (anything but Hermes, or Hermes with `hermes_per_repo` 1) runs alone; Hermes
-/// missions on worktrees may run up to `hermes_per_repo` side by side. Pure.
+/// Which queued missions may start now, never past the global cap. Per repository: with
+/// `per_repo` 1 a mission runs alone in its repository; above 1, up to `per_repo` missions share
+/// it, each in its own worktree (kanban worktrees for Hermes, Studio worktrees for the rest). Pure.
 pub fn startable(
     queued: &[&Mission],
     running: &[&Mission],
     max: usize,
-    hermes_per_repo: usize,
+    per_repo: usize,
 ) -> Vec<String> {
-    let parallel = hermes_per_repo.max(1);
-    // (repo, is a parallel-safe Hermes worktree mission)
+    let parallel = per_repo.max(1);
+    // (repo, may share the repository)
     let mut busy: Vec<(String, bool)> = running
         .iter()
-        .map(|m| {
-            (
-                m.repo.to_lowercase(),
-                parallel > 1 && missions::uses_kanban(m),
-            )
-        })
+        .map(|m| (m.repo.to_lowercase(), parallel > 1))
         .collect();
     let mut room = max.saturating_sub(running.len());
     let mut out = Vec::new();
@@ -78,7 +73,7 @@ pub fn startable(
             .filter(|(r, _)| *r == repo)
             .map(|(_, p)| *p)
             .collect();
-        let safe = parallel > 1 && missions::uses_kanban(m);
+        let safe = parallel > 1;
         let ok = if here.is_empty() {
             true
         } else {
@@ -150,6 +145,18 @@ pub fn tick(v: &Vault) -> TickReport {
 
     // Re-read: statuses changed in step 1.
     let all = missions::list(300).unwrap_or_default();
+
+    // A finished mission no longer needs its worktree; its branch stays, it is the pull request.
+    for m in all
+        .iter()
+        .filter(|m| m.status == "done" || m.status == "failed")
+    {
+        if crate::worktree::recorded(&m.id).is_some() {
+            if let Some(dir) = crate::review_agent::project_dir(&m.repo) {
+                let _ = crate::worktree::remove(&dir, &m.id);
+            }
+        }
+    }
     let running: Vec<&Mission> = all.iter().filter(|m| m.status == "running").collect();
     report.running = running.len();
 
@@ -331,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn hermes_worktree_missions_share_a_repository_others_never_do() {
+    fn worktree_missions_of_any_agent_share_a_repository_up_to_the_cap() {
         let cc = |id: &str, repo: &str, status: &str| {
             let mut x = m(id, repo, status);
             x.agent = "claude-code".into();
@@ -355,18 +362,17 @@ mod tests {
         );
         let busy = [cc("M-9", "a", "running")];
         let r: Vec<&Mission> = busy.iter().collect();
-        assert!(
-            startable(&queued, &r, 9, 3).is_empty(),
-            "never beside a shared checkout"
+        assert_eq!(
+            startable(&queued, &r, 9, 3),
+            vec!["M-1", "M-2"],
+            "a Claude Code worktree counts toward the per-repo cap"
         );
-        let q2 = [cc("M-4", "a", "queued")];
-        let queued2: Vec<&Mission> = q2.iter().collect();
+        assert!(
+            startable(&queued, &r, 9, 1).is_empty(),
+            "parallel off: nothing beside it"
+        );
         let hr = [m("M-8", "a", "running")];
         let r2: Vec<&Mission> = hr.iter().collect();
-        assert!(
-            startable(&queued2, &r2, 9, 3).is_empty(),
-            "a shared checkout waits for worktrees"
-        );
         assert_eq!(
             startable(&queued, &r2, 2, 3),
             vec!["M-1"],

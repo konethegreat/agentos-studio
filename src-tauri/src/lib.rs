@@ -50,6 +50,7 @@ pub mod updates;
 pub mod usage;
 pub mod vault;
 pub mod workdir;
+pub mod worktree;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -104,6 +105,9 @@ pub fn run_gui() {
             }
             // Missions tick once a minute while the app is open. Off by default; the Missions
             // board turns it on, and it advances running work either way.
+            // The scheduler starts headless workers itself, so it needs the app handle and the
+            // shared worker table the board's Run now button uses.
+            bus::set_host(handle.clone(), st.bus.workers.clone());
             automation::start_scheduler(root.clone());
             // Staged startup checks: streamed to the boot screen, cached for the next launch.
             let boot_handle = handle.clone();

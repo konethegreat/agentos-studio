@@ -177,22 +177,115 @@ pub fn render_claude_event(line: &str) -> Vec<String> {
     }
 }
 
-fn worker_prompt(task_id: &str, agent: &str, body: &str) -> String {
+pub fn worker_prompt(task_id: &str, agent: &str, body: &str) -> String {
     format!(
         "You are {agent}, working AgentOS task {task_id}. It is already claimed for you on the agentos-hub Agent Bus.\n\n\
          --- TASK SPEC ---\n{body}\n--- END TASK SPEC ---\n\n\
          Follow the AgentOS constitution (CLAUDE.md / AGENTS.md / SYSTEM_CONTEXT). Work autonomously.\n\
+         If the spec names a Worktree you are already in it, on its own Branch: commit there, push with `git push -u origin HEAD`, \
+         and open the pull request with `gh pr create`. Never merge and never push to the default branch.\n\
          When finished, call the agentos-hub MCP tool complete_task with task_id \"{task_id}\", agent_name \"{agent}\" \
          and a concrete summary_of_work (what changed, files, PR URL, verification). If you cannot finish, explain why in your final message."
     )
 }
 
+fn line_value(body: &str, key: &str) -> Option<String> {
+    let re = Regex::new(&format!(r"(?m)^{key}:\s*`?([^`\r\n]+?)`?\s*$")).expect("static regex");
+    re.captures(body).map(|c| c[1].trim().to_string())
+}
+
 /// Extract `Repository: <path>` from a task body, if the directory exists.
 pub fn repo_from_body(body: &str) -> Option<PathBuf> {
-    let re = Regex::new(r"(?m)^Repository:\s*`?([^`\n]+?)`?\s*$").expect("static regex");
-    re.captures(body)
-        .map(|c| PathBuf::from(c[1].trim()))
+    line_value(body, "Repository")
+        .map(PathBuf::from)
         .filter(|p| p.is_dir())
+}
+
+/// The folder a worker runs in: the mission's `Worktree:` when it exists, else `Repository:`.
+pub fn workdir_from_body(body: &str) -> Option<PathBuf> {
+    line_value(body, "Worktree")
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir())
+        .or_else(|| repo_from_body(body))
+}
+
+/// A model pinned on the mission (`Model: <id>`), if any.
+pub fn model_from_body(body: &str) -> Option<String> {
+    line_value(body, "Model").filter(|m| !m.is_empty())
+}
+
+/// `claude -p` arguments for a headless mission worker. Edits are accepted inside the working
+/// folder; shell commands only as the allowlist names them. Never skips permissions. Pure.
+pub fn claude_args(allowed: &[String], model: Option<&str>) -> Vec<String> {
+    let mut a: Vec<String> = [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-mode",
+        "acceptEdits",
+    ]
+    .map(String::from)
+    .to_vec();
+    if let Some(m) = model.filter(|m| !m.trim().is_empty()) {
+        a.extend(["--model".into(), m.trim().into()]);
+    }
+    a.push("--allowedTools".into());
+    a.extend(allowed.iter().cloned());
+    a
+}
+
+/// The app handle and worker table, so the scheduler thread can start workers like Run now does.
+type Host = (AppHandle, Arc<Mutex<HashMap<String, WorkerInfo>>>);
+static HOST: std::sync::OnceLock<Host> = std::sync::OnceLock::new();
+
+/// The worker starter, registered by `set_host`. Callers outside this module (the scheduler,
+/// `missions::start`) go through it, so code under unit test never links the Tauri runtime: a
+/// test binary that does fails to load on Windows (STATUS_ENTRYPOINT_NOT_FOUND).
+type Launcher = fn(&Vault, &str, &str) -> Result<WorkerInfo>;
+static LAUNCHER: std::sync::OnceLock<Launcher> = std::sync::OnceLock::new();
+
+pub fn set_host(app: AppHandle, workers: Arc<Mutex<HashMap<String, WorkerInfo>>>) {
+    let _ = HOST.set((app, workers));
+    let _ = LAUNCHER.set(launch);
+}
+
+/// Start a headless worker through the registered launcher. Without the app (tests, the stdio
+/// hub) there is none, and this says so instead of starting anything.
+pub fn start_worker(vault: &Vault, task_id: &str, agent: &str) -> Result<WorkerInfo> {
+    let f = LAUNCHER
+        .get()
+        .ok_or_else(|| anyhow!("no app host: workers start only inside AgentOS Studio"))?;
+    f(vault, task_id, agent)
+}
+
+/// Agents Studio can run without an IDE. Pure.
+pub fn is_headless(agent: &str) -> bool {
+    matches!(agent, "hermes" | "claude-code")
+}
+
+/// Whether a worker for this task is alive in this app session.
+pub fn worker_running(task_id: &str) -> bool {
+    HOST.get()
+        .and_then(|(_, w)| w.lock().ok().map(|w| w.contains_key(task_id)))
+        .unwrap_or(false)
+}
+
+/// Claim a task for a headless agent (if still pending) and start its worker, from any thread.
+/// Fails when the app host is not set (unit tests, the stdio hub).
+pub fn launch(vault: &Vault, task_id: &str, agent: &str) -> Result<WorkerInfo> {
+    let (app, workers) = HOST
+        .get()
+        .cloned()
+        .ok_or_else(|| anyhow!("no app host: workers start only inside AgentOS Studio"))?;
+    if let Ok((t, _)) = vault.get_task(task_id) {
+        if t.state == State::Pending {
+            vault.claim_task(task_id, agent)?;
+        }
+    }
+    // tokio::process needs a runtime context; the scheduler is a plain thread.
+    let _rt = tauri::async_runtime::handle().inner().enter();
+    spawn_worker(app, workers, vault.clone(), task_id, agent)
 }
 
 /// Spawn a headless Hermes or Claude Code worker for a claimed task.
@@ -212,7 +305,7 @@ pub fn spawn_worker(
     }
     let (task, _) = vault.get_task(task_id)?;
     // Agent work never falls back to the home folder: no repository, no worker.
-    let cwd = repo_from_body(&task.body).ok_or_else(|| {
+    let cwd = workdir_from_body(&task.body).ok_or_else(|| {
         anyhow!(
             "{task_id} has no Repository line naming an existing folder, so no worker was started. Dispatch it with a repository."
         )
@@ -238,20 +331,18 @@ pub fn spawn_worker(
                 None,
             )
         }
-        "claude-code" => (
-            "claude",
-            vec![
-                "-p".into(),
-                "--output-format".into(),
-                "stream-json".into(),
-                "--verbose".into(),
-                "--permission-mode".into(),
-                "acceptEdits".into(),
-                "--allowedTools".into(),
-                "mcp__agentos-hub".into(),
-            ],
-            Some(prompt.clone()),
-        ),
+        "claude-code" => {
+            // The repository's committed allowlist, read from the main checkout.
+            let extra = repo_from_body(&task.body)
+                .map(|r| crate::routing::allowed_tools(&r))
+                .unwrap_or_default();
+            let allowed = crate::routing::claude_allowed_tools(&extra);
+            (
+                "claude",
+                claude_args(&allowed, model_from_body(&task.body).as_deref()),
+                Some(prompt.clone()),
+            )
+        }
         other => bail!(
             "Agent '{other}' runs inside its IDE; only hermes and claude-code can run headless"
         ),
@@ -449,7 +540,7 @@ pub fn quick_mission_dispatch(
             bail!("Repository folder not found: {}", r.display());
         }
     }
-    let headless = agent == "hermes" || agent == "claude-code";
+    let headless = is_headless(&agent);
     if repo.is_none() && headless && !queue_only {
         bail!("Pick a repository: {agent} works in a project folder, never in the home folder");
     }
@@ -530,6 +621,20 @@ mod tests {
             render_claude_event("plain text"),
             vec!["plain text".to_string()]
         );
+    }
+
+    #[test]
+    fn a_claude_worker_never_skips_permissions() {
+        let allowed = crate::routing::claude_allowed_tools(&["Bash(npm test*)".into()]);
+        let a = claude_args(&allowed, Some("claude-opus-5-5"));
+        assert!(!a.iter().any(|x| x.contains("dangerously")));
+        assert!(!a.iter().any(|x| x == "bypassPermissions"));
+        let i = a.iter().position(|x| x == "--allowedTools").unwrap();
+        assert_eq!(&a[i + 1..], allowed.as_slice(), "the allowlist is the tail");
+        assert!(a
+            .windows(2)
+            .any(|w| w[0] == "--model" && w[1] == "claude-opus-5-5"));
+        assert!(!claude_args(&allowed, None).contains(&"--model".to_string()));
     }
 
     #[test]
