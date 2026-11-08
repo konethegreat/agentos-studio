@@ -916,3 +916,13 @@ pub async fn computer_use_activity(
 pub async fn computer_use_screenshot(path: String) -> CmdResult<String> {
     blocking(move || crate::computer_use::screenshot(&path)).await
 }
+
+#[tauri::command]
+pub async fn approval_timeout() -> CmdResult<u64> {
+    blocking(|| Ok(crate::chat_stream::approval_timeout_secs())).await
+}
+
+#[tauri::command]
+pub async fn set_approval_timeout(secs: u64) -> CmdResult<u64> {
+    blocking(move || crate::chat_stream::set_approval_timeout_secs(secs)).await
+}
