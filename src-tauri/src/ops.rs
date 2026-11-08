@@ -879,3 +879,40 @@ pub async fn hermes_set_model_alias(
 pub async fn hermes_remove_model_alias(name: String) -> CmdResult<()> {
     blocking(move || crate::model_layer::remove_alias(&name)).await
 }
+
+// ------------------------------------------------------------------ computer use
+
+#[tauri::command]
+pub async fn computer_use_status() -> CmdResult<crate::computer_use::Status> {
+    blocking(|| Ok(crate::computer_use::status())).await
+}
+
+#[tauri::command]
+pub async fn computer_use_set_enabled(on: bool, approved: Option<bool>) -> CmdResult<String> {
+    blocking(move || {
+        if on {
+            permissions::run_guarded(
+                "hermes.computer_use.enable",
+                "computer_use",
+                "Let Hermes see the screen and control the mouse and keyboard (hermes tools enable computer_use)",
+                approved.unwrap_or(false),
+                || crate::computer_use::set_enabled(true),
+            )
+        } else {
+            crate::computer_use::set_enabled(false)
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn computer_use_activity(
+    limit: Option<usize>,
+) -> CmdResult<Vec<crate::computer_use::Action>> {
+    blocking(move || crate::computer_use::activity(limit.unwrap_or(60))).await
+}
+
+#[tauri::command]
+pub async fn computer_use_screenshot(path: String) -> CmdResult<String> {
+    blocking(move || crate::computer_use::screenshot(&path)).await
+}

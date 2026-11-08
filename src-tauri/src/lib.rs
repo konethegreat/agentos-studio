@@ -10,6 +10,7 @@ pub mod bus;
 pub mod chat_stream;
 pub mod cli_runner;
 pub mod commands;
+pub mod computer_use;
 pub mod connect;
 pub mod constitution;
 pub mod fleet;
@@ -277,6 +278,10 @@ pub fn run_gui() {
             ops::hermes_chat_transport,
             ops::set_hermes_chat_transport,
             ops::warm_hermes_chat,
+            ops::computer_use_status,
+            ops::computer_use_set_enabled,
+            ops::computer_use_activity,
+            ops::computer_use_screenshot,
             ops::hermes_model_aliases,
             ops::hermes_set_model_alias,
             ops::hermes_remove_model_alias,

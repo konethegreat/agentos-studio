@@ -52,6 +52,14 @@ pub const ACTIONS: &[ActionDef] = &[
         false,
     ),
     def(
+        "hermes.computer_use.enable",
+        "Hermes",
+        "Let Hermes see the screen and control the mouse and keyboard",
+        "high",
+        "ask",
+        false,
+    ),
+    def(
         "hermes.credential.remove",
         "Hermes",
         "Remove a pooled credential from Hermes (hermes auth remove)",
