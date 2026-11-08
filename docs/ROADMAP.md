@@ -282,6 +282,46 @@ This completes the design-system bullet listed under v0.4.1, which was never bui
   Python server had, plus recall, remember and project_brief.
 - Verified by `tests/live_hub_cutover.rs` against the real agent configs.
 
+## v0.12.0: the agents talk to each other (shipped)
+
+Phase C of the 2026-11-08 master brief. Goal: the owner never copies text between tools. Agents
+hand work, context and questions to each other through the hub, and every exchange is visible.
+Depends on: Phase B (every agent runs headless in its own worktree, per-agent hub identity).
+User guide: `docs/AGENTS.md`.
+
+- Agent registry: one card per agent (how it starts, strengths, tools, cost model, quota headroom
+  from `hermes usage`, measured approvals, health) on Work > Agents and through the `agents` hub
+  tool; `studio.db` schema 9 adds the exchange log (`agent_events`) and `missions.kind` (#73).
+- Handoff packets: hub tool `handoff`; Studio builds the packet (summary, next step, acceptance,
+  diff so far, failing checks, recall, project brief) and the receiver starts in the same worktree
+  with the packet as its first message (#75).
+- Ask another agent: hub tool `ask_agent` runs one short headless turn on Hermes, Claude Code or
+  Antigravity and returns the answer; a kv guard in `studio.db` stops ask loops (#76).
+- Council for design decisions: two or three agents on different provider families answer in
+  parallel, Hermes synthesizes an ADR committed as a pull request, with a decision note in the
+  vault; Hermes `kanban swarm` was refused because it cannot seat other providers (#77).
+- Quota-aware assignment: agent `auto` is assigned at start by hard constraints, measured success
+  for the role, then cost; non-urgent work is deferred to the next window reset instead of going
+  metered (#78).
+- One timeline: Work > Run timeline shows a mission's path across agents with replay, built
+  read-only from the exchange log, bus, worker logs, kanban, `state.db` and the memory ledger (#79).
+- Fix: the merge gate resolves a Hermes project slug to `owner/name` before reading checks and
+  merging (#81).
+- Fix, found by the first Phase C live run: a mission's pull request is read only from the
+  worker's completion summary, because a handoff packet's recall results can quote other pull
+  requests; discarding a mission attempt deletes its branches even when the folder is briefly held
+  (#85).
+- Fixes from the release-build click-through: Replay keeps the current step in view, and quota
+  reset times read as a short local date (#88).
+- Also in this release (Phase E, Qoder): the Brain view shows the vault and Hermes memory stores
+  side by side (#74), and finished missions write validated lessons, with repeated review
+  blockers becoming one convention note per repository (#80).
+- Verified live: `tests/live_handoff.rs`, `tests/live_ask.rs`, `tests/live_council.rs`, and the
+  phase check `tests/live_phase_c_done.rs` against the running 0.12.0 release build (Claude Code
+  asks Hermes, implements, hands off to Hermes, which documents and opens the pull request; a
+  reviewer and the gate merge it; the timeline shows both agents, the ask, the answer, the handoff,
+  the pull request and the review).
+
 ## v0.11.0: every agent can actually do the work (shipped)
 
 Phase B of the 2026-11-08 master brief. The bus was wired to four agents but only Hermes ever ran.
