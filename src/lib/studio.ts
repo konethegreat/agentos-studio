@@ -407,6 +407,15 @@ export interface PermissionOption {
   kind: string;
 }
 
+export interface ModelAlias {
+  name: string;
+  model: string;
+  provider: string;
+  base_url?: string;
+  key_env?: string;
+  has_key: boolean;
+}
+
 export const studio = {
   chat: {
     answerPermission: (requestId: string, optionId: string | null) => invoke<void>("answer_chat_permission", { requestId, optionId }),
@@ -423,6 +432,9 @@ export const studio = {
     moa: () => invoke<Moa>("hermes_moa"),
     setActiveMoa: (preset: string) => invoke<void>("hermes_set_active_moa", { preset }),
     folderModels: () => invoke<FolderModel[]>("folder_models"),
+    aliases: () => invoke<ModelAlias[]>("hermes_model_aliases"),
+    setAlias: (name: string, model: string, provider: string, baseUrl: string) => invoke<void>("hermes_set_model_alias", { name, model, provider, baseUrl: baseUrl || null }),
+    removeAlias: (name: string) => invoke<void>("hermes_remove_model_alias", { name }),
     changes: () =>
       invoke<{ new: { provider: string; model: string; first_seen: number }[]; gone: { provider: string; model: string; used_by: string[] }[] }>("model_changes"),
     setFolderModels: (entries: FolderModel[]) => invoke<void>("set_folder_models", { entries }),
