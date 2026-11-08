@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, ChevronLeft, ChevronRight, GitPullRequest, History, MessageCircleQuestion, Pause, Play, RefreshCw, Users } from "lucide-react";
 import { api, errorText, type MissionTimeline, type TimelineSummary } from "../lib/api";
 import { Badge, Button, Card, Empty } from "../components/ui";
@@ -89,6 +89,12 @@ export function Timeline() {
   }, [playing, steps.length]);
 
   const shown = cursor === null ? steps : steps.slice(0, cursor + 1);
+
+  // Replay and the step buttons keep the current step in view; a long run is taller than the pane.
+  const current = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    if (cursor !== null) current.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [cursor]);
 
   return (
     <div className="flex h-full min-h-0">
@@ -203,7 +209,7 @@ export function Timeline() {
             )}
             <ol className="relative flex flex-col gap-2 border-l border-line/60 pl-4">
               {shown.map((s, i) => (
-                <li key={`${s.at}-${i}`}>
+                <li key={`${s.at}-${i}`} ref={cursor !== null && i === cursor ? current : undefined}>
                   <Card className={`p-3 ${cursor !== null && i === cursor ? "ring-1 ring-indigo-400/50" : ""}`}>
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <span className="text-slate-500">{when(s.at)}</span>
