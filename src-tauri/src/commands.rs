@@ -913,29 +913,32 @@ pub async fn merge_mission(id: String, allowlisted: bool) -> CmdResult<String> {
 
 #[tauri::command]
 pub async fn automation_status() -> CmdResult<serde_json::Value> {
-    blocking(|| {
-        Ok(serde_json::json!({
-            "enabled": crate::automation::enabled(),
-            "max_concurrent": crate::automation::max_concurrent(),
-        }))
+    blocking(|| Ok(automation_json())).await
+}
+
+fn automation_json() -> serde_json::Value {
+    serde_json::json!({
+        "enabled": crate::automation::enabled(),
+        "max_concurrent": crate::automation::max_concurrent(),
+        "ide_wait_minutes": crate::automation::ide_wait_minutes(),
     })
-    .await
 }
 
 #[tauri::command]
 pub async fn set_automation(
     enabled: bool,
     max_concurrent: Option<usize>,
+    ide_wait_minutes: Option<i64>,
 ) -> CmdResult<serde_json::Value> {
     blocking(move || {
         crate::automation::set_enabled(enabled);
         if let Some(n) = max_concurrent {
             crate::automation::set_max_concurrent(n);
         }
-        Ok(serde_json::json!({
-            "enabled": crate::automation::enabled(),
-            "max_concurrent": crate::automation::max_concurrent(),
-        }))
+        if let Some(n) = ide_wait_minutes {
+            crate::automation::set_ide_wait_minutes(n);
+        }
+        Ok(automation_json())
     })
     .await
 }

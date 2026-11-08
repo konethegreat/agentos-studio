@@ -75,6 +75,33 @@ pub fn claude_allowed_tools(extra: &[String]) -> Vec<String> {
     out
 }
 
+/// The same allowlist in Antigravity's rule syntax, for `agy --settings`. `mcp__<server>` becomes
+/// `mcp(<server>/*)` and `Bash(<pattern>)` becomes `command(regex:<pattern>)` with `*` as `.*`.
+/// A plain `command(git)` prefix rule does not match on Windows (verified with agy 1.5.3), the
+/// regex form does. `PowerShell(...)` mirrors and other Claude tool names are dropped. Pure.
+pub fn agy_allow_rules(claude_rules: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for r in claude_rules {
+        let r = r.trim();
+        let rule = if let Some(server) = r.strip_prefix("mcp__") {
+            format!("mcp({server}/*)")
+        } else if let Some(inner) = r.strip_prefix("Bash(").and_then(|x| x.strip_suffix(')')) {
+            let pattern: String = inner
+                .split('*')
+                .map(regex::escape)
+                .collect::<Vec<_>>()
+                .join(".*");
+            format!("command(regex:{pattern})")
+        } else {
+            continue;
+        };
+        if !out.contains(&rule) {
+            out.push(rule);
+        }
+    }
+    out
+}
+
 /// A rule that would hand a headless worker an unrestricted shell or skip permissions. Pure.
 fn unsafe_rule(rule: &str) -> bool {
     let r = rule.trim();
@@ -171,6 +198,25 @@ mod tests {
             let json = format!(r#"{{"allowed_tools":["{bad}"]}}"#);
             assert!(parse(&json).is_err(), "{bad} must be refused");
         }
+    }
+
+    #[test]
+    fn antigravity_gets_the_same_allowlist_in_its_own_syntax() {
+        let claude = claude_allowed_tools(&["Bash(npm test*)".into(), "Bash(node *.js)".into()]);
+        let agy = agy_allow_rules(&claude);
+        assert_eq!(
+            agy,
+            vec![
+                "mcp(agentos-hub/*)",
+                "command(regex:git .*)",
+                "command(regex:gh pr .*)",
+                "command(regex:npm test.*)",
+                "command(regex:node .*\\.js)",
+            ]
+        );
+        assert!(!agy
+            .iter()
+            .any(|r| r.contains("PowerShell") || r == "command(*)"));
     }
 
     #[test]

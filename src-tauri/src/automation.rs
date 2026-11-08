@@ -15,6 +15,57 @@ use crate::vault::{State, Vault};
 pub const KV_ENABLED: &str = "automation.enabled";
 pub const KV_MAX: &str = "automation.max_concurrent";
 pub const DEFAULT_MAX: usize = 3;
+/// Minutes an IDE-only agent has to pick up its mission before it goes to a headless agent.
+pub const KV_IDE_WAIT: &str = "missions.ide_wait_minutes";
+pub const DEFAULT_IDE_WAIT_MIN: i64 = 30;
+
+pub fn ide_wait_minutes() -> i64 {
+    kv(KV_IDE_WAIT)
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .filter(|n| (1..=1440).contains(n))
+        .unwrap_or(DEFAULT_IDE_WAIT_MIN)
+}
+
+pub fn set_ide_wait_minutes(n: i64) {
+    kv_set(KV_IDE_WAIT, &n.clamp(1, 1440).to_string());
+}
+
+/// A running bus mission whose agent cannot run headless here and has not claimed the task within
+/// the wait goes to a headless agent. Pure.
+pub fn reassign_due(
+    m: &Mission,
+    task_pending: bool,
+    agent_runs_headless: bool,
+    now: i64,
+    wait_secs: i64,
+) -> bool {
+    m.status == "running" && task_pending && !agent_runs_headless && now - m.updated_at >= wait_secs
+}
+
+/// Offer over: move the task and the mission to the best available headless agent and start it.
+/// With no headless agent installed the mission is blocked, never left running with no worker.
+fn reassign(v: &Vault, m: &Mission, task: &str) -> anyhow::Result<String> {
+    let from = m.agent.trim().to_lowercase();
+    let Some(to) = crate::bus::best_headless(&from, crate::bus::headless_available) else {
+        missions::block(
+            &m.id,
+            &format!("{from} did not pick this up and no headless agent is installed"),
+            false,
+        )?;
+        anyhow::bail!("{}: no headless agent to take over", m.id);
+    };
+    let reason = format!(
+        "{from} is IDE only and did not pick this up within {} minutes; reassigned to {to}",
+        ide_wait_minutes()
+    );
+    v.claim_task(task, to)?;
+    let _ = v.log_activity(task, &reason);
+    missions::reassign(&m.id, to, &reason)?;
+    if let Err(e) = crate::bus::start_worker(v, task, to) {
+        let _ = v.log_activity(task, &format!("no worker started: {e:#}"));
+    }
+    Ok(to.to_string())
+}
 
 fn kv(key: &str) -> Option<String> {
     let c = store::open().ok()?;
@@ -96,6 +147,8 @@ pub struct TickReport {
     pub max_concurrent: usize,
     pub moved_to_review: Vec<String>,
     pub dispatched: Vec<String>,
+    /// IDE missions handed to a headless agent, as `M-001 -> claude-code`.
+    pub reassigned: Vec<String>,
     pub kept_awake: bool,
     pub error: Option<String>,
 }
@@ -129,7 +182,22 @@ pub fn tick(v: &Vault) -> TickReport {
             }
             continue;
         }
-        if v.task_state(task) == Some(State::Completed) {
+        let state = v.task_state(task);
+        let agent = m.agent.trim().to_lowercase();
+        if reassign_due(
+            m,
+            state == Some(State::Pending),
+            crate::bus::headless_available(&agent),
+            chrono::Utc::now().timestamp(),
+            ide_wait_minutes() * 60,
+        ) {
+            match reassign(v, m, task) {
+                Ok(to) => report.reassigned.push(format!("{} -> {to}", m.id)),
+                Err(e) => report.error = Some(e.to_string()),
+            }
+            continue;
+        }
+        if state == Some(State::Completed) {
             // The worker's summary names its pull request; keep it before the body moves on.
             if let Some(body) = v.task_body(task) {
                 if let Some(url) = missions::pull_url(&body) {
@@ -378,6 +446,76 @@ mod tests {
             vec!["M-1"],
             "global cap still applies"
         );
+    }
+
+    #[test]
+    fn an_unclaimed_ide_mission_is_reassigned_only_after_the_wait() {
+        let mut x = m("M-1", "a", "running");
+        x.agent = "qoder".into();
+        x.updated_at = 1_000;
+        let wait = 30 * 60;
+        assert!(
+            !reassign_due(&x, true, false, 1_000 + wait - 1, wait),
+            "still in its window"
+        );
+        assert!(reassign_due(&x, true, false, 1_000 + wait, wait));
+        assert!(
+            !reassign_due(&x, false, false, 9_999_999, wait),
+            "Qoder claimed it"
+        );
+        assert!(
+            !reassign_due(&x, true, true, 9_999_999, wait),
+            "a headless agent is never offered over"
+        );
+        x.status = "review".into();
+        assert!(!reassign_due(&x, true, false, 9_999_999, wait));
+    }
+
+    #[test]
+    fn a_stale_ide_mission_moves_to_a_headless_agent_or_blocks() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let v = Vault::new(d.path().join("vault"));
+        v.scaffold().unwrap();
+        let mission =
+            missions::create("repo", "goal", "acc", "implementer", "qoder", "", "", 0.0).unwrap();
+        let task = v
+            .delegate_task(crate::vault::DelegateArgs {
+                title: "t".into(),
+                assigned_to: "qoder".into(),
+                creator: "test".into(),
+                project: "repo".into(),
+                context_files: Vec::new(),
+                instructions: "do it".into(),
+                priority: "high".into(),
+            })
+            .unwrap();
+        let task_id = task["id"].as_str().unwrap().to_string();
+        missions::dispatch(&mission.id, &task_id).unwrap();
+        // Offered two hours ago and never picked up.
+        let c = crate::store::open().unwrap();
+        c.execute(
+            "UPDATE missions SET updated_at = updated_at - 7200 WHERE id = ?1",
+            [&mission.id],
+        )
+        .unwrap();
+
+        let report = tick(&v);
+        let after = missions::get(&mission.id).unwrap().unwrap();
+        match crate::bus::best_headless("qoder", crate::bus::headless_available) {
+            Some(to) => {
+                assert_eq!(report.reassigned, vec![format!("{} -> {to}", mission.id)]);
+                assert_eq!(after.agent, to);
+                assert_eq!(after.status, "running");
+                let (t, _) = v.get_task(&task_id).unwrap();
+                assert_eq!(t.state, State::InProgress);
+                assert_eq!(t.claimed_by.as_deref(), Some(to));
+                assert!(t.body.contains("reassigned to"), "the note is on the task");
+            }
+            None => assert_eq!(after.status, "blocked", "never running with no worker"),
+        }
+        crate::store::set_test_db(None);
     }
 
     #[test]
