@@ -323,10 +323,16 @@ export interface HermesMemory {
   home: string;
   memory_path: string;
   memory: string;
+  memory_present: boolean;
+  memory_modified: number | null;
   user_path: string;
   user: string;
+  user_present: boolean;
+  user_modified: number | null;
   status: string;
+  status_error: string | null;
   journey: { nodes?: JourneyNode[]; stats?: Record<string, unknown> } | null;
+  journey_error: string | null;
 }
 
 export interface CronJob {
