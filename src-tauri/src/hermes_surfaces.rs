@@ -44,33 +44,124 @@ pub struct HermesMemory {
     pub home: String,
     pub memory_path: String,
     pub memory: String,
+    /// False when MEMORY.md is missing, so the UI can say so instead of showing a blank pane.
+    pub memory_present: bool,
+    /// Seconds since the Unix epoch when MEMORY.md last changed.
+    pub memory_modified: Option<i64>,
     pub user_path: String,
     pub user: String,
+    pub user_present: bool,
+    pub user_modified: Option<i64>,
     /// `hermes memory status`, as printed.
     pub status: String,
+    pub status_error: Option<String>,
     /// `hermes journey --json`: `{nodes, edges, clusters, memory, stats}`.
     pub journey: Value,
+    pub journey_error: Option<String>,
 }
 
-fn read_or_empty(p: &Path) -> String {
-    fs::read_to_string(p).unwrap_or_default()
+fn modified_secs(p: &Path) -> Option<i64> {
+    use std::time::UNIX_EPOCH;
+    fs::metadata(p)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs() as i64)
+}
+
+/// File body plus what the UI needs to say why a pane is empty: the file is missing, not blank.
+fn read_with_state(p: &Path) -> (String, bool, Option<i64>) {
+    match fs::read_to_string(p) {
+        Ok(text) => (text, true, modified_secs(p)),
+        Err(_) => (String::new(), false, None),
+    }
+}
+
+/// Hermes profile ids are lowercase alphanumerics with `-` and `_`; nothing else reaches `-p`.
+pub fn valid_profile(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_'))
+}
+
+/// The HERMES_HOME a named profile uses, mirroring Hermes: `<default root>/profiles/<name>`.
+pub fn profile_home(profile: &str) -> PathBuf {
+    if profile == "default" {
+        procs::hermes_home()
+    } else {
+        procs::hermes_home().join("profiles").join(profile)
+    }
+}
+
+/// Run Hermes against the default profile or a named one (`hermes -p <name> ...`).
+fn hermes_for(profile: Option<&str>, args: &[&str]) -> Result<String> {
+    match profile {
+        None => hermes(args),
+        Some(p) => {
+            if !valid_profile(p) {
+                bail!("Invalid Hermes profile name");
+            }
+            let mut full: Vec<&str> = Vec::with_capacity(args.len() + 2);
+            full.push("-p");
+            full.push(p);
+            full.extend_from_slice(args);
+            hermes(&full)
+        }
+    }
+}
+
+/// Parse `hermes journey --json`. An empty or non-object answer is an error, not an empty graph.
+pub fn parse_journey(text: &str) -> Result<Value> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        bail!("hermes journey printed nothing");
+    }
+    let v: Value =
+        serde_json::from_str(trimmed).map_err(|e| anyhow!("unreadable journey output: {e}"))?;
+    if !v.is_object() {
+        bail!("hermes journey did not return a JSON object");
+    }
+    Ok(v)
 }
 
 pub fn memory_view() -> HermesMemory {
-    let home = procs::hermes_home();
+    memory_view_with(None)
+}
+
+/// The Brain view's Hermes column. A failed command leaves an explicit error, never a blank pane.
+pub fn memory_view_with(profile: Option<&str>) -> HermesMemory {
+    let home = profile.map(profile_home).unwrap_or_else(procs::hermes_home);
     let dir = home.join("memories");
     let (m, u) = (dir.join("MEMORY.md"), dir.join("USER.md"));
+    let (memory, memory_present, memory_modified) = read_with_state(&m);
+    let (user, user_present, user_modified) = read_with_state(&u);
+    let (status, status_error) = match hermes_for(profile, &["memory", "status"]) {
+        Ok(text) => (text, None),
+        Err(e) => (String::new(), Some(format!("{e:#}"))),
+    };
+    let (journey, journey_error) =
+        match hermes_for(profile, &["journey", "--json"]).and_then(|t| parse_journey(&t)) {
+            Ok(v) => (v, None),
+            Err(e) => (Value::Null, Some(format!("{e:#}"))),
+        };
     HermesMemory {
         home: home.display().to_string(),
-        memory: read_or_empty(&m),
         memory_path: m.display().to_string(),
-        user: read_or_empty(&u),
+        memory,
+        memory_present,
+        memory_modified,
         user_path: u.display().to_string(),
-        status: hermes(&["memory", "status"]).unwrap_or_else(|e| e.to_string()),
-        journey: hermes(&["journey", "--json"])
-            .ok()
-            .and_then(|t| serde_json::from_str(t.trim()).ok())
-            .unwrap_or(Value::Null),
+        user,
+        user_present,
+        user_modified,
+        status,
+        status_error,
+        journey,
+        journey_error,
     }
 }
 
@@ -85,10 +176,15 @@ pub fn valid_node(id: &str) -> bool {
 
 /// `hermes journey delete <node> -y`: archives a learned skill or removes a memory entry.
 pub fn journey_delete(node: &str) -> Result<String> {
+    journey_delete_with(None, node)
+}
+
+/// The same command against a named profile, so a live test never touches the default memory.
+pub fn journey_delete_with(profile: Option<&str>, node: &str) -> Result<String> {
     if !valid_node(node) {
         bail!("Invalid journey node id");
     }
-    hermes(&["journey", "delete", node, "-y"]).map(|s| s.trim().to_string())
+    hermes_for(profile, &["journey", "delete", node, "-y"]).map(|s| s.trim().to_string())
 }
 
 // ------------------------------------------------------------------- insights and security
@@ -475,5 +571,45 @@ mod tests {
         assert!(valid_target("telegram:-1001234567890:17585"));
         assert!(!valid_target("--help"));
         assert!(!valid_target("a b"));
+    }
+
+    #[test]
+    fn journey_parsing_rejects_empty_and_non_objects() {
+        assert!(parse_journey("").is_err());
+        assert!(parse_journey("   \n").is_err());
+        assert!(parse_journey("not json").is_err());
+        assert!(parse_journey("[1, 2]").is_err());
+        assert!(parse_journey(r#""text""#).is_err());
+        let v = parse_journey(r#"{"nodes": [], "stats": {}}"#).unwrap();
+        assert!(v.get("nodes").and_then(Value::as_array).is_some());
+    }
+
+    #[test]
+    fn memory_file_state_separates_missing_from_empty() {
+        let d = tempfile::tempdir().unwrap();
+        let missing = d.path().join("MEMORY.md");
+        let (body, present, modified) = read_with_state(&missing);
+        assert!(body.is_empty());
+        assert!(!present);
+        assert!(modified.is_none());
+
+        std::fs::write(&missing, "").unwrap();
+        let (body, present, modified) = read_with_state(&missing);
+        assert!(body.is_empty());
+        assert!(present);
+        assert!(modified.is_some());
+    }
+
+    #[test]
+    fn profile_ids_are_validated_and_resolved() {
+        assert!(valid_profile("qoder-test"));
+        assert!(valid_profile("reviewer_2"));
+        assert!(!valid_profile("../escape"));
+        assert!(!valid_profile("Upper"));
+        assert!(!valid_profile(""));
+        assert!(
+            profile_home("reviewer").ends_with(std::path::Path::new("profiles").join("reviewer"))
+        );
+        assert_eq!(profile_home("default"), procs::hermes_home());
     }
 }

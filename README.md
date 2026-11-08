@@ -210,7 +210,7 @@ The design, including the cost model and the status machine, is in [`docs/AUTOMA
 ## Navigation
 
 A five-group icon rail replaces the old twelve-item list: **Chat**, **Work** (Projects, Mission
-Control, Fleet), **Brain** (Skills, Constitution), **Code** (GitHub) and **System** (MCP and
+Control, Fleet), **Brain** (Memory, Skills, Constitution), **Code** (GitHub) and **System** (MCP and
 Providers, Updates, Safety, Setup, Diagnostics). The rail is 56 px, expands on hover, and stays open
 if you pin it. Badges count open bus tasks on Work, waiting updates on System and failing CI runs on
 Code. `Alt+1..5` jumps between groups and `Ctrl+K` reaches every tab.
@@ -218,6 +218,11 @@ Code. `Alt+1..5` jumps between groups and `Ctrl+K` reaches every tab.
 Chats never start in a system folder: the working directory comes from the last folder you used,
 then the active project, then your home directory. Anything under `%WINDIR%` or `System32` is
 rejected.
+
+**Brain** shows both memory stores. The Vault side lists the notes agents read and write through the
+hub, with their type, link count and last change, and the recent read and write activity under it.
+The Hermes side shows `MEMORY.md` and `USER.md` read-only, and the journey nodes Hermes builds from
+skills and memory cards, with a permission-gated delete. Below 1280 px wide the two become tabs.
 
 ## Projects, branches and skills
 

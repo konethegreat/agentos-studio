@@ -200,7 +200,7 @@ when pinned, with the pin stored in `studio.db` (`kv.nav.pinned`). Five groups:
 |---|---|
 | Chat | Chat Studio |
 | Work | Projects, Mission Control, Fleet |
-| Brain | Skills, Constitution (Memory joins in item 7 of the same release) |
+| Brain | Memory, Skills, Constitution |
 | Code | GitHub |
 | System | MCP and Providers, Updates, Safety, Setup, Diagnostics |
 
@@ -239,3 +239,18 @@ message, so rows attach to the message that caused them.
 Notes written before types existed have no `type` and read as `fact` at read time; nothing is
 rewritten. Superseding is the one deliberate write to an older note: it flips that note to
 `status: superseded` and records `superseded_by`.
+
+## Brain view
+
+The Brain view shows the two memory stores side by side when there is room, and switches to Vault
+and Hermes tabs below 1280 px: the window's minimum width is 1100 px, so the split would otherwise
+have to work in two 550 px columns. The Vault column is the ranked index over `03_Memory` (type,
+links, modified time) plus the recent ledger activity, which is what every agent reads through
+`recall` and writes through `remember`. The Hermes column reads `MEMORY.md` and `USER.md` from the
+Hermes home (`-p <profile>` when a profile is selected), marks them read-only, and lists the journey
+nodes Hermes builds from skills and memory cards. Both columns report their own failure: a missing
+file, an unreadable status or a journey
+parse error shows in that column instead of blanking the screen. Deleting a journey node is the only
+write the view offers, and it goes through `hermes.journey.delete` with the default policy `ask`.
+Hermes does not expose a non-interactive edit: `hermes journey edit` opens `$EDITOR`, so the view
+does not offer one.

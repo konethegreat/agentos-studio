@@ -429,6 +429,7 @@ export interface MemoryNote {
   status: string;
   repo: string | null;
   in_degree: number;
+  mtime: number;
 }
 
 export interface ChatStarted {

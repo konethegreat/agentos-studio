@@ -104,6 +104,8 @@ pub struct NoteRow {
     pub status: String,
     pub repo: Option<String>,
     pub in_degree: i64,
+    /// Seconds since the Unix epoch, from the file's modified time.
+    pub mtime: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -310,7 +312,7 @@ pub fn notes(v: &Vault) -> Result<Vec<NoteRow>> {
     let c = open(&v.root)?;
     let mut st = c.prepare(
         "SELECT path, COALESCE(title,''), COALESCE(kind,'fact'), COALESCE(status,'active'),
-                repo, COALESCE(in_degree,0)
+                repo, COALESCE(in_degree,0), COALESCE(mtime,0)
          FROM files ORDER BY mtime DESC LIMIT 500",
     )?;
     let rows = st.query_map([], |r| {
@@ -321,6 +323,7 @@ pub fn notes(v: &Vault) -> Result<Vec<NoteRow>> {
             status: r.get(3)?,
             repo: r.get(4)?,
             in_degree: r.get(5)?,
+            mtime: r.get(6)?,
         })
     })?;
     Ok(rows.flatten().collect())
