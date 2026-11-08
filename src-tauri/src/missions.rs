@@ -365,6 +365,18 @@ pub fn review(id: &str, reviewer: &str, verdict: &str, note: &str) -> Result<Mis
     get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
 }
 
+/// Cancel a mission that has not started work or is waiting on a human: queued or blocked to
+/// failed. Running and in-review missions are stopped in Studio, where the run can be ended.
+pub fn cancel(id: &str, reason: &str) -> Result<Mission> {
+    let c = store::open()?;
+    set_status(&c, id, &["queued", "blocked"], "failed")?;
+    c.execute(
+        "UPDATE missions SET review_note = ?1, updated_at = ?2 WHERE id = ?3",
+        params![reason.trim(), now(), id],
+    )?;
+    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+}
+
 /// Blocked and failed are the two states a human has to resolve.
 pub fn block(id: &str, reason: &str, failed: bool) -> Result<Mission> {
     let c = store::open()?;

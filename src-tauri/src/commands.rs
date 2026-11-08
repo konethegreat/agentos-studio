@@ -705,27 +705,16 @@ pub async fn create_mission(
 ) -> CmdResult<crate::missions::Mission> {
     blocking(move || {
         // Explicit choice, then the repository's routing.json, then the router if it may pick.
-        let policy = crate::routing::defaults_for(&crate::review_agent::repo_dir(&repo), &role);
-        let router = (agent.trim() == "hermes" && crate::router::auto_enabled())
-            .then(|| {
-                crate::missions::list(500)
-                    .map(|all| crate::router::pick(&all, &role))
-                    .ok()
-            })
-            .flatten();
-        let pin = crate::router::resolve_pin(&provider, &model, policy.as_ref(), router);
-        let m = crate::missions::create(
+        crate::router::create_mission(
             &repo,
             &goal,
             &acceptance,
             &role,
             &agent,
-            &pin.provider,
-            &pin.model,
+            &provider,
+            &model,
             budget_usd,
-        )?;
-        crate::router::record_pin(&m.id, &pin);
-        Ok(m)
+        )
     })
     .await
 }
@@ -1108,4 +1097,17 @@ pub async fn remove_skill(name: String) -> CmdResult<String> {
 #[tauri::command]
 pub async fn update_skills() -> CmdResult<String> {
     blocking(crate::skills::update_all).await
+}
+
+/// Two-way mission sync with the Notion missions board.
+#[tauri::command]
+pub async fn notion_sync_missions(
+    dry_run: Option<bool>,
+) -> CmdResult<crate::notion_sync::SyncReport> {
+    blocking(move || Ok(crate::notion_sync::sync(dry_run.unwrap_or(false)))).await
+}
+
+#[tauri::command]
+pub async fn notion_archive_board() -> CmdResult<()> {
+    blocking(crate::notion_sync::archive_board).await
 }
