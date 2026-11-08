@@ -89,18 +89,94 @@ pub fn create_args(
     a
 }
 
-/// Full stored id for the banner's short id, newest first.
-fn resolve_session(short: &str) -> Result<String> {
+/// One `sessions` row, as far as matching needs it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionRow {
+    pub id: String,
+    pub source: String,
+    pub started_at: f64,
+    /// Hermes may fill this in after creation (git metadata runs in the background).
+    pub cwd: Option<String>,
+}
+
+/// `s` with LIKE's wildcards and the escape character escaped, for `LIKE ? ESCAPE '\'`. Pure.
+pub fn like_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn norm_dir(p: &str) -> String {
+    p.trim()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_lowercase()
+}
+
+/// The session Studio just created: its id starts with the banner's short id (with or without the
+/// `local-` prefix), it is a Studio (`gui`) session, it started after the spawn (2 s clock slack),
+/// and its folder is the requested one or not recorded yet. Newest wins. Pure.
+pub fn match_session(
+    short: &str,
+    spawned_at: f64,
+    cwd: &Path,
+    rows: &[SessionRow],
+) -> Option<String> {
+    let want = norm_dir(&cwd.display().to_string());
+    rows.iter()
+        .filter(|r| {
+            let bare = r.id.strip_prefix("local-").unwrap_or(&r.id);
+            bare.starts_with(short)
+                && r.source == crate::chat_stream::STUDIO_SOURCE
+                && r.started_at >= spawned_at - 2.0
+                && r.cwd
+                    .as_deref()
+                    .map_or(true, |c| c.trim().is_empty() || norm_dir(c) == want)
+        })
+        .max_by(|a, b| a.started_at.total_cmp(&b.started_at))
+        .map(|r| r.id.clone())
+}
+
+fn session_rows(short: &str, since: f64) -> Result<Vec<SessionRow>> {
     let db = crate::hermes_engine::state_db();
     let c = rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    let id: Option<String> = c
-        .query_row(
-            "SELECT id FROM sessions WHERE id LIKE ?1 OR id LIKE ?2 ORDER BY started_at DESC LIMIT 1",
-            [format!("local-{short}%"), format!("{short}%")],
-            |r| r.get(0),
-        )
-        .ok();
-    id.ok_or_else(|| anyhow!("Hermes printed session {short} but it is not in state.db"))
+    let mut st = c.prepare(
+        "SELECT id, COALESCE(source, ''), COALESCE(started_at, 0), cwd FROM sessions
+         WHERE (id LIKE ?1 ESCAPE '\\' OR id LIKE ?2 ESCAPE '\\') AND started_at >= ?3",
+    )?;
+    let e = like_escape(short);
+    let rows = st.query_map(
+        rusqlite::params![format!("local-{e}%"), format!("{e}%"), since - 2.0],
+        |r| {
+            Ok(SessionRow {
+                id: r.get(0)?,
+                source: r.get(1)?,
+                started_at: r.get(2)?,
+                cwd: r.get(3)?,
+            })
+        },
+    )?;
+    Ok(rows.flatten().collect())
+}
+
+/// Full stored id for the banner's short id. Polls `state.db` for up to 5 s, since the row can
+/// land a moment after the banner prints.
+fn resolve_session(short: &str, spawned_at: f64, cwd: &Path) -> Result<String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(id) = match_session(short, spawned_at, cwd, &session_rows(short, spawned_at)?) {
+            return Ok(id);
+        }
+        if Instant::now() >= deadline {
+            bail!("Hermes printed session {short}, but no matching Studio session appeared in state.db within 5 s");
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
 }
 
 /// Create a Hermes session in `cwd` with its creation policy and no turn. Blocking.
@@ -126,6 +202,7 @@ pub fn create_session(
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(procs::CREATE_NO_WINDOW);
     }
+    let spawned_at = chrono::Utc::now().timestamp_millis() as f64 / 1000.0;
     let mut child = cmd.spawn().context("starting hermes chat")?;
     let pid = child.id();
     let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
@@ -173,7 +250,7 @@ pub fn create_session(
     procs::kill_tree(pid);
     let _ = child.wait();
     match got {
-        Ok(Ok(short)) => resolve_session(&short),
+        Ok(Ok(short)) => resolve_session(&short, spawned_at, cwd),
         _ => {
             let t = tail.lock().map(|v| v.join("\n")).unwrap_or_default();
             bail!(
@@ -489,6 +566,52 @@ mod tests {
         );
         assert_eq!(banner_session("no session here"), None);
         assert_eq!(banner_session("Session: ab"), None);
+    }
+
+    #[test]
+    fn the_lookup_finds_only_the_session_studio_just_made() {
+        let row = |id: &str, source: &str, at: f64, cwd: Option<&str>| SessionRow {
+            id: id.into(),
+            source: source.into(),
+            started_at: at,
+            cwd: cwd.map(String::from),
+        };
+        let dir = Path::new("C:\\Users\\me\\repo");
+        let rows = vec![
+            // Same 8-char prefix, but an older session from another client.
+            row(
+                "local-611fceac0000",
+                "cli",
+                1000.0,
+                Some("C:/Users/me/repo"),
+            ),
+            // Near collision: same prefix, right source, another folder.
+            row("local-611fceacffff", "gui", 1001.0, Some("D:/other")),
+            // Same prefix, right folder, but started long before the spawn.
+            row("local-611fceac1111", "gui", 500.0, Some("C:/Users/me/repo")),
+            // The one: right source, after the spawn, folder not recorded yet.
+            row("local-611fceac6e81", "gui", 1000.5, None),
+        ];
+        assert_eq!(
+            match_session("611fceac", 1000.0, dir, &rows).as_deref(),
+            Some("local-611fceac6e81")
+        );
+        // With the folder recorded, case and slashes do not matter.
+        let rows2 = vec![row(
+            "local-611fceac6e81",
+            "gui",
+            1000.5,
+            Some("c:/users/me/repo/"),
+        )];
+        assert!(match_session("611fceac", 1000.0, dir, &rows2).is_some());
+        assert!(match_session("611fceac", 1000.0, dir, &rows[..3]).is_none());
+        assert!(match_session("611fceab", 1000.0, dir, &rows).is_none());
+    }
+
+    #[test]
+    fn like_wildcards_are_escaped() {
+        assert_eq!(like_escape("ab_c%d\\e"), "ab\\_c\\%d\\\\e");
+        assert_eq!(like_escape("611fceac"), "611fceac");
     }
 
     #[test]
