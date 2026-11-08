@@ -435,6 +435,24 @@ pub fn pull_url(text: &str) -> Option<String> {
     None
 }
 
+/// The worker's own words in a completed bus task: the text under the last `## Completion summary`
+/// heading, up to the next `## ` heading. Everything above it (the instructions, a handoff packet
+/// with recall results and the project brief) was written by someone else and may quote other
+/// pull requests, so a mission's pull request is only ever read from here.
+pub fn completion_summary(body: &str) -> Option<String> {
+    let lines: Vec<&str> = body.lines().collect();
+    let start = lines
+        .iter()
+        .rposition(|l| l.trim() == "## Completion summary")?;
+    let rest = &lines[start + 1..];
+    let end = rest
+        .iter()
+        .position(|l| l.starts_with("## "))
+        .unwrap_or(rest.len());
+    let text = rest[..end].join("\n");
+    Some(text).filter(|t| !t.trim().is_empty())
+}
+
 /// Record the `hermes verify --json` result for the mission's repository.
 pub fn set_verify(id: &str, json: &str) -> Result<()> {
     let c = store::open()?;
@@ -623,6 +641,33 @@ mod tests {
         let out = f();
         crate::store::set_test_db(None);
         out
+    }
+
+    #[test]
+    fn the_pull_request_comes_from_the_completion_summary_not_the_packet() {
+        // The shape of a handoff task that recall filled with another repository's pull request.
+        let body = "# TASK-011: Handoff\n\n## Instructions\nHANDOFF from claude-code.\n\n\
+## From shared memory (recall)\n- 03_Memory/Coordination.md:61 PR (qoder) https://github.com/o/studio/pull/80 phase-e/\n\n\
+## Activity log\n- completed by hermes\n\n## Completion summary\n> [!success] Completed by **hermes**\n\n\
+Opened PR https://github.com/o/sandbox/pull/7 (the only PR for this branch). Not merged.\n";
+        let s = completion_summary(body).unwrap();
+        assert_eq!(
+            pull_url(&s).as_deref(),
+            Some("https://github.com/o/sandbox/pull/7")
+        );
+        // Without a summary, nothing is taken from the rest of the body.
+        let no_summary = "## Instructions\nsee https://github.com/o/studio/pull/80\n";
+        assert!(completion_summary(no_summary).is_none());
+        // A summary with no pull request does not fall back to the body either.
+        let empty = "## Instructions\nhttps://github.com/o/studio/pull/80\n\n## Completion summary\n> done\n\nNo PR.\n";
+        assert!(completion_summary(empty)
+            .and_then(|s| pull_url(&s))
+            .is_none());
+        // Only the text up to the next heading belongs to the summary.
+        let later = "## Completion summary\n\nshipped\n\n## Notes\nhttps://github.com/o/x/pull/1\n";
+        assert!(completion_summary(later)
+            .and_then(|s| pull_url(&s))
+            .is_none());
     }
 
     fn make() -> Mission {

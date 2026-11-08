@@ -228,8 +228,11 @@ pub fn tick(v: &Vault) -> TickReport {
         }
         if state == Some(State::Completed) {
             // The worker's summary names its pull request; keep it before the body moves on.
+            // Only the summary: a handoff packet above it can quote other pull requests.
             if let Some(body) = v.task_body(task) {
-                if let Some(url) = missions::pull_url(&body) {
+                if let Some(url) =
+                    missions::completion_summary(&body).and_then(|s| missions::pull_url(&s))
+                {
                     let _ = missions::set_pr(&m.id, &url);
                 }
             }
