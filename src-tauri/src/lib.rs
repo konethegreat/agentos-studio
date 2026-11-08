@@ -28,6 +28,7 @@ pub mod model_layer;
 pub mod model_watch;
 pub mod models;
 pub mod notion;
+pub mod notion_sync;
 pub mod offline;
 pub mod ops;
 pub mod org;
@@ -335,6 +336,8 @@ pub fn run_gui() {
             commands::save_provider_key,
             commands::notion_publish,
             commands::notion_pull_inbox,
+            commands::notion_sync_missions,
+            commands::notion_archive_board,
             commands::notion_status,
             commands::automation_status,
             commands::set_automation,

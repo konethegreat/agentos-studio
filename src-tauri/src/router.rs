@@ -204,6 +204,38 @@ pub fn resolve_pin(
     }
 }
 
+/// Create a mission with the shared precedence (explicit, routing.json, router, inherit) and
+/// record how its model was chosen. Used by the New mission form and by Notion.
+#[allow(clippy::too_many_arguments)]
+pub fn create_mission(
+    repo: &str,
+    goal: &str,
+    acceptance: &str,
+    role: &str,
+    agent: &str,
+    provider: &str,
+    model: &str,
+    budget_usd: f64,
+) -> Result<missions::Mission> {
+    let policy = crate::routing::defaults_for(&crate::review_agent::repo_dir(repo), role);
+    let router = (agent.trim() == "hermes" && auto_enabled())
+        .then(|| missions::list(500).map(|all| pick(&all, role)).ok())
+        .flatten();
+    let pin = resolve_pin(provider, model, policy.as_ref(), router);
+    let m = missions::create(
+        repo,
+        goal,
+        acceptance,
+        role,
+        agent,
+        &pin.provider,
+        &pin.model,
+        budget_usd,
+    )?;
+    record_pin(&m.id, &pin);
+    Ok(m)
+}
+
 fn pin_key(id: &str) -> String {
     format!("mission.pin.{id}")
 }

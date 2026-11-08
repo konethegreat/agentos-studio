@@ -68,7 +68,7 @@ pub fn set_setting(key: &str, value: &str) {
     }
 }
 
-fn parent_id() -> Option<String> {
+pub(crate) fn parent_id() -> Option<String> {
     std::env::var("NOTION_PARENT_PAGE")
         .ok()
         .or_else(|| hermes_env("NOTION_PARENT_PAGE"))
@@ -210,7 +210,7 @@ fn blocks(text: &str) -> Value {
     Value::Array(items)
 }
 
-fn request(method: &str, path: &str, tok: &str, body: Option<&Value>) -> Result<Value> {
+pub fn request(method: &str, path: &str, tok: &str, body: Option<&Value>) -> Result<Value> {
     let url = format!("{API}{path}");
     let payload = body.map(|b| b.to_string()).unwrap_or_default();
     let req = ureq::http::Request::builder()
@@ -230,7 +230,7 @@ fn request(method: &str, path: &str, tok: &str, body: Option<&Value>) -> Result<
     }
 }
 
-fn ledger_get(title: &str) -> Option<(String, String)> {
+pub fn ledger_get(title: &str) -> Option<(String, String)> {
     let c = store::open().ok()?;
     c.query_row(
         "SELECT notion_id, content_hash FROM sync_ledger WHERE vault_path = ?1 AND direction = 'out'",
@@ -240,7 +240,7 @@ fn ledger_get(title: &str) -> Option<(String, String)> {
     .ok()
 }
 
-fn ledger_put(title: &str, notion_id: &str, content_hash: &str) -> Result<()> {
+pub(crate) fn ledger_put(title: &str, notion_id: &str, content_hash: &str) -> Result<()> {
     let c = store::open()?;
     c.execute(
         "INSERT INTO sync_ledger (vault_path, notion_id, content_hash, synced_at, direction)

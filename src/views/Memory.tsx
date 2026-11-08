@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import { Brain, FileText, RefreshCw, Search, Sparkles, Upload } from "lucide-react";
 import { api, errorText, type MemoryEntry, type MemoryNote } from "../lib/api";
@@ -72,6 +73,26 @@ export function Memory() {
     return notion?.connected ?? false;
   }
 
+  async function syncBoard() {
+    setBusy(true);
+    try {
+      const r = await invoke<{ dry_run: boolean; error: string | null; created_rows: number; updated_rows: number; unchanged_rows: number; proposed: string[]; cancelled: string[]; declined: string[] }>("notion_sync_missions", { dryRun: !r0connected() });
+      if (r.error) toast("error", r.error);
+      else
+        toast(
+          r.dry_run ? "info" : "ok",
+          `${r.dry_run ? "Dry run: " : ""}${r.created_rows} row(s) new, ${r.updated_rows} updated, ${r.unchanged_rows} unchanged` +
+            (r.proposed.length ? `; queued from Notion: ${r.proposed.join(", ")}` : "") +
+            (r.cancelled.length ? `; cancelled: ${r.cancelled.join(", ")}` : "") +
+            (r.declined.length ? `; declined: ${r.declined.length} (reason written to the row)` : ""),
+        );
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function pullInbox() {
     setBusy(true);
     try {
@@ -142,6 +163,14 @@ export function Memory() {
             className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-slate-300 ring-1 ring-line hover:bg-white/[0.04] disabled:opacity-50"
           >
             <Upload className="size-3.5" /> {notion?.connected ? "Publish" : "Dry run"}
+          </button>
+          <button
+            onClick={() => void syncBoard()}
+            disabled={busy}
+            title={notion?.connected ? "Two-way missions board in Notion: publishes every mission as a row; a new row with Goal, Repo and Acceptance becomes a queued mission, and Request = Cancel cancels a queued or blocked one. Status, verdict and merges stay in Studio. Runs every 5 minutes while Automations are on." : "No NOTION_API_KEY set: this runs a dry run"}
+            className="inline-flex h-8 items-center rounded-lg px-2.5 text-xs text-slate-300 ring-1 ring-line hover:bg-white/[0.04] disabled:opacity-50"
+          >
+            Missions board
           </button>
           {notion?.connected && (
             <button
