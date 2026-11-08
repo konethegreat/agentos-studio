@@ -666,6 +666,9 @@ async fn acp_turn(
     query_file: PathBuf,
     stopped: Arc<AtomicBool>,
 ) {
+    // The whole turn as the user waits for it: session creation, load, and the reply.
+    let started = Instant::now();
+    let took = || Some(started.elapsed().as_millis() as u64);
     let fallback = |app: &AppHandle, state: &ChatState, req: &ChatRequest, why: String| {
         emit(
             app,
@@ -730,7 +733,7 @@ async fn acp_turn(
     };
     if stopped.load(Ordering::SeqCst) {
         let _ = fs::remove_file(&query_file);
-        return finish(&app, &state, &run_id, Some(sid), true);
+        return finish_timed(&app, &state, &run_id, took(), Some(sid), true);
     }
     let mut turn = match crate::acp_host::start_turn(&sid, &cwd, &prompt).await {
         Ok(t) => t,
@@ -786,7 +789,7 @@ async fn acp_turn(
                     ChatEvent::text("error", "Hermes refused this turn"),
                 );
             }
-            finish(&app, &state, &run_id, Some(sid), was_stopped);
+            finish_timed(&app, &state, &run_id, took(), Some(sid), was_stopped);
         }
         Ok(Err(e)) => {
             if !stopped.load(Ordering::SeqCst) {
@@ -796,10 +799,11 @@ async fn acp_turn(
                     ChatEvent::text("error", format!("Hermes: {e}")),
                 );
             }
-            finish(
+            finish_timed(
                 &app,
                 &state,
                 &run_id,
+                took(),
                 Some(sid),
                 stopped.load(Ordering::SeqCst),
             );
@@ -812,10 +816,11 @@ async fn acp_turn(
                     ChatEvent::text("error", "The Hermes ACP connection closed during the turn"),
                 );
             }
-            finish(
+            finish_timed(
                 &app,
                 &state,
                 &run_id,
+                took(),
                 Some(sid),
                 stopped.load(Ordering::SeqCst),
             );
@@ -824,21 +829,34 @@ async fn acp_turn(
 }
 
 fn finish(app: &AppHandle, state: &ChatState, run_id: &str, sid: Option<String>, stopped: bool) {
+    finish_timed(app, state, run_id, None, sid, stopped)
+}
+
+fn finish_timed(
+    app: &AppHandle,
+    state: &ChatState,
+    run_id: &str,
+    duration_ms: Option<u64>,
+    sid: Option<String>,
+    stopped: bool,
+) {
     if let Ok(mut a) = state.active.lock() {
         if a.as_ref().is_some_and(|c| c.run_id == run_id) {
             *a = None;
         }
     }
-    emit(
-        app,
-        run_id,
-        ChatEvent {
-            kind: "complete".into(),
-            stopped: stopped.then_some(true),
-            session_id: sid,
-            ..Default::default()
-        },
-    );
+    emit(app, run_id, complete_event(sid, stopped, duration_ms));
+}
+
+/// The `complete` event for an ACP turn. Pure.
+pub fn complete_event(sid: Option<String>, stopped: bool, duration_ms: Option<u64>) -> ChatEvent {
+    ChatEvent {
+        kind: "complete".into(),
+        stopped: stopped.then_some(true),
+        session_id: sid,
+        duration_ms,
+        ..Default::default()
+    }
 }
 
 /// ACP updates as the chat events the UI already renders. Built-in tools arrive as a title like
@@ -1353,6 +1371,21 @@ mod tests {
             ("permission", Some("r1"))
         );
         assert_eq!(p[0].input.as_ref().unwrap()[0]["kind"], "reject_once");
+    }
+
+    #[test]
+    fn an_acp_turn_reports_its_duration() {
+        let e = complete_event(Some("s".into()), false, Some(4200));
+        let v = serde_json::to_value(&e).unwrap();
+        assert_eq!(
+            (v["kind"].as_str(), v["duration_ms"].as_u64()),
+            (Some("complete"), Some(4200))
+        );
+        assert!(v.get("stopped").is_none());
+        assert_eq!(
+            serde_json::to_value(complete_event(None, true, None)).unwrap()["stopped"],
+            true
+        );
     }
 
     #[test]
