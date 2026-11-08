@@ -41,6 +41,9 @@ Hermes chats run over the Agent Client Protocol by default (Providers > Hermes >
   (`approvals.mode`: `smart` lets Hermes' guardian approve low-risk commands itself, `manual`
   always asks), Studio shows the command with Hermes' choices: allow once, allow for the session,
   allow always, deny, deny always. Nothing runs until you choose; closing the dialog denies it.
+  An approval nobody answers is denied after a timeout (default 10 minutes, Providers > Hermes >
+  Chat transport); the chat says "Denied after timeout" and Windows shows a notification. A timeout
+  always answers "deny" for this one command, never "deny always".
 - **Stop** cancels the turn in Hermes (`session/cancel`); the reply so far stays. If Hermes has not
   stopped within 20 seconds, Studio drops the connection.
 - **Thinking.** Reasoning streams into the collapsible Thinking panel above each reply, when the
