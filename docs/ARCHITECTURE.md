@@ -107,6 +107,7 @@ the first paint is never competing with a full probe.
 | `memory_quality.rs` (new) | The memory audit: finds notes whose backticked paths or functions no longer exist in the repository, asks one Hermes turn to judge pairs of active notes that share a topic and type, and marks the loser stale with `status: superseded` and `superseded_by`. Never deletes. Runs from the Brain panel and the `--memory-quality` headless flag, with an optional weekly cron job. |
 | `skill_proposals.rs` (new) | Skills from success: approved missions grouped by role and a normalised verb plus object; three or more produce a `SKILL.md` draft with steps from the memory ledger, pitfalls and the missions as evidence. Approve creates it through one Hermes turn behind `hermes.skills.create`; Dismiss records `skills.dismissed.<hash>`. |
 | `provenance.rs` (new) | Why a line is here: commit trailers for a mission merge (`Mission`, `Agent`, `Model`, `Reviewer`, `Cost`), a `git blame` of one line, and a merged-pull-request fallback mapped to a mission by `pr_url`. Read only. |
+| `eval.rs` (new) | The evaluation harness: replays a finished mission at its pull request's base commit in a detached worktree on another agent or model, scores the repository's test command and a reviewer verdict on the replay's local diff, and writes one note to `03_Memory/evals`. Never pushes, never opens a pull request, never calls `review_agent::review`. |
 | `hermes_surfaces.rs` | Hermes features shown, not rebuilt: built-in memory and journey, insights, security audit, cron jobs, profiles with Studio's role assignment, and `hermes send` for mission notices. Reads Hermes files directly; every change runs a Hermes command behind Studio's permission check. |
 | `acp.rs` (spike, unwired) | Agent Client Protocol client for `hermes acp`: new or loaded session, one streamed turn, permission requests answered through a channel, cancel. Kept to re-run `tests/live_acp_spike.rs` against new Hermes releases; see `ACP-SPIKE.md`. |
 | `pty.rs` (new) | Real terminals: spawn a shell, interactive Hermes, `hermes --resume <id>`, Claude Code or `claude --resume <id>` in a PTY; streams bytes as UTF-8 safe chunks, accepts keystrokes and resizes. |
@@ -357,3 +358,39 @@ under the live-machine lock and needs no Hermes turn. Brain shows the form, and 
 blames any new line with a hover `why` action against the local clone. The merge hook that appends
 the trailers to a mission's commit lands after the 0.12.0 release, because it edits the mission
 merge path.
+
+## Evaluation harness
+
+`eval.rs` answers "would another agent have done this better?" for a finished mission. It reads the
+mission's pull request with `gh pr view --json baseRefOid,url`, checks that the base commit exists
+locally (fetching if not), and creates a detached worktree under `.worktrees/` from that commit. The
+chosen agent (`claude-code` or `hermes`, optionally with a model) gets one turn with the mission's
+goal and acceptance criteria and the instruction to make the change in place and stop. The replay is
+not a mission: Claude Code gets `--permission-mode acceptEdits` and no shell allowlist, so it cannot
+push or call `gh`, and the Hermes turn runs with `--ignore-rules` so the repository's constitution
+does not send it to open a pull request. The worktree is detached and removed by a guard on every
+path out, including errors.
+
+The replay's diff is collected after `git add -A`, so new files count, and the repository's own test
+command runs next: `npm test` when package.json carries a real script, otherwise `cargo test`,
+`go test ./...`, or pytest when a Python project marker exists. A JavaScript worktree gets one quiet
+`npm install` first. The score is 50 for passing tests (0 failing, 25 when the repository has no test
+command) plus 50 for a reviewer approval. The reviewer prompt and answer parser are
+`review_agent::prompt` and `review_agent::parse_verdict`, but never `review_agent::review`: that
+function takes a mission id and would move a real mission's status. The reviewer is the other agent
+(`hermes` when the replay ran on Claude Code, `claude-code` otherwise), with the reviewer profile
+from `hermes_surfaces` for Hermes.
+
+Each replay writes one note to `03_Memory/evals/<date>-<mission>-<agent>-<model>.md` through
+`vault::Doc`, so the frontmatter is YAML that reads back with the same parser: mission, agent, model,
+reviewer, score, original score, verdict, tests, cost, duration, base commit, comparison. The
+original score comes from the same rubric applied to the mission's `hermes verify` record and
+`review_verdict`. Claude Code cost is counted as flat (the subscription), Hermes cost from
+`usage::metered_cost` over both session ids. The Brain view has an Evaluations panel that lists the
+notes and starts a replay behind the `eval.run` permission (default ask). The memory index skips
+`03_Memory/evals`, so run records never mix with memory notes.
+
+The router rule from the brief (a default changes only after three replays show an improvement) edits
+the Phase C router, so it lands as a separate PR after v0.12.0. The live check (`tests/live_eval.rs`)
+is ignored by default: it replays one finished sandbox mission, asserts one note was written, and
+asserts no worktree, no local branch and no routing change remain.

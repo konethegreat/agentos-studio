@@ -151,3 +151,13 @@ not because code exists.
 | Cost of the work behind a line | yes | measured spend, `flat` for subscriptions, `$0.00` for local models |
 | Sessions behind a line | yes | the mission's Hermes sessions from the exchange log, with a link to the run timeline |
 | Trailer block in mission merges | part | `trailers` and `parse_trailers` ship now; the merge hook that appends them lands after the 0.12.0 release |
+
+## Evaluation and replay (v0.13.0)
+
+| Capability | Hermes CLI | Studio |
+|---|---|---|
+| Replay finished work on another agent | nothing; a new mission starts from the current tree | `eval.run` replays the goal at the pull request's base commit in a detached worktree on `claude-code` or `hermes` |
+| Compare a replay with the original | read the chat and guess | both runs scored on one rubric (tests plus reviewer verdict), with the original score read from `hermes verify` and `review_verdict` |
+| Keep the replay out of production | the agent works in a real branch and can open a PR | detached worktree, no shell allowlist on Claude Code, `--ignore-rules` on Hermes, worktree removed on every path out |
+| Leave a record | a chat session | one Markdown note per replay in `03_Memory/evals`, listed in the Brain view |
+| Change a routing default from evidence | not offered | planned, after v0.12.0: three replays must show an improvement before a default moves |

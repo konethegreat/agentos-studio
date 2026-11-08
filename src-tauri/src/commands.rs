@@ -1302,6 +1302,32 @@ pub async fn skill_proposal_approve(
     .await
 }
 
+/// Replay a finished mission on another agent or model in a throwaway worktree, judged and scored.
+#[tauri::command]
+pub async fn eval_run(
+    state: State<'_, AppState>,
+    mission: String,
+    agent: String,
+    model: Option<String>,
+    approved: Option<bool>,
+) -> CmdResult<crate::eval::EvalResult> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let target = format!("{mission} on {agent}");
+        let summary = format!(
+            "Replay mission {mission} on {agent} in a detached worktree, run its tests and review the result. It never pushes and never opens a pull request."
+        );
+        crate::permissions::run_guarded(
+            "eval.run",
+            &target,
+            &summary,
+            approved.unwrap_or(false),
+            || crate::eval::run(&v, &mission, &agent, model.as_deref()),
+        )
+    })
+    .await
+}
+
 /// Dismiss a proposal so the same group of missions is not proposed again.
 #[tauri::command]
 pub async fn skill_proposal_dismiss(hash: String) -> CmdResult<()> {
@@ -1316,4 +1342,11 @@ pub async fn file_provenance(
     line: u64,
 ) -> CmdResult<crate::provenance::Provenance> {
     blocking(move || crate::provenance::why(&repo, &file, line)).await
+}
+
+/// Every replay note in the vault, newest first.
+#[tauri::command]
+pub async fn eval_list(state: State<'_, AppState>) -> CmdResult<Vec<crate::eval::EvalSummary>> {
+    let v = current_vault(&state);
+    blocking(move || crate::eval::list(&v)).await
 }

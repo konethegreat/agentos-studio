@@ -257,6 +257,14 @@ reviewer, cost and Hermes sessions, and a link to the run timeline. The GitHub d
 same action on hover over any new line. A lookup that cannot run (no `gh`, no GitHub remote) is
 reported as a note, not an error.
 
+**Replaying a mission.** The Evaluations panel under Brain replays a finished mission on another
+agent or model: it starts at the pull request's base commit in a detached worktree, gives the agent
+the same goal and acceptance criteria, then runs the repository's own test command and a reviewer
+over the replay's diff. The score is out of 100 (tests 50, reviewer 50) and each replay writes one
+note to `03_Memory/evals/` that compares it with the original run. The replay never pushes and never
+opens a pull request, and the worktree is removed even when the run fails. Replays are behind the
+`eval.run` permission (Ask by default) because they spend agent time.
+
 ## Projects, branches and skills
 
 - **Projects** are Hermes projects: a named workspace over one or more folders (`hermes project`).

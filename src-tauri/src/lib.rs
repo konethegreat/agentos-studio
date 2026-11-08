@@ -18,6 +18,7 @@ pub mod computer_use;
 pub mod connect;
 pub mod constitution;
 pub mod council;
+pub mod eval;
 pub mod fleet;
 pub mod fork;
 pub mod github;
@@ -358,6 +359,8 @@ pub fn run_gui() {
             commands::set_mission_urgent,
             commands::mission_timeline,
             commands::timeline_missions,
+            commands::eval_run,
+            commands::eval_list,
             commands::router_auto,
             commands::set_router_auto,
             commands::help_docs,

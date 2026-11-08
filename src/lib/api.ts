@@ -481,6 +481,63 @@ export interface Provenance {
   note: string | null;
 }
 
+/** Phase E: what one "Replay" run did. */
+export interface EvalTestOutcome {
+  command: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface EvalOriginalRun {
+  agent: string;
+  model: string;
+  reviewer: string | null;
+  verdict: string | null;
+  tests: boolean | null;
+  score: number;
+  cost_usd: number;
+}
+
+export interface EvalResult {
+  date: string;
+  mission: string;
+  repo: string;
+  agent: string;
+  model: string;
+  reviewer: string;
+  base_commit: string;
+  pr_url: string;
+  duration_s: number;
+  cost_usd: number;
+  tests: EvalTestOutcome | null;
+  verdict: string;
+  reviewer_note: string;
+  score: number;
+  original_score: number;
+  comparison: string;
+  changed_files: number;
+  deps_installed: boolean;
+  note_path: string;
+  original: EvalOriginalRun;
+}
+
+export interface EvalSummary {
+  file: string;
+  date: string;
+  mission: string;
+  repo: string;
+  agent: string;
+  model: string;
+  reviewer: string;
+  score: number;
+  original_score: number;
+  verdict: string;
+  tests: string;
+  cost_usd: number;
+  duration_s: number;
+  comparison: string;
+}
+
 export interface MemoryEntry {
   session_id: string;
   turn: number;
@@ -873,6 +930,10 @@ export const api = {
   timelineMissions: (limit = 100) => invoke<TimelineSummary[]>("timeline_missions", { limit }),
   fileProvenance: (repo: string, file: string, line: number) =>
     invoke<Provenance>("file_provenance", { repo, file, line }),
+
+  evalRun: (mission: string, agent: string, model?: string, approved?: boolean) =>
+    invoke<EvalResult>("eval_run", { mission, agent, model: model ?? null, approved: approved ?? null }),
+  evalList: () => invoke<EvalSummary[]>("eval_list"),
 
   runCli: (command: string, cwd: string) => invoke<string>("execute_cli_command", { command, cwd }),
   killCli: (runId: string) => invoke<void>("kill_cli_command", { runId }),
