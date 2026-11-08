@@ -914,7 +914,12 @@ pub fn acp_chat_events(
             }
             out
         }
-        A::ToolUpdate { id, status, output } if status == "completed" || status == "failed" => {
+        // Only close cards that were started. Hermes also closes each permission request's own
+        // bubble (`perm-check-N`, never started as a tool call); the approval dialog already shows
+        // that outcome, so those updates would only draw an empty "tool" card.
+        A::ToolUpdate { id, status, output }
+            if (status == "completed" || status == "failed") && clock.contains_key(&id) =>
+        {
             vec![ChatEvent {
                 kind: "tool_result".into(),
                 duration_ms: clock.get(&id).map(|t| t.elapsed().as_millis() as u64),
@@ -1754,5 +1759,40 @@ mod tests {
             fs::read_to_string(root.join("crlf.txt")).unwrap(),
             "x\r\ny\r\n"
         );
+    }
+
+    #[test]
+    fn a_permission_bubble_update_draws_no_card() {
+        use crate::acp::AcpEvent as A;
+        let mut clock = HashMap::new();
+        let start = acp_chat_events(
+            A::ToolCall {
+                id: "tc-1".into(),
+                title: "terminal: rm -rf x".into(),
+                tool_kind: "execute".into(),
+                status: "pending".into(),
+            },
+            &mut clock,
+        );
+        assert_eq!(start[0].kind, "tool_start");
+        let perm = acp_chat_events(
+            A::ToolUpdate {
+                id: "perm-check-1".into(),
+                status: "failed".into(),
+                output: String::new(),
+            },
+            &mut clock,
+        );
+        assert!(perm.is_empty(), "{perm:?}");
+        let done = acp_chat_events(
+            A::ToolUpdate {
+                id: "tc-1".into(),
+                status: "failed".into(),
+                output: "denied".into(),
+            },
+            &mut clock,
+        );
+        assert_eq!(done[0].kind, "tool_result");
+        assert_eq!(done[0].tool_id.as_deref(), Some("tc-1"));
     }
 }

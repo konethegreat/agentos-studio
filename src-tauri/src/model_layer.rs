@@ -363,7 +363,10 @@ pub fn parse_moa(v: &Yaml) -> Moa {
     presets.sort_by(|a, b| a.name.cmp(&b.name));
     Moa {
         default_preset: s("default_preset"),
-        active_preset: s("active_preset"),
+        // Older Studio builds stored the literal "''" when turning MoA off; that means off.
+        active_preset: Some(s("active_preset"))
+            .filter(|p| p != "''")
+            .unwrap_or_default(),
         presets,
     }
 }
@@ -375,7 +378,9 @@ pub fn moa() -> Moa {
 /// Turn mixture-of-agents on with a preset, or off with an empty name.
 pub fn set_active_moa(preset: &str) -> Result<()> {
     if preset.is_empty() {
-        return hermes(&["config", "set", "moa.active_preset", "''"]).map(|_| ());
+        // Unset, not set to "''": no shell runs here, so the quotes would be stored literally and
+        // Hermes would look for a preset named ''.
+        return hermes(&["config", "unset", "moa.active_preset"]).map(|_| ());
     }
     if !moa().presets.iter().any(|p| p.name == preset) {
         bail!("No MoA preset named {preset}");

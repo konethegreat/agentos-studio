@@ -407,24 +407,34 @@ function ParallelCard() {
   );
 }
 
+/** Minutes for display, exact enough that saving the shown value keeps the same seconds. */
+const minutesText = (secs: number) => String(Number((secs / 60).toFixed(4)));
+
 function TransportCard() {
   const toast = useToast();
   const [t, setT] = useState<"acp" | "cli" | null>(null);
   const [mins, setMins] = useState<string>("");
+  const [savedSecs, setSavedSecs] = useState<number | null>(null);
   useEffect(() => {
     void studio.chat.transport().then(setT).catch(() => setT("acp"));
     void studio.chat
       .approvalTimeout()
-      .then((s) => setMins(String(Math.round((s / 60) * 10) / 10)))
+      .then((s) => {
+        setSavedSecs(s);
+        setMins(minutesText(s));
+      })
       .catch(() => setMins("10"));
   }, []);
   async function saveTimeout() {
     const m = Number(mins);
     if (!Number.isFinite(m) || m <= 0) return toast("error", "Enter minutes, for example 10");
+    const secs = Math.round(m * 60);
+    if (secs === savedSecs) return;
     try {
-      const s = await studio.chat.setApprovalTimeout(Math.round(m * 60));
-      setMins(String(Math.round((s / 60) * 10) / 10));
-      toast("ok", `Unanswered approvals are denied after ${Math.round((s / 60) * 10) / 10} min`);
+      const s = await studio.chat.setApprovalTimeout(secs);
+      setSavedSecs(s);
+      setMins(minutesText(s));
+      toast("ok", `Unanswered approvals are denied after ${s < 120 ? `${s} s` : `${minutesText(s)} min`}`);
     } catch (e) {
       toast("error", errorText(e));
     }
