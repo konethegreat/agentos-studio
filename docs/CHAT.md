@@ -48,7 +48,8 @@ Hermes chats run over the Agent Client Protocol by default (Providers > Hermes >
 
 How it works: a new chat is created with interactive `hermes chat` and its creation flags (model,
 skills, `--checkpoints`), which stores the session before any turn; Studio reads the id and ends
-that process. Every turn then runs on one long-lived `hermes acp` connection, started when the
+that process (the id is matched on prefix, source `gui`, folder and start time, polling
+`state.db` for up to 5 seconds). Every turn then runs on one long-lived `hermes acp` connection, started when the
 Chat view opens. A warm turn reaches its first token in about 3 seconds; the first turn of a new
 chat also pays for creating the session (about 7 seconds).
 
