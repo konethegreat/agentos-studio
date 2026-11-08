@@ -84,7 +84,7 @@ fn missions_round_trip_through_notion() {
     // blocked. Trust that author, propose again, and it queues. An unknown agent is declined.
     let me = notion::request("GET", "/users/me", &tok, None).unwrap();
     let bot = me["id"].as_str().unwrap().to_string();
-    notion_sync::set_trusted_authors(&[bot.clone()]).unwrap();
+    notion_sync::set_trusted_authors(std::slice::from_ref(&bot)).unwrap();
     notion::request(
         "POST",
         "/pages",
