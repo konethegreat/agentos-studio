@@ -282,6 +282,22 @@ This completes the design-system bullet listed under v0.4.1, which was never bui
   Python server had, plus recall, remember and project_brief.
 - Verified by `tests/live_hub_cutover.rs` against the real agent configs.
 
+## v0.10.1: safe to ship (shipped)
+
+Phase A of the 2026-11-08 master brief. Everything since 0.10.0 (plan first, model layer, parallel
+missions, model watch, ACP chat, aliases, router, Notion missions board, Computer Use) plus:
+
+- ACP session lookup matches source, folder and start time, and polls state.db (#56).
+- ACP turns report their duration (#57).
+- Unanswered approvals are denied after a timeout, default 10 minutes (#59).
+- Notion proposals wait for approval in Studio unless the author is trusted; Agent is validated
+  (#60).
+- The router needs 5 decided missions for the role in the last 60 days; the shadow line shows its
+  real decision per role (#61, #63).
+- Fixes from clicking every new screen in a release build: empty tool card after an approval,
+  timeout field rounding, MoA off storing '', Computer Use doctor and update in PowerShell,
+  refusal rows (#62, #63).
+
 ## v0.10.0: Hermes-native (shipped)
 
 Principle: Hermes owns execution of Hermes work; Studio owns cross-agent orchestration (Hermes,
