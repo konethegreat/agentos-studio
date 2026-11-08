@@ -27,6 +27,7 @@ pub mod hermes_engine;
 pub mod hermes_surfaces;
 pub mod hub_identity;
 pub mod kanban;
+pub mod learning;
 pub mod mcp_manager;
 pub mod mcp_stdio;
 pub mod memory_index;
@@ -328,6 +329,7 @@ pub fn run_gui() {
             commands::memory_ledger,
             commands::memory_recent,
             commands::memory_notes,
+            commands::extract_lessons,
             commands::create_mission,
             commands::list_missions,
             commands::dispatch_mission,
