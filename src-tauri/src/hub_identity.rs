@@ -19,7 +19,8 @@ pub const AGENTS: [&str; 4] = ["hermes", "claude-code", "qoder", "antigravity"];
 const KV_PREFIX: &str = "hub.token.";
 
 /// Tools an unknown caller may still use.
-pub const READ_ONLY_TOOLS: [&str; 5] = [
+pub const READ_ONLY_TOOLS: [&str; 6] = [
+    "agents",
     "fetch_pending_tasks",
     "search_shared_memory",
     "recall",

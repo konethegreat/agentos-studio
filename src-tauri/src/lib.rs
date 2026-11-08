@@ -2,6 +2,8 @@
 
 pub mod acp;
 pub mod acp_host;
+pub mod agent_log;
+pub mod agents;
 pub mod automation;
 pub mod boot;
 pub mod bootstrapper;
@@ -335,6 +337,9 @@ pub fn run_gui() {
             commands::router_verdicts,
             commands::routing_policy,
             commands::mission_pins,
+            commands::agent_cards,
+            commands::set_agent_strengths,
+            commands::agent_events,
             commands::router_auto,
             commands::set_router_auto,
             commands::help_docs,

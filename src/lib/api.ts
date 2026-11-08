@@ -371,6 +371,47 @@ export interface Mission {
   verify: string | null;
 }
 
+/** Phase C: one card per agent in the registry (`agents` hub tool and the Agents screen). */
+export interface AgentCard {
+  name: string;
+  label: string;
+  start: string;
+  headless: boolean;
+  installed: boolean;
+  strengths: string[];
+  strengths_source: string;
+  tools: string[];
+  cost_model: "flat" | "metered" | "local";
+  provider: string;
+  quota: {
+    source: string;
+    headroom_pct: number | null;
+    resets_at: string | null;
+    remaining_usd: number | null;
+    windows: { label: string; used_percent: number; resets_at: string | null }[];
+    summary: string;
+    fetched_at: number;
+  };
+  measured: { attempts: number; approvals: number; score: number; strong_roles: string[] };
+  hub_identity: boolean;
+  health: string;
+  health_detail: string;
+}
+
+/** One exchange between agents: a handoff, an ask or answer, a council position, an assignment. */
+export interface AgentEvent {
+  id: number;
+  at: number;
+  mission_id: string | null;
+  kind: "handoff" | "ask" | "answer" | "council" | "assign" | "defer" | "note";
+  from_agent: string;
+  to_agent: string;
+  summary: string;
+  detail: string;
+  duration_ms: number | null;
+  cost_usd: number | null;
+}
+
 export interface MemoryEntry {
   session_id: string;
   turn: number;
@@ -697,6 +738,11 @@ export const api = {
   bootLogsDir: () => invoke<string>("boot_logs_dir"),
   bootReadLog: (name: string) => invoke<string>("boot_read_log", { name }),
   bootOpenLogs: () => invoke<string>("boot_open_logs"),
+
+  agentCards: (refresh = false) => invoke<AgentCard[]>("agent_cards", { refresh }),
+  setAgentStrengths: (agent: string, strengths: string[]) => invoke<void>("set_agent_strengths", { agent, strengths }),
+  agentEvents: (missionId?: string, limit = 200) =>
+    invoke<AgentEvent[]>("agent_events", { missionId: missionId ?? null, limit }),
 
   runCli: (command: string, cwd: string) => invoke<string>("execute_cli_command", { command, cwd }),
   killCli: (runId: string) => invoke<void>("kill_cli_command", { runId }),
