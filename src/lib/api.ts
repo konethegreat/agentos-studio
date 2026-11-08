@@ -495,6 +495,9 @@ export interface HubSkill {
   description: string;
 }
 
+/** Scheduler settings. `ide_wait_minutes`: how long an IDE-only agent has to pick up its mission. */
+export type AutomationStatus = { enabled: boolean; max_concurrent: number; ide_wait_minutes: number };
+
 export const api = {
   getSettings: () => invoke<SettingsView>("get_settings"),
   saveSettings: (vault: string, scanRoots: string[]) => invoke<SettingsView>("save_settings", { vault, scanRoots }),
@@ -638,11 +641,12 @@ export const api = {
       { dryRun },
     ),
   notionPullInbox: () => invoke<number>("notion_pull_inbox"),
-  automationStatus: () => invoke<{ enabled: boolean; max_concurrent: number }>("automation_status"),
-  setAutomation: (enabled: boolean, maxConcurrent?: number) =>
-    invoke<{ enabled: boolean; max_concurrent: number }>("set_automation", {
+  automationStatus: () => invoke<AutomationStatus>("automation_status"),
+  setAutomation: (enabled: boolean, maxConcurrent?: number, ideWaitMinutes?: number) =>
+    invoke<AutomationStatus>("set_automation", {
       enabled,
       maxConcurrent: maxConcurrent ?? null,
+      ideWaitMinutes: ideWaitMinutes ?? null,
     }),
   automationTick: () => invoke<{ dispatched: string[]; moved_to_review: string[]; running: number }>("automation_tick"),
   createMission: (input: {

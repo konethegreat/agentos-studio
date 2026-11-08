@@ -259,9 +259,108 @@ pub fn start_worker(vault: &Vault, task_id: &str, agent: &str) -> Result<WorkerI
     f(vault, task_id, agent)
 }
 
-/// Agents Studio can run without an IDE. Pure.
+/// Agents Studio can run without an IDE: Hermes, Claude Code (`claude -p`) and Antigravity
+/// (`agy`, headless print mode). Qoder runs inside its IDE here; its CLI (`qodercli`) is not part of
+/// the IDE install. Pure.
 pub fn is_headless(agent: &str) -> bool {
-    matches!(agent, "hermes" | "claude-code")
+    matches!(agent, "hermes" | "claude-code" | "antigravity")
+}
+
+/// The executable a headless agent runs as. Pure.
+pub fn headless_bin(agent: &str) -> Option<&'static str> {
+    match agent {
+        "hermes" => Some("hermes"),
+        "claude-code" => Some("claude"),
+        "antigravity" => Some("agy"),
+        _ => None,
+    }
+}
+
+/// A headless agent whose CLI is installed on this machine.
+pub fn headless_available(agent: &str) -> bool {
+    headless_bin(agent).is_some_and(|b| procs::find(b).is_some())
+}
+
+/// The first available agent in preference order that is not `exclude`: Claude Code (flat
+/// subscription, strongest coder here), then Antigravity (flat), then Hermes. Pure over `available`.
+pub fn best_headless(exclude: &str, available: impl Fn(&str) -> bool) -> Option<&'static str> {
+    ["claude-code", "antigravity", "hermes"]
+        .into_iter()
+        .find(|a| *a != exclude && available(a))
+}
+
+/// `agy` arguments for a headless mission worker: one stream-json turn read from stdin, the
+/// allowlist as session-only settings (a file), never skipping permissions. Pure.
+pub fn agy_args(settings_file: &Path, model: Option<&str>) -> Vec<String> {
+    let mut a: Vec<String> = [
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--mode",
+        "accept-edits",
+    ]
+    .map(String::from)
+    .to_vec();
+    a.extend(["--settings".into(), settings_file.display().to_string()]);
+    if let Some(m) = model.filter(|m| !m.trim().is_empty()) {
+        a.extend(["--model".into(), m.trim().into()]);
+    }
+    a
+}
+
+/// The session settings file content for an Antigravity worker. Pure.
+pub fn agy_settings(allow: &[String]) -> String {
+    json!({"permissions": {"allow": allow}}).to_string()
+}
+
+/// One stdin line for `agy --input-format stream-json`. Pure.
+pub fn agy_input(prompt: &str) -> String {
+    format!(
+        "{}\n",
+        json!({"event": "user", "message": {"content": prompt}})
+    )
+}
+
+/// Render one Antigravity stream-json event as readable lines.
+pub fn render_agy_event(line: &str) -> Vec<String> {
+    let Ok(v) = serde_json::from_str::<Value>(line) else {
+        return vec![line.to_string()];
+    };
+    match v["event"].as_str().unwrap_or_default() {
+        "init" => vec![format!(
+            "[session] antigravity permission_mode={}",
+            v["init"]["permission_mode"].as_str().unwrap_or("?")
+        )],
+        "step_update" => {
+            let s = &v["step_update"];
+            if s["state"] != "DONE" {
+                return vec![];
+            }
+            if let Some(name) = s["tool_info"]["name"].as_str() {
+                let p = s["tool_info"]["parameters"].to_string();
+                let p: String = p.chars().take(160).collect();
+                vec![format!("> {name} {p}")]
+            } else {
+                s["text_delta"]
+                    .as_str()
+                    .filter(|t| !t.trim().is_empty())
+                    .map(|t| vec![t.trim().to_string()])
+                    .unwrap_or_default()
+            }
+        }
+        "result" => vec![format!(
+            "[result] {} (turns: {}){}",
+            v["result"]["status"].as_str().unwrap_or("?"),
+            v["result"]["num_turns"].as_u64().unwrap_or(0),
+            v["result"]["denied_actions"]
+                .as_array()
+                .filter(|d| !d.is_empty())
+                .map(|d| format!(" denied: {}", Value::Array(d.clone())))
+                .unwrap_or_default()
+        )],
+        _ => vec![],
+    }
 }
 
 /// Whether a worker for this task is alive in this app session.
@@ -343,8 +442,24 @@ pub fn spawn_worker(
                 Some(prompt.clone()),
             )
         }
+        "antigravity" => {
+            let extra = repo_from_body(&task.body)
+                .map(|r| crate::routing::allowed_tools(&r))
+                .unwrap_or_default();
+            let allow =
+                crate::routing::agy_allow_rules(&crate::routing::claude_allowed_tools(&extra));
+            let sf = vault
+                .worker_logs()
+                .join(format!("{task_id}.agy-settings.json"));
+            fs::write(&sf, agy_settings(&allow))?;
+            (
+                "agy",
+                agy_args(&sf, model_from_body(&task.body).as_deref()),
+                Some(agy_input(&prompt)),
+            )
+        }
         other => bail!(
-            "Agent '{other}' runs inside its IDE; only hermes and claude-code can run headless"
+            "Agent '{other}' runs inside its IDE; only hermes, claude-code and antigravity run headless"
         ),
     };
     let exe = procs::find(exe_name)
@@ -410,7 +525,11 @@ pub fn spawn_worker(
         });
     }
     let tail: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let is_claude = agent == "claude-code";
+    let renderer: Option<fn(&str) -> Vec<String>> = match agent {
+        "claude-code" => Some(render_claude_event),
+        "antigravity" => Some(render_agy_event),
+        _ => None,
+    };
     let mut readers = Vec::new();
     for (stream_name, reader) in [
         (
@@ -433,10 +552,9 @@ pub fn spawn_worker(
         readers.push(tauri::async_runtime::spawn(async move {
             let mut lines = BufReader::new(reader).lines();
             while let Ok(Some(raw)) = lines.next_line().await {
-                let rendered = if is_claude && stream_name == "stdout" {
-                    render_claude_event(&raw)
-                } else {
-                    vec![raw.clone()]
+                let rendered = match renderer {
+                    Some(render) if stream_name == "stdout" => render(&raw),
+                    _ => vec![raw.clone()],
                 };
                 if let Ok(mut f) = log.lock() {
                     let _ = writeln!(f, "[{stream_name}] {raw}");
@@ -621,6 +739,43 @@ mod tests {
             render_claude_event("plain text"),
             vec!["plain text".to_string()]
         );
+    }
+
+    #[test]
+    fn the_preferred_headless_agent_is_claude_then_antigravity_then_hermes() {
+        assert_eq!(best_headless("qoder", |_| true), Some("claude-code"));
+        assert_eq!(best_headless("claude-code", |_| true), Some("antigravity"));
+        assert_eq!(best_headless("qoder", |a| a == "hermes"), Some("hermes"));
+        assert_eq!(best_headless("qoder", |_| false), None);
+        assert!(is_headless("antigravity") && !is_headless("qoder"));
+    }
+
+    #[test]
+    fn an_antigravity_worker_reads_one_turn_and_never_skips_permissions() {
+        let a = agy_args(Path::new("C:/logs/TASK-001.agy-settings.json"), None);
+        assert!(!a.iter().any(|x| x.contains("dangerously")));
+        assert!(a
+            .windows(2)
+            .any(|w| w[0] == "--input-format" && w[1] == "stream-json"));
+        assert!(a
+            .windows(2)
+            .any(|w| w[0] == "--settings" && w[1].ends_with(".json")));
+        let line = agy_input("line one\n\"quoted\"");
+        assert!(
+            line.ends_with('\n') && line.matches('\n').count() == 1,
+            "one NDJSON line"
+        );
+        let v: Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(v["message"]["content"], "line one\n\"quoted\"");
+        let s: Value =
+            serde_json::from_str(&agy_settings(&["command(regex:git .*)".into()])).unwrap();
+        assert_eq!(s["permissions"]["allow"][0], "command(regex:git .*)");
+
+        let tool = r#"{"event":"step_update","step_update":{"state":"DONE","step_type":"tool","tool_info":{"name":"run_command","parameters":{"CommandLine":"git status"}}}}"#;
+        assert!(render_agy_event(tool)[0].starts_with("> run_command"));
+        let res = r#"{"event":"result","result":{"status":"SUCCESS","num_turns":2,"denied_actions":[{"action":"command"}]}}"#;
+        let r = &render_agy_event(res)[0];
+        assert!(r.contains("SUCCESS") && r.contains("denied"), "{r}");
     }
 
     #[test]

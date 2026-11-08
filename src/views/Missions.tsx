@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, ClipboardCheck, GitMerge, Play, Plus, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorText, type Mission } from "../lib/api";
+import { api, errorText, type AutomationStatus, type Mission } from "../lib/api";
 import { useToast } from "../components/Toasts";
 import { Guide, useReportGuides } from "../components/Guides";
 import { missionGuides } from "../lib/guides";
@@ -26,7 +26,8 @@ export function Missions({ repos }: { repos: string[] }) {
   const [rows, setRows] = useState<Mission[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [auto, setAuto] = useState<{ enabled: boolean; max_concurrent: number } | null>(null);
+  const [auto, setAuto] = useState<AutomationStatus | null>(null);
+  const [ideWait, setIdeWait] = useState("");
   const [allowMerge, setAllowMerge] = useState(false);
   const [router, setRouter] = useState<{ role: string; pick: { provider: string; model: string; score: number; reason: string } | null; decline: string | null }[]>([]);
   const [providers, setProviders] = useState<{ id: string; label: string; models: string[]; active: boolean }[]>([]);
@@ -66,7 +67,13 @@ export function Missions({ repos }: { repos: string[] }) {
 
   useEffect(() => {
     void load();
-    void api.automationStatus().then(setAuto).catch(() => undefined);
+    void api
+      .automationStatus()
+      .then((a) => {
+        setAuto(a);
+        setIdeWait(String(a.ide_wait_minutes));
+      })
+      .catch(() => undefined);
     void api.modelCatalog().then((c) => setProviders(c.providers)).catch(() => undefined);
     void api.routerVerdicts().then(setRouter).catch(() => undefined);
     void invoke<boolean>("router_auto").then(setRouterAuto).catch(() => undefined);
@@ -87,6 +94,23 @@ export function Missions({ repos }: { repos: string[] }) {
       setAuto(await api.setAutomation(next, auto?.max_concurrent));
       toast(next ? "ok" : "info", next ? "Automations on: queued missions start within a minute" : "Automations off: running missions still finish and go to review");
       await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }
+
+  // Saved on blur, and only when the value really changed, so tabbing through never rewrites it.
+  async function saveIdeWait() {
+    const n = Math.round(Number(ideWait));
+    if (!auto || !Number.isFinite(n) || n === auto.ide_wait_minutes) {
+      setIdeWait(auto ? String(auto.ide_wait_minutes) : "");
+      return;
+    }
+    try {
+      const next = await api.setAutomation(auto.enabled, auto.max_concurrent, n);
+      setAuto(next);
+      setIdeWait(String(next.ide_wait_minutes));
+      toast("ok", `Qoder and other IDE agents now get ${next.ide_wait_minutes} minutes before a mission is reassigned`);
     } catch (e) {
       toast("error", errorText(e));
     }
@@ -282,6 +306,23 @@ export function Missions({ repos }: { repos: string[] }) {
             className="accent-emerald-500"
           />
           Let the router pick
+        </label>
+        <label
+          className="flex items-center gap-1.5 text-slate-400"
+          title="Qoder runs only inside its IDE. Its missions are offered to it first; if it has not picked one up after this many minutes, the mission goes to the best headless agent (Claude Code, then Antigravity, then Hermes) with a note."
+        >
+          IDE pickup wait
+          <input
+            type="number"
+            min={1}
+            max={1440}
+            value={ideWait}
+            onChange={(e) => setIdeWait(e.target.value)}
+            onBlur={() => void saveIdeWait()}
+            aria-label="Minutes an IDE agent has to pick up a mission"
+            className="h-6 w-14 rounded-md border border-line bg-card px-1.5 text-label text-slate-200 outline-none focus:border-emerald-500/50"
+          />
+          min
         </label>
         {router.length > 0 && (
           <span>

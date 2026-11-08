@@ -244,7 +244,7 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
     let started = dispatch(id, &task_id)?;
     // Headless agents get a worker now; IDE agents pick the task up from the bus.
     let agent = m.agent.trim().to_lowercase();
-    if crate::bus::is_headless(&agent) {
+    if crate::bus::headless_available(&agent) {
         if let Err(e) = crate::bus::start_worker(v, &task_id, &agent) {
             let _ = v.log_activity(&task_id, &format!("no worker started: {e:#}"));
         }
@@ -315,6 +315,18 @@ pub fn dispatch(id: &str, task_id: &str) -> Result<Mission> {
         "UPDATE missions SET task_id = ?1, updated_at = ?2 WHERE id = ?3",
         params![task_id, now(), id],
     )?;
+    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+}
+
+/// Hand a running mission to another agent (an IDE agent that never picked it up). The reason
+/// is kept in kv `mission.note.<id>` so the board can show why the agent changed.
+pub fn reassign(id: &str, agent: &str, reason: &str) -> Result<Mission> {
+    let c = store::open()?;
+    c.execute(
+        "UPDATE missions SET agent = ?1, updated_at = ?2 WHERE id = ?3 AND status = 'running'",
+        params![agent, now(), id],
+    )?;
+    let _ = store::kv_set(&c, &format!("mission.note.{id}"), reason.trim());
     get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
 }
 

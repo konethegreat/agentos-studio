@@ -97,9 +97,21 @@ deliberately boring.
   `Worktree:` and `Branch:` lines, the worker runs there, and the worktree is removed when the
   mission is done or failed (the branch stays, it is the pull request).
 - **Workers start themselves.** `missions::start` (the board button and the scheduler alike) starts
-  a headless Claude Code worker as soon as the bus task exists: `claude -p` with
-  `--permission-mode acceptEdits` and the repository's tool allowlist (see `ROUTING.md`), never
-  `--dangerously-skip-permissions`. IDE agents pick their task up from the bus.
+  a headless worker as soon as the bus task exists, for every agent whose CLI is installed:
+  - Claude Code: `claude -p` with `--permission-mode acceptEdits` and the repository's tool
+    allowlist (see `ROUTING.md`).
+  - Antigravity: `agy --input-format stream-json --output-format stream-json --mode accept-edits
+    --settings <file>`, one turn on stdin, with the same allowlist written as Antigravity rules
+    (`mcp(agentos-hub/*)`, `command(regex:git .*)`, ...).
+  - Neither ever runs with `--dangerously-skip-permissions`.
+- **IDE-only agents.** Qoder runs inside its IDE on this machine (its CLI, `qodercli`, is a separate
+  install that is not present), and Antigravity counts as IDE only when `agy` is missing. Their
+  missions are offered to them first. If the task is still unclaimed after the IDE pickup wait
+  (Missions > IDE pickup wait, default 30 minutes, kv `missions.ide_wait_minutes`), the tick
+  reassigns it to the best installed headless agent (Claude Code, then Antigravity, then Hermes),
+  claims the task for it, writes the reason on the task and in kv `mission.note.<id>`, and starts
+  its worker. With no headless agent installed the mission is blocked with the reason, never left
+  running with nobody on it.
 - **Parallel missions per repository** applies to every agent now that every mission has its own
   worktree: with the setting at 1 a mission runs alone in its repository, above 1 up to that many
   share it.
