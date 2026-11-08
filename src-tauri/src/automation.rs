@@ -180,6 +180,28 @@ pub fn tick(v: &Vault) -> TickReport {
         let Some(task) = m.task_id.as_deref() else {
             continue;
         };
+        if crate::council::is_council(Some(task)) {
+            match crate::council::progress(
+                crate::council::state(&m.id).as_deref(),
+                chrono::Utc::now().timestamp(),
+            ) {
+                crate::council::Progress::Wait => {}
+                crate::council::Progress::Review => match missions::submit_for_review(&m.id, 0.0) {
+                    Ok(_) => {
+                        crate::council::clear_state(&m.id);
+                        report.moved_to_review.push(m.id.clone())
+                    }
+                    Err(e) => report.error = Some(e.to_string()),
+                },
+                crate::council::Progress::Fail(reason) => {
+                    crate::council::clear_state(&m.id);
+                    if let Err(e) = missions::block(&m.id, &format!("Council: {reason}"), false) {
+                        report.error = Some(e.to_string());
+                    }
+                }
+            }
+            continue;
+        }
         if crate::kanban::is_kanban(Some(task)) {
             match advance_kanban(m, task) {
                 Ok(Advance::Review) => report.moved_to_review.push(m.id.clone()),

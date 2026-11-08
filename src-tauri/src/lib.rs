@@ -16,6 +16,7 @@ pub mod commands;
 pub mod computer_use;
 pub mod connect;
 pub mod constitution;
+pub mod council;
 pub mod fleet;
 pub mod fork;
 pub mod github;
@@ -342,6 +343,8 @@ pub fn run_gui() {
             commands::agent_cards,
             commands::set_agent_strengths,
             commands::agent_events,
+            commands::mission_kinds,
+            commands::set_mission_kind,
             commands::router_auto,
             commands::set_router_auto,
             commands::help_docs,

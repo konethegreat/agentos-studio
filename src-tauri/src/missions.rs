@@ -213,6 +213,10 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
     }
     // A new attempt starts with a clean heartbeat history.
     crate::stuck::reset(id);
+    // A design decision goes to a council of agents on different providers, not one worker.
+    if kind(id) == KIND_DECISION {
+        return crate::council::start(v, &m);
+    }
     if uses_kanban(&m) {
         let task_id = crate::kanban::create_task(&m)?;
         return dispatch(id, &task_id);
@@ -302,6 +306,43 @@ pub fn bus_instructions(
         b.push_str(&format!("\nModel: {}", m.model.trim()));
     }
     b
+}
+
+/// A mission is ordinary work unless it is marked a design decision, which a council decides.
+pub const KIND_WORK: &str = "work";
+pub const KIND_DECISION: &str = "decision";
+
+/// The mission's kind (`missions.kind`, schema 9). Unknown missions read as work.
+pub fn kind(id: &str) -> String {
+    store::open()
+        .ok()
+        .and_then(|c| {
+            c.query_row(
+                "SELECT kind FROM missions WHERE id = ?1",
+                params![id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+        })
+        .unwrap_or_else(|| KIND_WORK.into())
+}
+
+/// Mark a queued or blocked mission as work or a design decision.
+pub fn set_kind(id: &str, kind: &str) -> Result<()> {
+    if kind != KIND_WORK && kind != KIND_DECISION {
+        bail!("kind must be work or decision, got '{kind}'");
+    }
+    let c = store::open()?;
+    let n = c.execute(
+        "UPDATE missions SET kind = ?1, updated_at = ?2 WHERE id = ?3 AND status IN ('queued', 'blocked')",
+        params![kind, now(), id],
+    )?;
+    if n == 0 {
+        bail!("{id} is not queued or blocked, so its kind cannot change");
+    }
+    Ok(())
 }
 
 /// Hermes missions run through `hermes kanban`; the rest through the Agent Bus. Pure.
@@ -664,6 +705,20 @@ mod tests {
                 v.fetch_pending_tasks("all").unwrap().is_empty(),
                 "no task written"
             );
+        });
+    }
+
+    #[test]
+    fn a_decision_mission_is_marked_only_before_it_starts() {
+        with_db(|| {
+            let m = make();
+            assert_eq!(kind(&m.id), KIND_WORK);
+            set_kind(&m.id, KIND_DECISION).unwrap();
+            assert_eq!(kind(&m.id), KIND_DECISION);
+            assert!(set_kind(&m.id, "vote").is_err());
+            dispatch(&m.id, "council:M").unwrap();
+            assert!(set_kind(&m.id, KIND_WORK).is_err(), "not once it runs");
+            assert_eq!(kind("M-999"), KIND_WORK);
         });
     }
 

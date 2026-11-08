@@ -69,3 +69,26 @@ Hermes answer adds its cost to the mission's spend.
 
 Verified by `tests/live_ask.rs`: Claude Code asks Hermes and Hermes asks Claude Code in the sandbox
 repository, and the Hermes sessions the asks created are deleted afterwards.
+
+## Council for design decisions
+
+Tick "Design decision" when queueing a mission (stored as `missions.kind = decision`). Starting it
+does not create one worker:
+
+1. The council is seated from installed headless agents on different provider families, in the order
+   Claude Code (Anthropic), Antigravity (Google), Hermes (its active provider). Two members at least,
+   three at most. Hermes on the Claude subscription shares Claude Code's family, so it synthesizes
+   instead of giving a duplicate position. The synthesizer is Hermes when installed.
+2. Every member answers the question (goal, acceptance criteria, project brief) in one headless turn,
+   in parallel, in the mission's worktree. Each position is a `council` row in the exchange log.
+3. The synthesizer writes an ADR with Status, Context, Decision, Positions (one per agent, including
+   disagreement), Consequences and Rejected alternatives. Banned dashes are replaced.
+4. The ADR is committed as the next `docs/adr/NNNN-<slug>.md` in the worktree, pushed and opened as a
+   pull request, and a decision note with every position is written to the vault.
+5. The tick moves the mission to review, so the ADR passes the same reviewer and merge gate as code. A
+   council that fails, or has not finished after 45 minutes, blocks the mission with the reason.
+
+Hermes `kanban swarm` was considered and refused for this: its workers are Hermes profiles, so it
+cannot seat Claude Code or Antigravity, and different providers are the point of a council.
+
+Verified by `tests/live_council.rs` in the sandbox repository.
