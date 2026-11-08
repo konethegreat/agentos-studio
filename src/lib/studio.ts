@@ -446,6 +446,8 @@ export const studio = {
     transport: () => invoke<"acp" | "cli">("hermes_chat_transport"),
     setTransport: (acp: boolean) => invoke<void>("set_hermes_chat_transport", { acp }),
     warm: () => invoke<void>("warm_hermes_chat"),
+    approvalTimeout: () => invoke<number>("approval_timeout"),
+    setApprovalTimeout: (secs: number) => invoke<number>("set_approval_timeout", { secs }),
   },
   models: {
     fallbackChain: () => invoke<Route[]>("hermes_fallback_chain"),

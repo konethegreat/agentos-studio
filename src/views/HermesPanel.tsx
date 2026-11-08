@@ -410,9 +410,25 @@ function ParallelCard() {
 function TransportCard() {
   const toast = useToast();
   const [t, setT] = useState<"acp" | "cli" | null>(null);
+  const [mins, setMins] = useState<string>("");
   useEffect(() => {
     void studio.chat.transport().then(setT).catch(() => setT("acp"));
+    void studio.chat
+      .approvalTimeout()
+      .then((s) => setMins(String(Math.round((s / 60) * 10) / 10)))
+      .catch(() => setMins("10"));
   }, []);
+  async function saveTimeout() {
+    const m = Number(mins);
+    if (!Number.isFinite(m) || m <= 0) return toast("error", "Enter minutes, for example 10");
+    try {
+      const s = await studio.chat.setApprovalTimeout(Math.round(m * 60));
+      setMins(String(Math.round((s / 60) * 10) / 10));
+      toast("ok", `Unanswered approvals are denied after ${Math.round((s / 60) * 10) / 10} min`);
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }
   async function save(acp: boolean) {
     try {
       await studio.chat.setTransport(acp);
@@ -433,6 +449,9 @@ function TransportCard() {
           <option value="acp">ACP: approvals, cancel, reasoning</option>
           <option value="cli">hermes chat -q</option>
         </select>
+      </Field>
+      <Field label="Deny an unanswered approval after (minutes)">
+        <input className={inputClass} inputMode="decimal" value={mins} onChange={(e) => setMins(e.target.value)} onBlur={() => void saveTimeout()} onKeyDown={(e) => e.key === "Enter" && void saveTimeout()} aria-label="Approval timeout in minutes" />
       </Field>
     </Section>
   );
