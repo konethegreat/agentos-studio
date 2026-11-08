@@ -18,3 +18,20 @@ A repository can commit the model choices its team agrees on, so nobody has to r
 - A blank provider or model on a mission is filled from the policy. An explicit choice always wins.
 - `allow_merge` is the repository's standing answer to "may a mission merge here at all".
 - A malformed file is ignored rather than half applied, and the mission falls back to the active model.
+
+## Order of precedence
+
+When a mission is created, its provider and model come from the first of these that applies:
+
+1. **Explicit:** what you picked in the New mission form.
+2. **routing.json:** the repository's policy for the mission's role.
+3. **Router:** only with "Let the router pick" on (Missions), and only for Hermes missions. The
+   router scores each provider and model per role from decided missions: smoothed approval rate
+   minus a small cost penalty. It pins its best candidate only when that candidate has at least 5
+   decided missions and leads the next one by 5 points; otherwise it declines and says why.
+4. **Inherit:** Hermes' active model.
+
+The mission list shows where a chosen model came from (`via routing.json`, `via router`) with the
+reason on hover. The router never changes the global model, a mission that is already pinned, or
+a running mission. Off, it only shows what it would pick.
+

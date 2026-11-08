@@ -45,7 +45,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Credential pools | yes | `hermes auth list`, priority, clear exhaustion, remove; adding a key runs `hermes auth add` in a terminal so the secret never passes through Studio | |
 | Multi-model mixtures | yes | `hermes moa` presets shown; turn one on for every turn or off; configure in a terminal | |
 | Per-workspace model defaults | yes | a folder pins a model for new Hermes chats; the deepest folder wins | |
-| Automatic model selection | part | shadow router scores real missions and explains its pick; changes nothing | after more mission data |
+| Automatic model selection | yes | opt-in per install: the router pins new Hermes missions with no explicit model or policy, only with 5 decided missions and a 5-point lead | |
 | Cost guardrails and budgets | yes | per-mission budgets from Hermes usage data, metered providers only; time caps | |
 | Per-model scorecards from real sessions | part | approval rate and cost per role, provider and model from missions | |
 
@@ -81,7 +81,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Reasoning panel | yes | ACP thought chunks in the collapsible Thinking panel | |
 | Token and cost per turn | part | usage strip: context, session spend, compactions, credits | |
 | Pause, stop, intervene | part | stop cancels the turn and approvals let you intervene; there is no pause | |
-| Router decision explanation | part | the shadow router prints its reason | |
+| Router decision explanation | yes | the reason (or why it declined) is shown on each mission it pinned | |
 
 ## Where we deliberately differ
 

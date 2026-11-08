@@ -334,6 +334,9 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
   automatic `chat -q` fallback. Verified by `tests/live_acp_chat.rs`.
 - Shipped: model aliases (Providers > Model layer), saved to Hermes' `model_aliases`; verified by
   a real `hermes chat -m <alias>` turn in `tests/live_model_layer.rs`.
+- Shipped: the router can pick (opt-in, Missions > Let the router pick) under an evidence rule (5
+  decided missions, 5-point lead), after an explicit choice and `routing.json`. Fixed on the way:
+  `routing.json` was documented as filling blank missions but was never applied at creation.
 
 ## Ideas worth considering
 
