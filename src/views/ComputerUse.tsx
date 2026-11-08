@@ -7,9 +7,6 @@ import { Badge, Button, Card } from "../components/ui";
 import { errorText } from "../lib/api";
 import { studio, type ComputerAction, type ComputerUseStatus } from "../lib/studio";
 
-/** The Commands panel is PowerShell on Windows, where a quoted path needs the call operator. */
-const callOp = /Windows/i.test(navigator.userAgent) ? "& " : "";
-
 /** What Hermes did on the desktop, the cua-driver behind it, and the switch for it. */
 export function ComputerUse() {
   const toast = useToast();
@@ -96,24 +93,27 @@ export function ComputerUse() {
               ) : (
                 <span className="text-amber-300">not installed</span>
               )}
-              {status.update_available && (
-                <Badge className="bg-sky-500/10 text-sky-300 ring-sky-500/25">{status.latest_version ?? "update"} available</Badge>
+              {status.update_available && status.latest_version && (
+                <span
+                  className="text-slate-500"
+                  title="Hermes pins the cua-driver version it was tested with and moves it with hermes update. The driver's own updater installs a copy Hermes does not use, and its newer daemon breaks the pinned one."
+                >
+                  ({status.latest_version} released; Hermes pins this version)
+                </span>
               )}
             </div>
             {status.daemon && <span className="text-slate-500">{status.daemon} (Hermes starts it when needed)</span>}
             <div className="ml-auto flex gap-2">
-              {!status.driver_path && (
-                <Button size="sm" variant="primary" icon={<Wrench className="size-3.5" />} onClick={() => void cli.run("hermes tools post-setup cua_driver")}>
-                  Install cua-driver
-                </Button>
-              )}
-              {status.driver_path && status.update_available && (
-                <Button size="sm" onClick={() => void cli.run(`${callOp}"${status.driver_path}" update --apply`)}>
-                  Update driver
-                </Button>
-              )}
+              <Button
+                size="sm"
+                variant={status.driver_path ? undefined : "primary"}
+                icon={<Wrench className="size-3.5" />}
+                onClick={() => void cli.run("hermes computer-use install")}
+              >
+                {status.driver_path ? "Repair" : "Install cua-driver"}
+              </Button>
               {status.driver_path && (
-                <Button size="sm" onClick={() => void cli.run(`${callOp}"${status.driver_path}" doctor`)}>
+                <Button size="sm" onClick={() => void cli.run("hermes computer-use doctor")}>
                   Run doctor
                 </Button>
               )}
