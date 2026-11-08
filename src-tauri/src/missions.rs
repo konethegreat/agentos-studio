@@ -195,16 +195,22 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         let task_id = crate::kanban::create_task(&m)?;
         return dispatch(id, &task_id);
     }
+    // Agent work happens in a known project folder, never in the home folder.
+    let dir = crate::review_agent::project_dir(&m.repo)
+        .filter(|d| d.is_dir())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{id}: repository '{}' is not a known project with a folder. Add it in Projects first.",
+                m.repo
+            )
+        })?;
     let args = crate::vault::DelegateArgs {
         title: m.goal.chars().take(90).collect(),
         assigned_to: m.agent.clone(),
         creator: "agentos-studio".into(),
         project: m.repo.clone(),
-        context_files: Vec::new(),
-        instructions: format!(
-            "{}\n\nAcceptance criteria:\n{}\n\nRole: {}. Provider: {}. Return a summary and the PR URL.",
-            m.goal, m.acceptance, m.role, m.provider
-        ),
+        context_files: context_files(&dir),
+        instructions: bus_instructions(&m, &dir),
         priority: "high".into(),
     };
     let task = v.delegate_task(args)?;
@@ -214,6 +220,42 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         .map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("the bus did not return a task id"))?;
     dispatch(id, &task_id)
+}
+
+/// The files an agent should read before starting: the shared system context and the
+/// repository's own guide files that exist. Paths are absolute, except vault-relative memory.
+pub fn context_files(dir: &std::path::Path) -> Vec<String> {
+    let mut out = vec!["03_Memory/SYSTEM_CONTEXT.md".to_string()];
+    for f in ["README.md", "CLAUDE.md", "AGENTS.md"] {
+        let p = dir.join(f);
+        if p.is_file() {
+            out.push(p.display().to_string());
+        }
+    }
+    out
+}
+
+/// The bus task body for a mission. Carries the `Repository:` line every worker resolves its
+/// working folder from, the acceptance criteria and, on rework, the reviewer's note. Pure.
+pub fn bus_instructions(m: &Mission, dir: &std::path::Path) -> String {
+    let mut b = format!(
+        "{}\n\nAcceptance criteria:\n{}\n\nMission: {}. Role: {}. Provider: {}.\n\nWork in a branch, open a pull request with gh, and put the pull request URL in your complete_task summary. Do not merge: AgentOS Studio reviews and merges.",
+        m.goal.trim(),
+        m.acceptance.trim(),
+        m.id,
+        m.role,
+        if m.provider.trim().is_empty() { "default" } else { m.provider.trim() }
+    );
+    if m.review_verdict.as_deref() == Some("reject") {
+        if let Some(note) = m.review_note.as_deref().filter(|n| !n.trim().is_empty()) {
+            b.push_str(&format!(
+                "\n\nThis is a rework. The previous attempt was rejected by the reviewer:\n{}",
+                note.trim()
+            ));
+        }
+    }
+    b.push_str(&format!("\n\nRepository: {}", dir.display()));
+    b
 }
 
 /// Hermes missions run through `hermes kanban`; the rest through the Agent Bus. Pure.
@@ -483,6 +525,58 @@ mod tests {
             assert!(
                 b.iter().any(|r| r.starts_with("hermes verify failed")),
                 "{b:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn every_bus_task_names_its_repository() {
+        with_db(|| {
+            let d = tempfile::tempdir().unwrap();
+            std::fs::write(d.path().join("README.md"), "# r").unwrap();
+            let mut m = make();
+            let body = bus_instructions(&m, d.path());
+            assert!(body.contains("Acceptance criteria:"));
+            assert!(body.contains(&m.id));
+            // The worker resolves its folder from exactly this line.
+            assert_eq!(crate::bus::repo_from_body(&body).unwrap(), d.path());
+            let ctx = context_files(d.path());
+            assert_eq!(ctx[0], "03_Memory/SYSTEM_CONTEXT.md");
+            assert!(ctx.iter().any(|c| c.ends_with("README.md")));
+            assert!(
+                !ctx.iter().any(|c| c.ends_with("CLAUDE.md")),
+                "only files that exist"
+            );
+
+            m.review_verdict = Some("reject".into());
+            m.review_note = Some("cover the empty case".into());
+            assert!(bus_instructions(&m, d.path()).contains("cover the empty case"));
+        });
+    }
+
+    #[test]
+    fn a_mission_outside_a_known_project_does_not_start() {
+        with_db(|| {
+            let d = tempfile::tempdir().unwrap();
+            let v = crate::vault::Vault::new(d.path().join("vault"));
+            v.scaffold().unwrap();
+            let m = create(
+                "no-such-project-7f3a",
+                "g",
+                "a",
+                "implementer",
+                "claude-code",
+                "",
+                "",
+                0.0,
+            )
+            .unwrap();
+            let e = start(&v, &m.id).unwrap_err().to_string();
+            assert!(e.contains("not a known project"), "{e}");
+            assert_eq!(get(&m.id).unwrap().unwrap().status, "queued");
+            assert!(
+                v.fetch_pending_tasks("all").unwrap().is_empty(),
+                "no task written"
             );
         });
     }

@@ -298,7 +298,8 @@ pub fn create_mission(
     model: &str,
     budget_usd: f64,
 ) -> Result<missions::Mission> {
-    let policy = crate::routing::defaults_for(&crate::review_agent::repo_dir(repo), role);
+    let policy =
+        crate::review_agent::project_dir(repo).and_then(|d| crate::routing::defaults_for(&d, role));
     // Always judge Hermes missions, so the shadow log exists even when the router may not act.
     let judged = (agent.trim() == "hermes")
         .then(|| {

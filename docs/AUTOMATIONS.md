@@ -86,8 +86,12 @@ deliberately boring.
   `<repo>/.worktrees/<task>` on branch `<repo>/<task>-...`) and `hermes verify` runs in that
   worktree. Missions for other agents share the checkout, so they never start beside anything in
   their repository, and nothing starts beside them.
-- **Claude Code and Antigravity missions** keep the Agent Bus: a bus task completion with a summary
-  and a PR URL moves them to review.
+- **Claude Code, Antigravity and Qoder missions** keep the Agent Bus: a bus task completion with a
+  summary and a PR URL moves them to review. Every bus task a mission writes carries a
+  `Repository: <project folder>` line and the context files that exist (`03_Memory/SYSTEM_CONTEXT.md`
+  and the repository's `README.md`, `CLAUDE.md`, `AGENTS.md`). A mission whose repository is not a
+  known project with a folder does not start, and no worker ever runs in the home folder: a task
+  with no `Repository:` line gets no worker, and the reviewer refuses a repository it cannot find.
 - **Budgets** count only metered providers: the spend is read from Hermes usage data in `state.db`
   (worker sessions and Hermes reviewer sessions); subscriptions count zero. A Hermes mission whose
   metered spend passes its budget is blocked.

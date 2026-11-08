@@ -211,7 +211,12 @@ pub fn spawn_worker(
         bail!("{task_id} already has a running worker");
     }
     let (task, _) = vault.get_task(task_id)?;
-    let cwd = repo_from_body(&task.body).unwrap_or_else(crate::settings::home);
+    // Agent work never falls back to the home folder: no repository, no worker.
+    let cwd = repo_from_body(&task.body).ok_or_else(|| {
+        anyhow!(
+            "{task_id} has no Repository line naming an existing folder, so no worker was started. Dispatch it with a repository."
+        )
+    })?;
     let prompt = worker_prompt(task_id, agent, &task.body);
     fs::create_dir_all(vault.worker_logs())?;
     let log_path = vault.worker_logs().join(format!("{task_id}.log"));
@@ -444,6 +449,10 @@ pub fn quick_mission_dispatch(
             bail!("Repository folder not found: {}", r.display());
         }
     }
+    let headless = agent == "hermes" || agent == "claude-code";
+    if repo.is_none() && headless && !queue_only {
+        bail!("Pick a repository: {agent} works in a project folder, never in the home folder");
+    }
     let project = repo
         .as_ref()
         .and_then(|r| r.file_name())
@@ -473,7 +482,7 @@ pub fn quick_mission_dispatch(
         priority: "high".into(),
     })?;
     let id = task["id"].as_str().unwrap_or_default().to_string();
-    let worker = if !queue_only && (agent == "hermes" || agent == "claude-code") {
+    let worker = if !queue_only && headless {
         vault.claim_task(&id, &agent)?;
         Some(spawn_worker(app, workers, vault, &id, &agent)?)
     } else {
@@ -532,5 +541,6 @@ mod tests {
         );
         assert_eq!(repo_from_body(&body).unwrap(), d.path());
         assert!(repo_from_body("Repository: Z:/does/not/exist").is_none());
+        assert!(repo_from_body("no repository line").is_none());
     }
 }
