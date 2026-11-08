@@ -46,6 +46,34 @@ fn repo_arg(repo: &str) -> Result<&str> {
     }
 }
 
+/// `owner/name` for a mission's repository. Missions store the Hermes project slug, which `gh -R`
+/// does not accept, so a slug is resolved through the project folder's remote.
+pub fn name_with_owner(repo: &str) -> Result<String> {
+    if valid_repo(repo) {
+        return Ok(repo.to_string());
+    }
+    let dir = crate::review_agent::project_dir(repo)
+        .filter(|d| d.is_dir())
+        .ok_or_else(|| anyhow!("repository '{repo}' is not owner/name or a known project"))?;
+    let out = gh(
+        &[
+            "repo",
+            "view",
+            "--json",
+            "nameWithOwner",
+            "-q",
+            ".nameWithOwner",
+        ],
+        None,
+        Some(&dir),
+    )?;
+    let name = out.trim().to_string();
+    if !valid_repo(&name) {
+        bail!("gh could not name the remote of {}", dir.display());
+    }
+    Ok(name)
+}
+
 fn gh(args: &[&str], stdin: Option<&str>, cwd: Option<&Path>) -> Result<String> {
     if procs::find("gh").is_none() {
         bail!("The GitHub CLI (gh) is not installed. Install it from Setup and Integrations.");

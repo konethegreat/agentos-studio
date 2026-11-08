@@ -175,6 +175,22 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
     missions::review(id, reviewer, &verdict, &note)
 }
 
+/// The gatekeeper: recompute every merge condition, then squash merge and delete the branch.
+/// Refuses with the full blocker list. `allowlisted` is the board's Allow merge switch.
+pub fn merge(id: &str, allowlisted: bool) -> Result<String> {
+    let m = missions::get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
+    let number =
+        missions::pr_number(&m).ok_or_else(|| anyhow::anyhow!("{} has no pull request", m.id))?;
+    // Missions store the project slug; gh needs owner/name.
+    let repo = crate::github::name_with_owner(&m.repo)?;
+    let green = crate::github::pr_checks_green(&repo, number).unwrap_or(false);
+    let blockers = missions::merge_blockers(&m, green, allowlisted);
+    if !blockers.is_empty() {
+        bail!("not merging: {}", blockers.join("; "));
+    }
+    crate::github::pr_merge(&repo, number, "squash", true, true)
+}
+
 /// `session_id: <id>` as Hermes prints it on stderr after a one-shot turn. Pure.
 pub fn session_id_in(stderr: &str) -> Option<String> {
     stderr
