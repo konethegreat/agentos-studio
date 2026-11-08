@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, ClipboardCheck, GitMerge, Play, Plus, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { api, errorText, type Mission } from "../lib/api";
 import { useToast } from "../components/Toasts";
 import { Guide, useReportGuides } from "../components/Guides";
@@ -41,9 +42,15 @@ export function Missions({ repos }: { repos: string[] }) {
   });
 
   const [loaded, setLoaded] = useState(false);
+  const [pins, setPins] = useState<Record<string, { provider: string; model: string; source: string; reason: string }>>({});
+  const [routerAuto, setRouterAuto] = useState(false);
   async function load() {
     try {
-      setRows(await api.missions());
+      const list = await api.missions();
+      setRows(list);
+      void invoke<Record<string, { provider: string; model: string; source: string; reason: string }>>("mission_pins", { ids: list.map((m) => m.id) })
+        .then(setPins)
+        .catch(() => undefined);
     } catch (e) {
       toast("error", errorText(e));
     } finally {
@@ -56,6 +63,7 @@ export function Missions({ repos }: { repos: string[] }) {
     void api.automationStatus().then(setAuto).catch(() => undefined);
     void api.modelCatalog().then((c) => setProviders(c.providers)).catch(() => undefined);
     void api.routerSuggestions().then(setRouter).catch(() => undefined);
+    void invoke<boolean>("router_auto").then(setRouterAuto).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -235,15 +243,36 @@ export function Missions({ repos }: { repos: string[] }) {
         <Guide id="missions.review" className="mb-2" />
       </div>
 
-      {router.length > 0 && (
-        <div className="px-4 pb-2 text-label text-slate-500">
-          <span className="text-slate-400">Router (shadow, changes nothing):</span>{" "}
-          {router[0].role} would use <span className="font-mono text-slate-300">{router[0].provider}</span>
-          {" / "}
-          <span className="font-mono text-slate-300">{router[0].model}</span> at score {router[0].score}.{" "}
-          {router[0].reason}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-2 text-label text-slate-500">
+        <label
+          className="flex cursor-pointer items-center gap-1.5 text-slate-400"
+          title={`Off: the router only shows its pick. On: a new Hermes mission with no model of its own and no .agentos/routing.json entry for its role takes the router's pick, when that pick has at least ${5} decided missions and leads the next by ${5} points. The reason is shown on the mission. Missions already pinned are never changed.`}
+        >
+          <input
+            type="checkbox"
+            checked={routerAuto}
+            onChange={(e) => {
+              const on = e.target.checked;
+              void invoke<void>("set_router_auto", { on })
+                .then(() => {
+                  setRouterAuto(on);
+                  toast("ok", on ? "The router picks models for new Hermes missions when its evidence is strong" : "Router back to shadow mode");
+                })
+                .catch((err) => toast("error", errorText(err)));
+            }}
+            className="accent-emerald-500"
+          />
+          Let the router pick
+        </label>
+        {router.length > 0 && (
+          <span>
+            <span className="text-slate-400">{routerAuto ? "Router:" : "Router (shadow, changes nothing):"}</span> {router[0].role} would use{" "}
+            <span className="font-mono text-slate-300">{router[0].provider}</span>
+            {" / "}
+            <span className="font-mono text-slate-300">{router[0].model}</span> at score {router[0].score}. {router[0].reason}
+          </span>
+        )}
+      </div>
 
       {open && (
         <div className="grid grid-cols-1 gap-2 px-4 pb-3 md:grid-cols-2">
@@ -367,6 +396,11 @@ export function Missions({ repos }: { repos: string[] }) {
                 {m.goal}
               </span>
               <span className="hidden shrink-0 text-slate-500 md:inline">{m.repo}</span>
+              {pins[m.id] && (pins[m.id].source !== "inherit" || pins[m.id].reason) && (
+                <span className={`shrink-0 text-2xs ${pins[m.id].source === "router" ? "text-sky-300" : "text-slate-500"}`} title={pins[m.id].reason}>
+                  {pins[m.id].source === "inherit" ? "default model" : `${pins[m.id].model || pins[m.id].provider} via ${pins[m.id].source}`}
+                </span>
+              )}
               {m.pr_url && (
                 <a
                   href={m.pr_url}
