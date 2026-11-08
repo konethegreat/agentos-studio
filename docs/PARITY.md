@@ -56,7 +56,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Local markdown memory as source of truth | yes | Obsidian vault, wikilinks, frontmatter | |
 | Shared memory tools for agents | yes | `agentos-hub` read and write, search with ranking | |
 | Cloud dashboard | part | Notion publishing: digest, tasks, missions, fleet | |
-| Two-way Notion sync with a ledger | part | publish with `sync_ledger` and hash skip; only the inbox is pulled back | later |
+| Two-way Notion sync with a ledger | yes | missions board: rows out per mission (hash ledger), proposals and cancels in; status, verdict and merge stay in Studio ([Notion](NOTION.md)) | |
 | Show what was read and written per turn | yes | memory ledger per turn, including Hermes' own memory tool | |
 | Project rules inherited by agents | yes | constitution, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` | |
 

@@ -337,6 +337,8 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
 - Shipped: the router can pick (opt-in, Missions > Let the router pick) under an evidence rule (5
   decided missions, 5-point lead), after an explicit choice and `routing.json`. Fixed on the way:
   `routing.json` was documented as filling blank missions but was never applied at creation.
+- Shipped: two-way Notion missions board (proposals and cancels in, rows out, ledger); verified
+  against the real workspace by `tests/live_notion_sync.rs`.
 
 ## Ideas worth considering
 
