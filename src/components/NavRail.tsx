@@ -8,6 +8,7 @@ export type RailView =
   | "mission"
   | "fleet"
   | "agents"
+  | "timeline"
   | "computer"
   | "memory"
   | "skills"

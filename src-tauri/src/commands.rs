@@ -1216,3 +1216,19 @@ pub async fn set_mission_kind(id: String, kind: String) -> CmdResult<()> {
 pub async fn set_mission_urgent(id: String, urgent: bool) -> CmdResult<()> {
     blocking(move || crate::assign::set_urgent(&id, urgent)).await
 }
+
+/// One mission's run timeline across agents, from creation to merge.
+#[tauri::command]
+pub async fn mission_timeline(
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<crate::timeline::Timeline> {
+    let v = current_vault(&state);
+    blocking(move || crate::timeline::mission(&v, &id)).await
+}
+
+/// Missions for the timeline picker, with the agents and exchanges each involved.
+#[tauri::command]
+pub async fn timeline_missions(limit: Option<usize>) -> CmdResult<Vec<crate::timeline::Summary>> {
+    blocking(move || crate::timeline::summaries(limit.unwrap_or(100))).await
+}

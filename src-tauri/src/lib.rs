@@ -55,6 +55,7 @@ pub mod single;
 pub mod skills;
 pub mod store;
 pub mod stuck;
+pub mod timeline;
 pub mod updates;
 pub mod usage;
 pub mod vault;
@@ -349,6 +350,8 @@ pub fn run_gui() {
             commands::mission_kinds,
             commands::set_mission_kind,
             commands::set_mission_urgent,
+            commands::mission_timeline,
+            commands::timeline_missions,
             commands::router_auto,
             commands::set_router_auto,
             commands::help_docs,

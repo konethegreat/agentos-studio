@@ -412,6 +412,38 @@ export interface AgentEvent {
   cost_usd: number | null;
 }
 
+/** One step on a mission's run timeline. */
+export interface TimelineStep {
+  at: number;
+  agent: string;
+  kind: string;
+  title: string;
+  detail: string;
+  cost_usd: number | null;
+  duration_ms: number | null;
+  source: string;
+}
+
+export interface MissionTimeline {
+  mission: Mission;
+  steps: TimelineStep[];
+  agents: string[];
+  handoffs: number;
+  asks: number;
+  total_cost_usd: number;
+  duration_s: number;
+}
+
+export interface TimelineSummary {
+  id: string;
+  repo: string;
+  goal: string;
+  status: string;
+  agents: string[];
+  exchanges: number;
+  updated_at: number;
+}
+
 export interface MemoryEntry {
   session_id: string;
   turn: number;
@@ -755,6 +787,9 @@ export const api = {
   setAgentStrengths: (agent: string, strengths: string[]) => invoke<void>("set_agent_strengths", { agent, strengths }),
   agentEvents: (missionId?: string, limit = 200) =>
     invoke<AgentEvent[]>("agent_events", { missionId: missionId ?? null, limit }),
+
+  missionTimeline: (id: string) => invoke<MissionTimeline>("mission_timeline", { id }),
+  timelineMissions: (limit = 100) => invoke<TimelineSummary[]>("timeline_missions", { limit }),
 
   runCli: (command: string, cwd: string) => invoke<string>("execute_cli_command", { command, cwd }),
   killCli: (runId: string) => invoke<void>("kill_cli_command", { runId }),

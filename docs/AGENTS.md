@@ -112,3 +112,22 @@ headroom, a mission that is not marked Urgent is deferred until the earliest win
 `mission.defer.<id>`; the scheduler skips it until then) instead of spending. Urgent missions (kv
 `mission.urgent.<id>`, a checkbox when the agent is `auto`) may spend. Every assignment and deferral
 is a row in the exchange log with its reason.
+
+## The run timeline
+
+Work > Run timeline shows one mission's path across agents, from creation to merge, and replays it
+step by step (Replay, previous and next). It is built read-only from:
+
+| Source | Steps |
+|---|---|
+| The mission row | created, pull request, review verdict and note, current status |
+| The exchange log | handoffs, asks and answers with duration, council positions and synthesis, assignments and deferrals |
+| Agent Bus tasks that name the mission (`Mission: M-xxx.`) | each activity line with its time and actor, completion summaries |
+| Worker logs | Claude Code and Antigravity tool calls, results and permission denials |
+| Hermes kanban | runs of a Hermes mission, with outcome and summary |
+| Hermes `state.db` (read only) | tool calls of the Hermes sessions the mission used, with times, and their metered cost |
+| The memory ledger | what those sessions read from and wrote to memory |
+
+Hermes session ids come from worker logs (`session_id:` on stderr), kanban runs, and the exchange log
+(asks, answers and council turns record `Hermes session: <id>`). The header shows the agents involved,
+handoff and ask counts, duration and metered spend.
