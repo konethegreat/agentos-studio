@@ -332,6 +332,21 @@ pub fn reassign(id: &str, agent: &str, reason: &str) -> Result<Mission> {
     get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
 }
 
+/// A handoff: the mission keeps running, now held by `agent` on the new bus task `task_id`.
+/// The reason is kept in kv `mission.note.<id>` like a reassignment.
+pub fn hand_to(id: &str, agent: &str, task_id: &str, reason: &str) -> Result<Mission> {
+    let c = store::open()?;
+    let n = c.execute(
+        "UPDATE missions SET agent = ?1, task_id = ?2, updated_at = ?3 WHERE id = ?4 AND status = 'running'",
+        params![agent, task_id, now(), id],
+    )?;
+    if n == 0 {
+        bail!("{id} is not running, so it cannot be handed off");
+    }
+    let _ = store::kv_set(&c, &format!("mission.note.{id}"), reason.trim());
+    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+}
+
 /// The pull request a mission produced. Used by the reviewer and the merge gate.
 pub fn set_pr(id: &str, url: &str) -> Result<()> {
     let c = store::open()?;

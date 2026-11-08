@@ -290,6 +290,15 @@ pub fn reclaim(task_id: &str, reason: &str) -> Result<()> {
 }
 
 /// One dispatcher pass on the board, for a ready task nobody has picked up.
+/// Close a kanban task Studio no longer follows (its mission was handed to another agent).
+pub fn complete(task_id: &str, summary: &str) -> Result<()> {
+    let id = strip(task_id).to_string();
+    hermes(&board_args(&[
+        "complete", &id, "--force", "--result", summary,
+    ]))?;
+    Ok(())
+}
+
 pub fn dispatch_pass() -> Result<()> {
     hermes(&board_args(&["dispatch"])).map(|_| ())
 }

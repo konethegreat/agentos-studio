@@ -340,6 +340,31 @@ pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Valu
             )?))
         }
         "project_brief" => Ok(json!(vault.project_brief(str_arg(args, "repo")?)?)),
+        "handoff" => {
+            let from = me
+                .agent
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("handoff needs a verified caller"))?;
+            let list = |k: &str| -> Vec<String> {
+                args.get(k)
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            let req = crate::handoff::Request {
+                to: str_arg(args, "to")?.to_string(),
+                mission_id: str_arg(args, "mission_id")?.to_string(),
+                summary: str_arg(args, "summary")?.to_string(),
+                next_step: str_arg(args, "next_step")?.to_string(),
+                files: list("files"),
+                questions: list("questions"),
+            };
+            crate::handoff::handoff(vault, &from, &req)
+        }
         "agents" => {
             let refresh = args
                 .get("refresh")
@@ -467,6 +492,22 @@ pub fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "handoff",
+            "description": "Hand the running mission you hold to another agent, so it continues without starting cold. AgentOS Studio builds the packet (project brief, goal and acceptance criteria, the diff so far in the mission worktree, failing PR checks, relevant recall) around your summary, next step, files and questions, gives it to the receiver as a new bus task in the same worktree (headless receivers start within seconds), moves the mission to them and closes your task. After a handoff, stop: do not call complete_task. Check agents first to pick a receiver that is ready.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "to": {"type": "string", "enum": ["hermes", "claude-code", "qoder", "antigravity"], "description": "Agent that continues the mission."},
+                    "mission_id": {"type": "string", "description": "e.g. M-012 (the Mission line of your task)."},
+                    "summary": {"type": "string", "description": "What you did and what state the work is in."},
+                    "next_step": {"type": "string", "description": "The concrete next thing the receiver should do."},
+                    "files": {"type": "array", "items": {"type": "string"}, "description": "Files the receiver should read first."},
+                    "questions": {"type": "array", "items": {"type": "string"}, "description": "Open questions the receiver must settle."}
+                },
+                "required": ["to", "mission_id", "summary", "next_step"]
+            }
+        },
+        {
             "name": "agents",
             "description": "The agent registry: one card per agent (hermes, claude-code, antigravity, qoder) with how it starts (headless command or IDE only), strengths, tools, cost model (flat, metered, local), live quota headroom from hermes usage, measured mission outcomes and health. Read it before handing work or a question to another agent.",
             "inputSchema": {
@@ -544,6 +585,7 @@ mod tests {
                 "recall",
                 "remember",
                 "project_brief",
+                "handoff",
                 "agents",
                 "whoami",
                 "search_shared_memory"
