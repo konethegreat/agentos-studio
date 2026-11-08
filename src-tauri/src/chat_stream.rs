@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -766,9 +766,30 @@ async fn acp_turn(
         tokio::select! {
             Some(e) = turn.events.recv() => handle(e, &mut clock),
             Some(p) = turn.permissions.recv() => {
+                let deny = timeout_choice(&p.options);
+                let (rid, title) = (p.request_id.clone(), p.title.clone());
                 if let Ok(mut m) = state.pending.lock() {
                     m.insert(p.request_id.clone(), p.reply);
                 }
+                let (app2, pending, run) = (app.clone(), state.pending.clone(), run_id.clone());
+                let secs = approval_timeout_secs();
+                tauri::async_runtime::spawn(async move {
+                    if expire_after(&pending, &rid, Duration::from_secs(secs), deny).await {
+                        let msg = format!(
+                            "Denied after timeout: nobody answered within {} ({title})",
+                            human_secs(secs)
+                        );
+                        emit(&app2, &run, ChatEvent { kind: "permission_closed".into(), tool_id: Some(rid), ..Default::default() });
+                        emit(&app2, &run, ChatEvent::text("error", msg.clone()));
+                        use tauri_plugin_notification::NotificationExt;
+                        let _ = app2
+                            .notification()
+                            .builder()
+                            .title("Hermes approval denied after timeout")
+                            .body(msg)
+                            .show();
+                    }
+                });
             }
             r = &mut turn.done => break r,
         }
@@ -919,6 +940,67 @@ pub fn acp_chat_events(
             ..Default::default()
         }],
         _ => vec![],
+    }
+}
+
+/// `studio.db` kv: seconds an approval may wait before Studio denies it. Default 10 minutes.
+pub const KV_APPROVAL_TIMEOUT: &str = "chat.approval_timeout_secs";
+pub const DEFAULT_APPROVAL_TIMEOUT: u64 = 600;
+
+/// Clamp to 10 s .. 24 h; anything unreadable is the default. Pure.
+pub fn parse_timeout(v: Option<&str>) -> u64 {
+    v.and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_APPROVAL_TIMEOUT)
+        .clamp(10, 86_400)
+}
+
+pub fn approval_timeout_secs() -> u64 {
+    let v = crate::store::open()
+        .ok()
+        .and_then(|c| crate::store::kv_get(&c, KV_APPROVAL_TIMEOUT).ok().flatten());
+    parse_timeout(v.as_deref())
+}
+
+pub fn set_approval_timeout_secs(secs: u64) -> Result<u64> {
+    let v = parse_timeout(Some(&secs.to_string()));
+    let c = crate::store::open()?;
+    crate::store::kv_set(&c, KV_APPROVAL_TIMEOUT, &v.to_string())?;
+    Ok(v)
+}
+
+/// "10 min", "45 s". Pure.
+pub fn human_secs(s: u64) -> String {
+    if s >= 60 && s % 60 == 0 {
+        format!("{} min", s / 60)
+    } else {
+        format!("{s} s")
+    }
+}
+
+/// The option sent when an approval times out: deny this once, never "deny always", which would
+/// change Hermes' policy on the owner's behalf. `None` (Cancelled) also means deny. Pure.
+pub fn timeout_choice(options: &[crate::acp::PermissionChoice]) -> Option<String> {
+    options
+        .iter()
+        .find(|o| o.kind == "reject_once")
+        .map(|o| o.id.clone())
+}
+
+/// After `wait`, deny the request if it is still unanswered. True when it expired.
+pub async fn expire_after(
+    pending: &Arc<Mutex<HashMap<String, PermissionReply>>>,
+    request_id: &str,
+    wait: Duration,
+    deny: Option<String>,
+) -> bool {
+    tokio::time::sleep(wait).await;
+    let reply = pending.lock().ok().and_then(|mut m| m.remove(request_id));
+    match reply {
+        Some(r) => {
+            let _ = r.send(deny);
+            true
+        }
+        None => false,
     }
 }
 
@@ -1386,6 +1468,72 @@ mod tests {
             serde_json::to_value(complete_event(None, true, None)).unwrap()["stopped"],
             true
         );
+    }
+
+    #[test]
+    fn approval_timeout_setting_and_choice() {
+        use crate::acp::PermissionChoice;
+        assert_eq!(parse_timeout(None), 600);
+        assert_eq!(parse_timeout(Some("x")), 600);
+        assert_eq!(parse_timeout(Some("3")), 10);
+        assert_eq!(parse_timeout(Some("900")), 900);
+        assert_eq!(
+            (human_secs(600).as_str(), human_secs(45).as_str()),
+            ("10 min", "45 s")
+        );
+        let opt = |id: &str, kind: &str| PermissionChoice {
+            id: id.into(),
+            name: id.into(),
+            kind: kind.into(),
+        };
+        let all = [
+            opt("a", "allow_once"),
+            opt("da", "reject_always"),
+            opt("d", "reject_once"),
+        ];
+        assert_eq!(timeout_choice(&all).as_deref(), Some("d"));
+        assert_eq!(
+            timeout_choice(&all[..2]),
+            None,
+            "never deny always on the owner's behalf"
+        );
+    }
+
+    #[test]
+    fn an_unanswered_approval_is_denied_after_the_timeout() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let state = ChatState::default();
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            state.pending.lock().unwrap().insert("r1".into(), tx);
+            assert!(
+                expire_after(
+                    &state.pending,
+                    "r1",
+                    Duration::from_millis(20),
+                    Some("deny".into())
+                )
+                .await
+            );
+            assert_eq!(rx.await.unwrap().as_deref(), Some("deny"));
+            // Answered in time: the timer does nothing.
+            let (tx2, rx2) = tokio::sync::oneshot::channel();
+            state.pending.lock().unwrap().insert("r2".into(), tx2);
+            answer_permission(&state, "r2", Some("allow".into())).unwrap();
+            assert!(
+                !expire_after(
+                    &state.pending,
+                    "r2",
+                    Duration::from_millis(5),
+                    Some("deny".into())
+                )
+                .await
+            );
+            assert_eq!(rx2.await.unwrap().as_deref(), Some("allow"));
+        });
     }
 
     #[test]
