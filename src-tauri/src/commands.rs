@@ -1151,3 +1151,29 @@ pub async fn notion_trusted_authors() -> CmdResult<Vec<String>> {
 pub async fn set_notion_trusted_authors(ids: Vec<String>) -> CmdResult<Vec<String>> {
     blocking(move || crate::notion_sync::set_trusted_authors(&ids)).await
 }
+
+// ------------------------------------------------------------------ Phase C: agents talk
+
+/// The agent registry: one card per agent, the same data the `agents` hub tool returns.
+#[tauri::command]
+pub async fn agent_cards(refresh: Option<bool>) -> CmdResult<Vec<crate::agents::AgentCard>> {
+    blocking(move || Ok(crate::agents::cards(refresh.unwrap_or(false)))).await
+}
+
+#[tauri::command]
+pub async fn set_agent_strengths(agent: String, strengths: Vec<String>) -> CmdResult<()> {
+    blocking(move || crate::agents::set_strengths(&agent, &strengths)).await
+}
+
+/// Exchanges between agents: one mission's, or the newest across all missions.
+#[tauri::command]
+pub async fn agent_events(
+    mission_id: Option<String>,
+    limit: Option<usize>,
+) -> CmdResult<Vec<crate::agent_log::Event>> {
+    blocking(move || match mission_id.filter(|m| !m.trim().is_empty()) {
+        Some(m) => crate::agent_log::for_mission(&m),
+        None => crate::agent_log::recent(limit.unwrap_or(200)),
+    })
+    .await
+}

@@ -340,6 +340,18 @@ pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Valu
             )?))
         }
         "project_brief" => Ok(json!(vault.project_brief(str_arg(args, "repo")?)?)),
+        "agents" => {
+            let refresh = args
+                .get("refresh")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let mut cards = crate::agents::cards(refresh);
+            if let Some(name) = args.get("name").and_then(Value::as_str) {
+                let name = crate::vault::norm_agent(name).unwrap_or_else(|_| name.to_lowercase());
+                cards.retain(|c| c.name == name);
+            }
+            Ok(serde_json::to_value(cards)?)
+        }
         other => anyhow::bail!("Unknown tool '{other}'"),
     }
 }
@@ -455,6 +467,17 @@ pub fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "agents",
+            "description": "The agent registry: one card per agent (hermes, claude-code, antigravity, qoder) with how it starts (headless command or IDE only), strengths, tools, cost model (flat, metered, local), live quota headroom from hermes usage, measured mission outcomes and health. Read it before handing work or a question to another agent.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Only this agent's card."},
+                    "refresh": {"type": "boolean", "default": false, "description": "Read quota again instead of the five minute cache."}
+                }
+            }
+        },
+        {
             "name": "whoami",
             "description": "Which agent this hub session belongs to, from the AGENTOS_HUB_TOKEN AgentOS Studio put in your agentos-hub entry. A verified agent may claim, complete, delegate and remember as itself only; an unverified caller is read-only (fetch_pending_tasks, search_shared_memory, recall, project_brief, whoami).",
             "inputSchema": {"type": "object", "properties": {}}
@@ -521,6 +544,7 @@ mod tests {
                 "recall",
                 "remember",
                 "project_brief",
+                "agents",
                 "whoami",
                 "search_shared_memory"
             ]

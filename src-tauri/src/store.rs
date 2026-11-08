@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 8;
+const SCHEMA_VERSION: i64 = 9;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -171,6 +171,29 @@ const MIGRATION_8: &str = "
 ALTER TABLE missions ADD COLUMN verify_json TEXT;
 ";
 
+/// Phase C: every exchange between agents (handoffs, asks and answers, council positions,
+/// assignments) as one log the run timeline reads, plus the mission kind (`work` or `decision`).
+const MIGRATION_9: &str = "
+CREATE TABLE IF NOT EXISTS agent_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    at          INTEGER NOT NULL,
+    mission_id  TEXT,
+    kind        TEXT NOT NULL,
+    from_agent  TEXT NOT NULL DEFAULT '',
+    to_agent    TEXT NOT NULL DEFAULT '',
+    summary     TEXT NOT NULL DEFAULT '',
+    detail      TEXT NOT NULL DEFAULT '',
+    duration_ms INTEGER,
+    cost_usd    REAL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_events_mission ON agent_events(mission_id, at);
+CREATE INDEX IF NOT EXISTS idx_agent_events_at ON agent_events(at);
+";
+
+const MIGRATION_9_KIND: &str = "
+ALTER TABLE missions ADD COLUMN kind TEXT NOT NULL DEFAULT 'work';
+";
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
@@ -247,6 +270,10 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     if v < 8 {
         let _ = c.execute_batch(MIGRATION_8);
+    }
+    if v < 9 {
+        c.execute_batch(MIGRATION_9)?;
+        let _ = c.execute_batch(MIGRATION_9_KIND);
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
