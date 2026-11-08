@@ -98,6 +98,8 @@ the first paint is never competing with a full probe.
 |---|---|
 | `chat_stream.rs` | One streaming chat turn per message for Hermes or Claude Code; parses stream-json into UI events. |
 | `acp_host.rs` | Hermes chat over ACP: creates sessions with interactive `hermes chat` (creation policy), runs turns on one long-lived `hermes acp` connection, routes updates and approval questions per session. `chat_stream.rs` drives it and falls back to `chat -q`. |
+| `computer_use.rs` | Hermes computer use: toolset state from `hermes tools list`, the cua-driver Hermes installed (version, update, daemon), the `computer_use` results in `state.db` (read only), and screenshots served only from Hermes' image cache. |
+| `notion_sync.rs` | Two-way Notion missions board: rows out per mission with a hash ledger; proposals and cancels in. |
 | `model_layer.rs` | Hermes' model layer: fallback chain (`hermes config get/set fallback_providers`), credential pools (parsed `hermes auth list`; `auth.json` is never read), MoA presets, and Studio's per-folder default model for new chats. |
 | `plans.rs` | Plan mode: the `/plan` prompt scoped to the chat folder, the newest plan in `.hermes/plans`, and the run prompt after approval. |
 | `kanban.rs` | Hermes missions on Hermes' kanban board: create (model pinned at creation, implementer profile, `dir:` workspace, time cap), read runs, decide wait, review or block, collect worker session ids for spend, and run `hermes verify`. Kanban `done` is never Studio approval. |

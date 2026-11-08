@@ -56,8 +56,9 @@ import { Skills } from "./views/Skills";
 import { UpdateCenter } from "./views/UpdateCenter";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
+const ComputerUse = lazy(() => import("./views/ComputerUse").then((m) => ({ default: m.ComputerUse })));
 
-const VIEWS = ["chat", "projects", "skills", "memory", "help", "github", "mission", "control", "fleet", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
+const VIEWS = ["chat", "projects", "skills", "memory", "help", "github", "mission", "control", "fleet", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
 type View = (typeof VIEWS)[number];
 const isView = (v: string): v is View => (VIEWS as readonly string[]).includes(v);
 
@@ -78,6 +79,7 @@ const GROUPS: RailGroup[] = [
       { id: "projects", label: "Projects", hint: "Hermes projects, their folders, and the chats that ran inside them" },
       { id: "mission", label: "Mission Control", hint: "The Agent Bus board: dispatch and track tasks" },
       { id: "fleet", label: "Fleet", hint: "Every local repository and its rule-file sync state" },
+      { id: "computer", label: "Computer Use", hint: "What Hermes did on the desktop, screenshots, and the switch for it" },
     ],
   },
   {
@@ -454,6 +456,7 @@ function Studio() {
             {view === "updates" && <UpdateCenter />}
             {view === "safety" && <SafetyCenter />}
             {view === "diagnostics" && <Diagnostics onFix={(v) => go(v as View)} />}
+            {view === "computer" && <ComputerUse />}
             {view === "projects" && <Projects onOpenSession={openSessionInChat} onNewSession={newSessionInProject} />}
             {view === "skills" && <Skills onUseSkill={useSkillInChat} />}
             {view === "memory" && <Memory />}

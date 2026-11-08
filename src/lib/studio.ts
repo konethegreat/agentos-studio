@@ -416,7 +416,31 @@ export interface ModelAlias {
   has_key: boolean;
 }
 
+export interface ComputerUseStatus {
+  toolset_enabled: boolean | null;
+  driver_path: string | null;
+  driver_version: string | null;
+  update_available: boolean | null;
+  latest_version: string | null;
+  daemon: string | null;
+}
+
+export interface ComputerAction {
+  session_id: string;
+  at: number;
+  action: string;
+  summary: string;
+  ok: boolean | null;
+  screenshot: string | null;
+}
+
 export const studio = {
+  computer: {
+    status: () => invoke<ComputerUseStatus>("computer_use_status"),
+    setEnabled: (on: boolean, a: Approved = {}) => invoke<string>("computer_use_set_enabled", { on, ...a }),
+    activity: (limit = 60) => invoke<ComputerAction[]>("computer_use_activity", { limit }),
+    screenshot: (path: string) => invoke<string>("computer_use_screenshot", { path }),
+  },
   chat: {
     answerPermission: (requestId: string, optionId: string | null) => invoke<void>("answer_chat_permission", { requestId, optionId }),
     transport: () => invoke<"acp" | "cli">("hermes_chat_transport"),

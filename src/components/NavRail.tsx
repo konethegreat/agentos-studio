@@ -7,6 +7,7 @@ export type RailView =
   | "projects"
   | "mission"
   | "fleet"
+  | "computer"
   | "memory"
   | "skills"
   | "constitution"

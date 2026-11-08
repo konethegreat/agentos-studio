@@ -339,6 +339,8 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
   `routing.json` was documented as filling blank missions but was never applied at creation.
 - Shipped: two-way Notion missions board (proposals and cancels in, rows out, ledger); verified
   against the real workspace by `tests/live_notion_sync.rs`.
+- Shipped: Computer Use view (Work > Computer Use); verified read-only against the real install by
+  `tests/live_computer_use.rs`.
 
 ## Ideas worth considering
 
