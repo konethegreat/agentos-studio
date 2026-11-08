@@ -254,14 +254,26 @@ pub fn keep_awake(_on: bool) {}
 
 /// The scheduler thread: one pass a minute while the app is open.
 pub fn start_scheduler(vault_root: std::path::PathBuf) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(60));
-        if !enabled() {
-            keep_awake(false);
-            continue;
+    std::thread::spawn(move || {
+        let mut pass: u64 = 0;
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            if !enabled() {
+                keep_awake(false);
+                continue;
+            }
+            // Every 5 minutes, once the user has created a Notion missions board: pull proposals
+            // and cancels before dispatching, so a mission proposed in Notion starts this pass.
+            if pass % 5 == 0
+                && crate::notion::setting(crate::notion_sync::KV_DB).is_some()
+                && crate::notion::token().is_some()
+            {
+                let _ = crate::notion_sync::sync(false);
+            }
+            pass += 1;
+            let v = Vault::new(&vault_root);
+            let _ = tick(&v);
         }
-        let v = Vault::new(&vault_root);
-        let _ = tick(&v);
     });
 }
 
