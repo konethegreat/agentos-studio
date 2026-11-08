@@ -103,6 +103,7 @@ the first paint is never competing with a full probe.
 | `model_layer.rs` | Hermes' model layer: fallback chain (`hermes config get/set fallback_providers`), credential pools (parsed `hermes auth list`; `auth.json` is never read), MoA presets, and Studio's per-folder default model for new chats. |
 | `plans.rs` | Plan mode: the `/plan` prompt scoped to the chat folder, the newest plan in `.hermes/plans`, and the run prompt after approval. |
 | `kanban.rs` | Hermes missions on Hermes' kanban board: create (model pinned at creation, implementer profile, `dir:` workspace, time cap), read runs, decide wait, review or block, collect worker session ids for spend, and run `hermes verify`. Kanban `done` is never Studio approval. |
+| `learning.rs` (new) | The learning loop: one headless Hermes turn per finished mission writes validated lessons into `03_Memory` as typed notes, and repeated review blockers become one convention note per repository. Additive and idempotent; it never runs the reviewer. |
 | `hermes_surfaces.rs` | Hermes features shown, not rebuilt: built-in memory and journey, insights, security audit, cron jobs, profiles with Studio's role assignment, and `hermes send` for mission notices. Reads Hermes files directly; every change runs a Hermes command behind Studio's permission check. |
 | `acp.rs` (spike, unwired) | Agent Client Protocol client for `hermes acp`: new or loaded session, one streamed turn, permission requests answered through a channel, cancel. Kept to re-run `tests/live_acp_spike.rs` against new Hermes releases; see `ACP-SPIKE.md`. |
 | `pty.rs` (new) | Real terminals: spawn a shell, interactive Hermes, `hermes --resume <id>`, Claude Code or `claude --resume <id>` in a PTY; streams bytes as UTF-8 safe chunks, accepts keystrokes and resizes. |
@@ -254,3 +255,25 @@ parse error shows in that column instead of blanking the screen. Deleting a jour
 write the view offers, and it goes through `hermes.journey.delete` with the default policy `ask`.
 Hermes does not expose a non-interactive edit: `hermes journey edit` opens `$EDITOR`, so the view
 does not offer one.
+
+## Learning loop
+
+`learning.rs` turns finished work into memory. When a mission is `done` or `failed`, one short
+headless Hermes turn receives the goal, acceptance criteria, review verdict and note, the files the
+pull request changed and its summary, and must answer with a JSON array of one to five lessons
+(`decision`, `convention` or `gotcha`). Every lesson is written through `Vault::write_typed_memory`
+with `agent: agentos-learning`, the mission's `repo` and the turn's `source_session`. The answer is
+all or nothing: a single malformed entry drops the whole answer and nothing is written.
+`learning.done.<mission id>` records a completed extraction, so a rerun skips the turn. A dropped
+answer is not recorded, so the next run may try again.
+
+The second path is deterministic. Rejected missions from the last 30 days are grouped by their
+normalised review reasons (bullet lists first, otherwise the first sentence). A group of two or more
+writes one convention note named `Review blockers in <repo>`, links the missions and records their
+ids in the store so a rerun writes nothing. `conventions_for` condenses those notes newest first and
+caps them at 1500 characters for a future implementer prompt.
+
+The model turn is injected (`lessons_with`), so the write path, the skip rule and the retry after a
+dropped answer are unit tested without running Hermes. The live check (`tests/live_learning.rs`)
+is ignored by default and runs only under the live-machine lock when the owner has allowed Hermes
+use.

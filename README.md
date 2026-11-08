@@ -207,6 +207,12 @@ implementer, and the merge gate reports every reason a merge is not allowed.
 
 The design, including the cost model and the status machine, is in [`docs/AUTOMATIONS.md`](docs/AUTOMATIONS.md).
 
+Finished missions feed the learning loop. From Memory, "Extract lessons" runs one headless turn
+that writes the decisions, conventions and gotchas into `03_Memory`, tagged with the repository and
+the session that produced them. A repository whose reviews keep rejecting work for the same
+blockers gets one convention note that names the missions. Both paths are additive and idempotent:
+rerunning a mission or the reject check writes nothing.
+
 ## Navigation
 
 A five-group icon rail replaces the old twelve-item list: **Chat**, **Work** (Projects, Mission
@@ -220,9 +226,10 @@ then the active project, then your home directory. Anything under `%WINDIR%` or 
 rejected.
 
 **Brain** shows both memory stores. The Vault side lists the notes agents read and write through the
-hub, with their type, link count and last change, and the recent read and write activity under it.
-The Hermes side shows `MEMORY.md` and `USER.md` read-only, and the journey nodes Hermes builds from
-skills and memory cards, with a permission-gated delete. Below 1280 px wide the two become tabs.
+hub, with their type, link count and last change, and the recent read and write activity under it. A
+Learning panel lists finished missions and extracts their lessons into notes. The Hermes side shows
+`MEMORY.md` and `USER.md` read-only, and the journey nodes Hermes builds from skills and memory
+cards, with a permission-gated delete. Below 1280 px wide the two become tabs.
 
 ## Projects, branches and skills
 

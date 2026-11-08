@@ -1004,6 +1004,17 @@ pub async fn memory_notes(
     .await
 }
 
+/// Turn a finished mission's review into memory notes, then check its repository for repeated
+/// rejection reasons. Writes are additive; rerunning a mission writes nothing.
+#[tauri::command]
+pub async fn extract_lessons(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> CmdResult<crate::learning::LearningReport> {
+    let v = current_vault(&state);
+    blocking(move || crate::learning::extract_lessons(&v, &id)).await
+}
+
 #[tauri::command]
 pub fn working_dir_default() -> crate::workdir::WorkingDir {
     crate::workdir::resolve()

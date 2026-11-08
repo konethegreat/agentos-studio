@@ -432,6 +432,16 @@ export interface MemoryNote {
   mtime: number;
 }
 
+/** Phase E: what one "Extract lessons" run did for a finished mission. */
+export interface LearningReport {
+  mission: string;
+  skipped: boolean;
+  notes: string[];
+  conventions: string[];
+  session: string | null;
+  dropped: string | null;
+}
+
 export interface ChatStarted {
   run_id: string;
   backend: string;
@@ -609,6 +619,7 @@ export const api = {
   memoryLedger: (sessionId: string, limit = 400) => invoke<MemoryEntry[]>("memory_ledger", { sessionId, limit }),
   memoryRecent: (limit = 50) => invoke<MemoryEntry[]>("memory_recent", { limit }),
   memoryIndexNotes: () => invoke<MemoryNote[]>("memory_notes"),
+  extractLessons: (id: string) => invoke<LearningReport>("extract_lessons", { id }),
   stopChat: () => invoke<string>("stop_active_chat"),
   activeChat: () => invoke<string | null>("active_chat"),
   applyCode: (workingDir: string, relPath: string, content: string) =>
