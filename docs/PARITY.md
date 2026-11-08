@@ -67,7 +67,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | GitHub operations in the UI | yes | auth, repos, branches, commits, PRs, issues, Actions | |
 | GitHub operations from chat | yes | `/gh` and "Ask Hermes" hand-off | |
 | MCP server management across agents | yes | registry, native probe, catalog | |
-| Computer use | part | Hermes toolset and cua-driver; no dedicated view | later |
+| Computer use | yes | Work > Computer Use: toolset switch (approval), cua-driver status, install, update, doctor, and the action feed with screenshots ([Computer Use](COMPUTER-USE.md)) | |
 | Per-tool permissions | yes | per MCP tool, enforced inside the agentos-hub server, plus per action in Studio | |
 | Audit log | yes | every guarded action, terminal open, policy change | |
 | Self-update with backup and rollback | yes | Studio, Hermes and Claude Code | |
