@@ -1,6 +1,7 @@
 //! AgentOS Studio: native control plane (Tauri GUI) and native MCP server (`--mcp-stdio`).
 
 pub mod acp;
+pub mod acp_host;
 pub mod automation;
 pub mod boot;
 pub mod bootstrapper;
@@ -271,6 +272,10 @@ pub fn run_gui() {
             ops::missions_parallel_per_repo,
             ops::set_missions_parallel_per_repo,
             ops::model_changes,
+            ops::answer_chat_permission,
+            ops::hermes_chat_transport,
+            ops::set_hermes_chat_transport,
+            ops::warm_hermes_chat,
             commands::boot_snapshot,
             commands::boot_run,
             commands::boot_logs_dir,
