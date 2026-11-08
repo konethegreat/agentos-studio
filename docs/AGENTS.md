@@ -21,3 +21,27 @@ choosing who to hand work to sees what the owner sees.
 
 Agents that report no quota (Antigravity, Qoder) show "this agent reports no quota to Studio" and
 are treated as having room, because a provider that reports nothing cannot be shown to be out.
+
+## Handoff packets
+
+`handoff(to, mission_id, summary, next_step, files?, questions?)` passes a running mission from the
+agent that holds it to another agent. Studio builds the packet itself so the receiver never starts
+cold:
+
+- the sender's summary, next step, files and open questions;
+- the mission's goal and acceptance criteria;
+- the diff so far in the mission's worktree (committed on the branch plus anything not committed),
+  clipped to 8,000 characters, with a stat;
+- failing checks on the mission's pull request (`gh pr checks`);
+- the four best `recall` results for the goal in that repository;
+- the project brief.
+
+The packet becomes a new Agent Bus task for the receiver with the same `Repository:`, `Worktree:` and
+`Branch:` lines, so a headless receiver is started by the bus watcher in the same worktree, and the
+packet is the first thing in its prompt. An IDE agent finds it with `fetch_pending_tasks`. The
+mission moves to the receiver (`missions::hand_to`, reason in kv `mission.note.<id>`), the sender's
+task is closed as handed off (a Hermes kanban task is completed with `--force`), and the exchange is
+logged. Only the agent holding a running mission can hand it off, never to itself or to `human`.
+After a handoff the sender stops; it does not call `complete_task`.
+
+Verified by `tests/live_handoff.rs` (sandbox repository, temporary bus).

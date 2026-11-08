@@ -18,6 +18,7 @@ pub mod constitution;
 pub mod fleet;
 pub mod fork;
 pub mod github;
+pub mod handoff;
 pub mod help;
 pub mod hermes_engine;
 pub mod hermes_surfaces;
