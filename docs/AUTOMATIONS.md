@@ -112,6 +112,19 @@ deliberately boring.
   claims the task for it, writes the reason on the task and in kv `mission.note.<id>`, and starts
   its worker. With no headless agent installed the mission is blocked with the reason, never left
   running with nobody on it.
+- **Stuck detection.** Every running mission has a heartbeat, checked on each tick:
+  - Hermes: the newest task, run, event or comment time in `hermes kanban show --json` (which has
+    no `last_heartbeat_at` field), and the last message of each worker session in `state.db`.
+  - Headless bus workers: the process is alive in this app session, and the worker log, task file
+    or worktree changed.
+  - An IDE agent that claimed its task: the task file or any file in the worktree changed.
+  No heartbeat for 15 minutes (2 minutes when the worker process is gone) means one automatic
+  retry: `hermes kanban reclaim` for a running Hermes task, a dispatcher pass for one nobody picked
+  up, a restarted worker for Claude Code and Antigravity, and a headless agent for an IDE agent
+  that went quiet. Quiet again after the retry, the mission is blocked with the reason (for a
+  Hermes task nobody ever picked up, the reason says to check that the Hermes gateway is running).
+  The retry count is kept per attempt (kv `mission.retries.<id>`) and cleared when the mission
+  starts again or reaches review.
 - **Parallel missions per repository** applies to every agent now that every mission has its own
   worktree: with the setting at 1 a mission runs alone in its repository, above 1 up to that many
   share it.

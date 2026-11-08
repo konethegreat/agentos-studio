@@ -149,6 +149,8 @@ pub struct TickReport {
     pub dispatched: Vec<String>,
     /// IDE missions handed to a headless agent, as `M-001 -> claude-code`.
     pub reassigned: Vec<String>,
+    /// Running missions that went quiet: retried once, or blocked after the retry.
+    pub stuck: Vec<String>,
     pub kept_awake: bool,
     pub error: Option<String>,
 }
@@ -176,8 +178,9 @@ pub fn tick(v: &Vault) -> TickReport {
         };
         if crate::kanban::is_kanban(Some(task)) {
             match advance_kanban(m, task) {
-                Ok(true) => report.moved_to_review.push(m.id.clone()),
-                Ok(false) => {}
+                Ok(Advance::Review) => report.moved_to_review.push(m.id.clone()),
+                Ok(Advance::Stuck(note)) => report.stuck.push(note),
+                Ok(Advance::Nothing) => {}
                 Err(e) => report.error = Some(e.to_string()),
             }
             continue;
@@ -205,9 +208,16 @@ pub fn tick(v: &Vault) -> TickReport {
                 }
             }
             match missions::submit_for_review(&m.id, 0.0) {
-                Ok(_) => report.moved_to_review.push(m.id.clone()),
+                Ok(_) => {
+                    crate::stuck::reset(&m.id);
+                    report.moved_to_review.push(m.id.clone())
+                }
                 Err(e) => report.error = Some(e.to_string()),
             }
+        } else if let Some(note) =
+            crate::stuck::check_bus(v, m, task, chrono::Utc::now().timestamp())
+        {
+            report.stuck.push(note);
         }
     }
 
@@ -253,10 +263,17 @@ pub fn tick(v: &Vault) -> TickReport {
     report
 }
 
+/// What a pass did with one running Hermes mission.
+enum Advance {
+    Nothing,
+    Review,
+    Stuck(String),
+}
+
 /// A running Hermes mission: read its kanban task. Finished work is measured (metered spend of
 /// every Hermes session it used), checked with `hermes verify`, and sent to Studio's reviewer;
-/// kanban's own review pass is never taken as approval. Returns true when it moved to review.
-fn advance_kanban(m: &Mission, task: &str) -> anyhow::Result<bool> {
+/// kanban's own review pass is never taken as approval. A quiet worker is retried, then blocked.
+fn advance_kanban(m: &Mission, task: &str) -> anyhow::Result<Advance> {
     use crate::kanban::{self, Next};
     let view = kanban::show(task)?;
     let spent = crate::usage::metered_cost(&kanban::session_ids(&view));
@@ -271,12 +288,17 @@ fn advance_kanban(m: &Mission, task: &str) -> anyhow::Result<bool> {
                     ),
                     false,
                 )?;
+                return Ok(Advance::Nothing);
             }
-            Ok(false)
+            Ok(
+                crate::stuck::check_kanban(m, task, &view, chrono::Utc::now().timestamp())
+                    .map(Advance::Stuck)
+                    .unwrap_or(Advance::Nothing),
+            )
         }
         Next::Block(reason) => {
             missions::block(&m.id, &format!("Hermes kanban: {reason}"), false)?;
-            Ok(false)
+            Ok(Advance::Nothing)
         }
         Next::Review(summaries) => {
             if let Some(url) = missions::pull_url(&summaries) {
@@ -293,7 +315,8 @@ fn advance_kanban(m: &Mission, task: &str) -> anyhow::Result<bool> {
                 missions::set_verify(&m.id, &kanban::verify(&dir))?;
             }
             missions::submit_for_review(&m.id, spent)?;
-            Ok(true)
+            crate::stuck::reset(&m.id);
+            Ok(Advance::Review)
         }
     }
 }
