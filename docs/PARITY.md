@@ -142,3 +142,12 @@ not because code exists.
 | Skill proposals from finished work | yes | three approved missions of one role and task class; the draft carries the ledger tool sequence, pitfalls and the missions as evidence |
 | Create a skill from a local draft | yes | `hermes skills install` takes a registry identifier or URL only, so approval asks Hermes to create the skill from the draft and confirms it under the profile's skills folder |
 | Dismiss a proposal for good | yes | `skills.dismissed.<hash>` in `studio.db`; the same group is not proposed again |
+
+## Provenance (v0.13.0)
+
+| Capability | Studio | Notes |
+|---|---|---|
+| A line names the mission that wrote it | yes | `git blame` then commit trailers, or the merged pull request mapped to a mission by `pr_url`; Brain form and a hover `why` in the GitHub diff view |
+| Cost of the work behind a line | yes | measured spend, `flat` for subscriptions, `$0.00` for local models |
+| Sessions behind a line | yes | the mission's Hermes sessions from the exchange log, with a link to the run timeline |
+| Trailer block in mission merges | part | `trailers` and `parse_trailers` ship now; the merge hook that appends them lands after the 0.12.0 release |

@@ -106,6 +106,7 @@ the first paint is never competing with a full probe.
 | `learning.rs` (new) | The learning loop: one headless Hermes turn per finished mission writes validated lessons into `03_Memory` as typed notes, and repeated review blockers become one convention note per repository. Additive and idempotent; it never runs the reviewer. |
 | `memory_quality.rs` (new) | The memory audit: finds notes whose backticked paths or functions no longer exist in the repository, asks one Hermes turn to judge pairs of active notes that share a topic and type, and marks the loser stale with `status: superseded` and `superseded_by`. Never deletes. Runs from the Brain panel and the `--memory-quality` headless flag, with an optional weekly cron job. |
 | `skill_proposals.rs` (new) | Skills from success: approved missions grouped by role and a normalised verb plus object; three or more produce a `SKILL.md` draft with steps from the memory ledger, pitfalls and the missions as evidence. Approve creates it through one Hermes turn behind `hermes.skills.create`; Dismiss records `skills.dismissed.<hash>`. |
+| `provenance.rs` (new) | Why a line is here: commit trailers for a mission merge (`Mission`, `Agent`, `Model`, `Reviewer`, `Cost`), a `git blame` of one line, and a merged-pull-request fallback mapped to a mission by `pr_url`. Read only. |
 | `hermes_surfaces.rs` | Hermes features shown, not rebuilt: built-in memory and journey, insights, security audit, cron jobs, profiles with Studio's role assignment, and `hermes send` for mission notices. Reads Hermes files directly; every change runs a Hermes command behind Studio's permission check. |
 | `acp.rs` (spike, unwired) | Agent Client Protocol client for `hermes acp`: new or loaded session, one streamed turn, permission requests answered through a channel, cancel. Kept to re-run `tests/live_acp_spike.rs` against new Hermes releases; see `ACP-SPIKE.md`. |
 | `pty.rs` (new) | Real terminals: spawn a shell, interactive Hermes, `hermes --resume <id>`, Claude Code or `claude --resume <id>` in a PTY; streams bytes as UTF-8 safe chunks, accepts keystrokes and resizes. |
@@ -331,3 +332,28 @@ which defaults to ask. Dismiss writes `skills.dismissed.<hash>` through `store::
 hash is a stable function of the role and the task class, so the group is not proposed again. The
 turn is injected (`approve_with`), so the prompt and the confirmation rule are unit tested offline;
 the live check (`tests/live_skill_proposals.rs`) is ignored by default.
+
+## Provenance
+
+`provenance.rs` answers "why is this line here?" from git and the mission store. A mission merge
+appends a trailer block to its commit message: `Mission: M-012`, `Agent: claude-code`,
+`Model: <model>`, `Reviewer: <agent>`, and `Cost: $0.42` for metered work, `Cost: flat` for a
+subscription or `Cost: $0.00` for a local model. `Goal:` waits for Phase D, when goals become an
+entity. `trailers` renders the block and `parse_trailers` reads it back; unknown keys and prose are
+ignored and the last occurrence wins.
+
+`why(repo, file, line)` resolves a local checkout (an absolute folder, a project slug, or an
+`owner/name` whose clone is a known project), runs `git blame --porcelain -L line,line`, and reads
+the blamed commit's message. A commit that names a mission is resolved from the store. Otherwise the
+merged pull request whose merge commit or head is that sha is found with `gh pr list --search <sha>
+--state merged` and mapped to a mission by `pr_url`. A line that only exists in the working tree
+blames to an all-zero id and is reported as "not committed yet". A lookup that cannot run (no `gh`,
+no GitHub remote, offline) becomes a note on the answer instead of an error, because the commit and
+its trailers are still the useful part. Paths must be relative and stay inside the checkout.
+
+The backend half is pure enough for unit tests through injected blame, message and pull-request
+seams; the live check (`tests/live_provenance.rs`) runs a real `git blame` on a temporary repository
+under the live-machine lock and needs no Hermes turn. Brain shows the form, and the GitHub diff view
+blames any new line with a hover `why` action against the local clone. The merge hook that appends
+the trailers to a mission's commit lands after the 0.12.0 release, because it edits the mission
+merge path.

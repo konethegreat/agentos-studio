@@ -22,7 +22,8 @@ import { goTo } from "../lib/nav";
 import { Markdown } from "../components/Markdown";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card, ExternalLink, Field, Modal, inputClass } from "../components/ui";
-import { errorText, type RepoInfo } from "../lib/api";
+import { errorText, type Provenance, type RepoInfo, api } from "../lib/api";
+import { ProvenanceCard } from "../components/Provenance";
 import { relativeTime } from "../lib/chat";
 import {
   studio,
@@ -456,10 +457,53 @@ function Thread({ items }: { items: { author: { login: string }; body: string; c
   );
 }
 
+interface DiffRow {
+  text: string;
+  /** The new-file path and line, when the row exists in the new file. */
+  file?: string;
+  line?: number;
+}
+
+/** Walk a unified diff and remember the new-file line each added or context row maps to. */
+function parseDiff(diff: string): DiffRow[] {
+  const rows: DiffRow[] = [];
+  let file: string | undefined;
+  let next = 0;
+  for (const text of diff.split("\n")) {
+    if (text.startsWith("diff --git ")) {
+      file = undefined;
+      rows.push({ text });
+      continue;
+    }
+    if (text.startsWith("+++ /dev/null")) {
+      file = undefined;
+      rows.push({ text });
+      continue;
+    }
+    if (text.startsWith("+++ b/")) {
+      file = text.slice(6);
+      rows.push({ text });
+      continue;
+    }
+    if (text.startsWith("@@")) {
+      const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
+      next = m ? Number(m[1]) : 0;
+      rows.push({ text });
+      continue;
+    }
+    if (text.startsWith("+")) rows.push({ text, file, line: next++ });
+    else if (text.startsWith(" ")) rows.push({ text, file, line: next++ });
+    else rows.push({ text });
+  }
+  return rows;
+}
+
 function PrDetail({ repo, number, act, localPath, onAskHermes }: DetailProps & { number: number }) {
   const toast = useToast();
   const [pr, setPr] = useState<GhPrDetail | null>(null);
   const [diff, setDiff] = useState<string | null>(null);
+  const [why, setWhy] = useState<Provenance | null>(null);
+  const [busyWhy, setBusyWhy] = useState(false);
   const [method, setMethod] = useState("squash");
   const [del, setDel] = useState(true);
   const [review, setReview] = useState("comment");
@@ -472,8 +516,22 @@ function PrDetail({ repo, number, act, localPath, onAskHermes }: DetailProps & {
   useEffect(() => {
     setPr(null);
     setDiff(null);
+    setWhy(null);
     reload();
   }, [reload]);
+
+  async function whyHere(file: string, line: number) {
+    if (!localPath) return;
+    setBusyWhy(true);
+    try {
+      setWhy(await api.fileProvenance(localPath, file, line));
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusyWhy(false);
+    }
+  }
+
   if (!pr) return <Loader2 className="mx-auto mt-10 size-5 animate-spin text-slate-500" />;
   const checks = pr.statusCheckRollup ?? [];
   return (
@@ -549,13 +607,45 @@ function PrDetail({ repo, number, act, localPath, onAskHermes }: DetailProps & {
         </div>
       </div>
       {diff !== null && (
-        <pre className="max-h-[480px] overflow-auto rounded-lg border border-line bg-canvas p-3 font-mono text-label leading-relaxed">
-          {diff.split("\n").map((l, i) => (
-            <div key={i} className={l.startsWith("+") && !l.startsWith("+++") ? "text-emerald-300" : l.startsWith("-") && !l.startsWith("---") ? "text-red-300" : l.startsWith("@@") ? "text-sky-300" : "text-slate-400"}>
-              {l || "\u00a0"}
-            </div>
-          ))}
-        </pre>
+        <div>
+          <div className="mb-1 text-caption text-slate-500">
+            Hover a new or unchanged line and press why to blame it in your local clone.
+          </div>
+          <div className="max-h-[480px] overflow-auto rounded-lg border border-line bg-canvas p-3 font-mono text-label leading-relaxed">
+            {parseDiff(diff).map((r, i) => (
+              <div key={i} className="group flex items-start">
+                <div
+                  className={`min-w-0 flex-1 whitespace-pre-wrap ${
+                    r.text.startsWith("+") && !r.text.startsWith("+++")
+                      ? "text-emerald-300"
+                      : r.text.startsWith("-") && !r.text.startsWith("---")
+                        ? "text-red-300"
+                        : r.text.startsWith("@@")
+                          ? "text-sky-300"
+                          : "text-slate-400"
+                  }`}
+                >
+                  {r.text || "\u00a0"}
+                </div>
+                {r.file !== undefined && r.line !== undefined && (
+                  <button
+                    onClick={() => void whyHere(r.file as string, r.line as number)}
+                    disabled={!localPath || busyWhy}
+                    title={localPath ? `Why is ${r.file}:${r.line} here?` : "Needs a local clone"}
+                    className="invisible ml-2 shrink-0 rounded px-1 text-2xs text-sky-300 ring-1 ring-sky-500/30 hover:bg-sky-500/10 group-hover:visible disabled:opacity-40"
+                  >
+                    why
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {why && (
+        <Modal title={`Why is ${why.file}:${why.line} here?`} onClose={() => setWhy(null)}>
+          <ProvenanceCard p={why} />
+        </Modal>
       )}
       <Thread items={[...pr.reviews, ...pr.comments]} />
       {pr.state === "OPEN" && (

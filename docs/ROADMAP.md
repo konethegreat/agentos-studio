@@ -345,6 +345,7 @@ Phase B of the 2026-11-08 master brief. The bus was wired to four agents but onl
   `tests/live_hub_identity.rs`, and the phase check `tests/live_phase_b_done.rs` against the
   running release build.
 
+<<<<<<< HEAD
 ## v0.13.0: memory that gets better with every mission (in progress)
 
 Phase E of the 2026-11-08 master brief. Memory becomes something that improves from finished work,
@@ -366,6 +367,18 @@ with the owner approving anything that reaches Hermes.
   and the missions as evidence. Approve creates the skill through one Hermes turn behind
   `hermes.skills.create`; Dismiss records the group in `skills.dismissed.<hash>` so it is not
   proposed again.
+- **Provenance (`provenance.rs`):** a line of code can name the mission that put it there, without
+  reading the whole history. A mission merge appends a trailer block to its commit message
+  (`Mission:`, `Agent:`, `Model:`, `Reviewer:`, `Cost:` where the cost is the measured spend,
+  `flat` for subscription work or `$0.00` for a local model). `Goal:` waits for Phase D.
+- "Why is this here?" (`file_provenance`): `git blame --porcelain` on one line,
+  then the commit's trailers, then the merged pull request that carries the commit matched to a
+  mission by `pr_url`. The answer shows the commit, mission, agent, model, reviewer, cost, PR and
+  the mission's Hermes sessions, with a link to the run timeline.
+- Brain has the form (repository, file, line); the GitHub diff view blames any new line with a
+  hover `why` action against the local clone. A lookup that cannot run (no `gh`, no GitHub remote)
+  is reported as a note, not an error.
+- Verified live: `tests/live_provenance.rs`.
 
 ## v0.10.2: cua-driver stays on the Hermes pin (shipped)
 

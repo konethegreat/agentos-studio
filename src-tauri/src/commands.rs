@@ -1307,3 +1307,13 @@ pub async fn skill_proposal_approve(
 pub async fn skill_proposal_dismiss(hash: String) -> CmdResult<()> {
     blocking(move || crate::skill_proposals::dismiss(&hash)).await
 }
+
+/// Why is this line here? The commit, its mission trailers and the mission behind it.
+#[tauri::command]
+pub async fn file_provenance(
+    repo: String,
+    file: String,
+    line: u64,
+) -> CmdResult<crate::provenance::Provenance> {
+    blocking(move || crate::provenance::why(&repo, &file, line)).await
+}
