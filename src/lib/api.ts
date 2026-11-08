@@ -328,7 +328,7 @@ export interface CatalogEntry {
   requires: string;
 }
 
-export type ChatEventKind = "status" | "session" | "token" | "thinking" | "tool_start" | "tool_result" | "stderr" | "error" | "complete";
+export type ChatEventKind = "status" | "session" | "token" | "thinking" | "tool_start" | "tool_result" | "stderr" | "error" | "complete" | "permission";
 
 export interface ChatEvent {
   run_id: string;

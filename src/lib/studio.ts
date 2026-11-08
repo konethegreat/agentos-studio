@@ -401,7 +401,19 @@ export interface FolderModel {
   model: string;
 }
 
+export interface PermissionOption {
+  id: string;
+  name: string;
+  kind: string;
+}
+
 export const studio = {
+  chat: {
+    answerPermission: (requestId: string, optionId: string | null) => invoke<void>("answer_chat_permission", { requestId, optionId }),
+    transport: () => invoke<"acp" | "cli">("hermes_chat_transport"),
+    setTransport: (acp: boolean) => invoke<void>("set_hermes_chat_transport", { acp }),
+    warm: () => invoke<void>("warm_hermes_chat"),
+  },
   models: {
     fallbackChain: () => invoke<Route[]>("hermes_fallback_chain"),
     setFallbackChain: (chain: Route[], a: Approved = {}) => invoke<void>("hermes_set_fallback_chain", { chain, ...a }),

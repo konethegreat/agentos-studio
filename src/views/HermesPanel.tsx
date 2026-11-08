@@ -1,4 +1,4 @@
-import { BarChart3, Bell, CalendarClock, GitBranch, Loader2, Pause, Play, Plus, RefreshCw, Timer, Trash2, Users, Zap } from "lucide-react";
+import { BarChart3, Bell, CalendarClock, GitBranch, ShieldCheck, Loader2, Pause, Play, Plus, RefreshCw, Timer, Trash2, Users, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
 import { useToast } from "../components/Toasts";
@@ -19,6 +19,7 @@ export function HermesPanel() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <TimeCapsCard />
         <ParallelCard />
+        <TransportCard />
       </div>
       <InsightsCard />
     </div>
@@ -400,6 +401,37 @@ function ParallelCard() {
               {v === 1 ? "1 (no worktrees)" : `${v}, on worktrees`}
             </option>
           ))}
+        </select>
+      </Field>
+    </Section>
+  );
+}
+
+function TransportCard() {
+  const toast = useToast();
+  const [t, setT] = useState<"acp" | "cli" | null>(null);
+  useEffect(() => {
+    void studio.chat.transport().then(setT).catch(() => setT("acp"));
+  }, []);
+  async function save(acp: boolean) {
+    try {
+      await studio.chat.setTransport(acp);
+      setT(acp ? "acp" : "cli");
+      toast("ok", acp ? "Hermes chat runs over ACP" : "Hermes chat runs as hermes chat -q");
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }
+  return (
+    <Section
+      icon={<ShieldCheck className="size-4 text-emerald-300" />}
+      title="Chat transport"
+      hint="ACP (recommended): Hermes asks before dangerous commands, Stop cancels the turn cleanly, and reasoning streams into the Thinking panel. The chat is created with its model, skills and checkpoints, then every turn runs on one long-lived hermes acp connection. If ACP fails before a message is sent, that turn uses hermes chat -q instead. hermes chat -q: every dangerous command is denied (approvals.single_query_mode) and Stop ends the process."
+    >
+      <Field label="Hermes chat runs over">
+        <select className={inputClass} value={t ?? "acp"} disabled={t === null} onChange={(e) => void save(e.target.value === "acp")}>
+          <option value="acp">ACP: approvals, cancel, reasoning</option>
+          <option value="cli">hermes chat -q</option>
         </select>
       </Field>
     </Section>
