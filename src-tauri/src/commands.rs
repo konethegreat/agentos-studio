@@ -704,18 +704,47 @@ pub async fn create_mission(
     budget_usd: f64,
 ) -> CmdResult<crate::missions::Mission> {
     blocking(move || {
-        crate::missions::create(
+        // Explicit choice, then the repository's routing.json, then the router if it may pick.
+        let policy = crate::routing::defaults_for(&crate::review_agent::repo_dir(&repo), &role);
+        let router = (agent.trim() == "hermes" && crate::router::auto_enabled())
+            .then(|| {
+                crate::missions::list(500)
+                    .map(|all| crate::router::pick(&all, &role))
+                    .ok()
+            })
+            .flatten();
+        let pin = crate::router::resolve_pin(&provider, &model, policy.as_ref(), router);
+        let m = crate::missions::create(
             &repo,
             &goal,
             &acceptance,
             &role,
             &agent,
-            &provider,
-            &model,
+            &pin.provider,
+            &pin.model,
             budget_usd,
-        )
+        )?;
+        crate::router::record_pin(&m.id, &pin);
+        Ok(m)
     })
     .await
+}
+
+#[tauri::command]
+pub async fn mission_pins(
+    ids: Vec<String>,
+) -> CmdResult<std::collections::BTreeMap<String, crate::router::Pin>> {
+    blocking(move || Ok(crate::router::pins(&ids))).await
+}
+
+#[tauri::command]
+pub async fn router_auto() -> CmdResult<bool> {
+    blocking(|| Ok(crate::router::auto_enabled())).await
+}
+
+#[tauri::command]
+pub async fn set_router_auto(on: bool) -> CmdResult<()> {
+    blocking(move || crate::router::set_auto(on)).await
 }
 
 #[tauri::command]
