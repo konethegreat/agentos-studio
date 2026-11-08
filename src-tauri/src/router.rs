@@ -115,13 +115,33 @@ pub fn set_auto(on: bool) -> Result<()> {
     crate::store::kv_set(&c, KV_AUTO, if on { "1" } else { "0" })
 }
 
-/// The router's pick for a role among Hermes missions, or why it declines. Pure.
-pub fn pick(all: &[missions::Mission], role: &str) -> std::result::Result<Suggestion, String> {
+/// Only outcomes this recent count: models, prices and prompts change.
+pub const WINDOW_DAYS: i64 = 60;
+
+fn decided(m: &missions::Mission) -> bool {
+    m.status == "done" || m.review_verdict.is_some()
+}
+
+/// The router's pick for a role among Hermes missions, or why it declines. Evidence is the role's
+/// own decided missions from the last 60 days: at least 5 of them, at least 5 for the winning
+/// candidate, and a clear lead over the next. Pure.
+pub fn pick(
+    all: &[missions::Mission],
+    role: &str,
+    now: i64,
+) -> std::result::Result<Suggestion, String> {
+    let since = now - WINDOW_DAYS * 86_400;
     let hermes: Vec<missions::Mission> = all
         .iter()
-        .filter(|m| m.agent == "hermes" && m.role == role)
+        .filter(|m| m.agent == "hermes" && m.role == role && m.updated_at >= since && decided(m))
         .cloned()
         .collect();
+    if hermes.len() < MIN_EVIDENCE {
+        return Err(format!(
+            "{} decided Hermes {role} missions in the last {WINDOW_DAYS} days, needs {MIN_EVIDENCE}",
+            hermes.len()
+        ));
+    }
     let ranked: Vec<Suggestion> = suggestions_from(&hermes);
     let Some(best) = ranked.first() else {
         return Err(format!("no decided Hermes {role} missions yet"));
@@ -156,6 +176,21 @@ pub struct Pin {
     /// `explicit`, `routing.json`, `router` or `inherit`.
     pub source: String,
     pub reason: String,
+    /// What the router would have chosen, or why not, whether or not it was allowed to act.
+    /// Kept so its judgement can be compared with what actually happened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow: Option<String>,
+}
+
+/// One line for the shadow log. Pure.
+pub fn shadow_line(r: &std::result::Result<Suggestion, String>) -> String {
+    match r {
+        Ok(s) => format!(
+            "would pick {}:{} ({}, score {})",
+            s.provider, s.model, s.reason, s.score
+        ),
+        Err(why) => format!("would decline: {why}"),
+    }
 }
 
 /// Resolve a new mission's pin. An explicit choice always wins, then the repository's committed
@@ -172,6 +207,7 @@ pub fn resolve_pin(
             model: model.trim().into(),
             source: "explicit".into(),
             reason: String::new(),
+            shadow: None,
         };
     }
     if let Some(p) = policy.filter(|p| !p.provider.trim().is_empty()) {
@@ -180,6 +216,7 @@ pub fn resolve_pin(
             model: p.model.trim().into(),
             source: "routing.json".into(),
             reason: "the repository's .agentos/routing.json".into(),
+            shadow: None,
         };
     }
     match router {
@@ -188,18 +225,21 @@ pub fn resolve_pin(
             provider: s.provider,
             model: s.model,
             source: "router".into(),
+            shadow: None,
         },
         Some(Err(why)) => Pin {
             provider: String::new(),
             model: String::new(),
             source: "inherit".into(),
             reason: format!("router declined: {why}"),
+            shadow: None,
         },
         None => Pin {
             provider: String::new(),
             model: String::new(),
             source: "inherit".into(),
             reason: String::new(),
+            shadow: None,
         },
     }
 }
@@ -218,10 +258,17 @@ pub fn create_mission(
     budget_usd: f64,
 ) -> Result<missions::Mission> {
     let policy = crate::routing::defaults_for(&crate::review_agent::repo_dir(repo), role);
-    let router = (agent.trim() == "hermes" && auto_enabled())
-        .then(|| missions::list(500).map(|all| pick(&all, role)).ok())
+    // Always judge Hermes missions, so the shadow log exists even when the router may not act.
+    let judged = (agent.trim() == "hermes")
+        .then(|| {
+            missions::list(500)
+                .map(|all| pick(&all, role, chrono::Utc::now().timestamp()))
+                .ok()
+        })
         .flatten();
-    let pin = resolve_pin(provider, model, policy.as_ref(), router);
+    let router = judged.clone().filter(|_| auto_enabled());
+    let mut pin = resolve_pin(provider, model, policy.as_ref(), router);
+    pin.shadow = judged.as_ref().map(shadow_line);
     let m = missions::create(
         repo,
         goal,
@@ -241,7 +288,7 @@ fn pin_key(id: &str) -> String {
 }
 
 pub fn record_pin(id: &str, pin: &Pin) {
-    if pin.source == "explicit" {
+    if pin.source == "explicit" && pin.shadow.is_none() {
         return;
     }
     if let (Ok(c), Ok(v)) = (crate::store::open(), serde_json::to_string(pin)) {
@@ -266,6 +313,8 @@ pub fn pins(ids: &[String]) -> std::collections::BTreeMap<String, Pin> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const NOW: i64 = 1_800_000_000;
 
     #[test]
     fn evidence_beats_a_single_lucky_run() {
@@ -308,7 +357,7 @@ mod tests {
             pr_url: None,
             review_note: None,
             created_at: 0,
-            updated_at: 0,
+            updated_at: NOW - 86_400,
             verify: None,
         }
     }
@@ -341,15 +390,19 @@ mod tests {
     #[test]
     fn the_router_picks_only_with_evidence_and_a_lead() {
         let few = history(3, 0, "a");
-        assert!(pick(&few, "implementer").unwrap_err().contains("needs 5"));
+        assert!(pick(&few, "implementer", NOW)
+            .unwrap_err()
+            .contains("needs 5"));
         let mut close = history(5, 1, "a");
         close.extend(history(5, 1, "b"));
-        assert!(pick(&close, "implementer").unwrap_err().contains("leads"));
+        assert!(pick(&close, "implementer", NOW)
+            .unwrap_err()
+            .contains("leads"));
         let mut clear = history(9, 1, "a");
         clear.extend(history(2, 6, "b"));
-        assert_eq!(pick(&clear, "implementer").unwrap().model, "a");
+        assert_eq!(pick(&clear, "implementer", NOW).unwrap().model, "a");
         assert!(
-            pick(&clear, "reviewer").is_err(),
+            pick(&clear, "reviewer", NOW).is_err(),
             "other roles are separate"
         );
         let claude: Vec<_> = history(9, 0, "a")
@@ -360,8 +413,73 @@ mod tests {
             })
             .collect();
         assert!(
-            pick(&claude, "implementer").is_err(),
+            pick(&claude, "implementer", NOW).is_err(),
             "only Hermes missions are auto-pinned"
+        );
+    }
+
+    #[test]
+    fn evidence_is_per_role_and_recent() {
+        // Plenty of approvals, but older than 60 days: no pick.
+        let old: Vec<_> = history(9, 1, "a")
+            .into_iter()
+            .map(|mut x| {
+                x.updated_at = NOW - 61 * 86_400;
+                x
+            })
+            .collect();
+        assert!(pick(&old, "implementer", NOW)
+            .unwrap_err()
+            .contains("in the last 60 days"));
+        // Other roles' missions do not count toward this role.
+        let mut mixed: Vec<_> = history(9, 0, "a")
+            .into_iter()
+            .map(|mut x| {
+                x.role = "reviewer".into();
+                x
+            })
+            .collect();
+        mixed.extend(history(4, 0, "a"));
+        assert!(pick(&mixed, "implementer", NOW)
+            .unwrap_err()
+            .contains("4 decided"));
+        // Undecided (running, queued) missions are not evidence.
+        let mut pending = history(4, 0, "a");
+        pending.extend((0..3).map(|i| {
+            let mut x = m(
+                &format!("q{i}"),
+                "implementer",
+                "hermes",
+                "openrouter",
+                "a",
+                "approve",
+            );
+            x.status = "running".into();
+            x.review_verdict = None;
+            x
+        }));
+        assert!(pick(&pending, "implementer", NOW).is_err());
+    }
+
+    #[test]
+    fn the_shadow_log_says_what_it_would_do() {
+        let s = Suggestion {
+            role: "implementer".into(),
+            provider: "openrouter".into(),
+            model: "a".into(),
+            attempts: 9,
+            approvals: 8,
+            score: 80.0,
+            avg_cost_usd: 0.0,
+            reason: "8/9 approved".into(),
+        };
+        assert_eq!(
+            shadow_line(&Ok(s)),
+            "would pick openrouter:a (8/9 approved, score 80)"
+        );
+        assert_eq!(
+            shadow_line(&Err("too few".into())),
+            "would decline: too few"
         );
     }
 
