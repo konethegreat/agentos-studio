@@ -332,6 +332,8 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
   created through interactive `hermes chat` so model, skills and checkpoints are fixed at
   creation. Approvals in a dialog, Stop as `session/cancel`, reasoning in the Thinking panel,
   automatic `chat -q` fallback. Verified by `tests/live_acp_chat.rs`.
+- Shipped: model aliases (Providers > Model layer), saved to Hermes' `model_aliases`; verified by
+  a real `hermes chat -m <alias>` turn in `tests/live_model_layer.rs`.
 
 ## Ideas worth considering
 
