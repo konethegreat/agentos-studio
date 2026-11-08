@@ -104,12 +104,6 @@ fn replays_a_finished_mission_and_leaves_nothing_behind() {
     assert_eq!(std::fs::read(&policy).ok(), policy_before);
     println!(
         "{} on {}: {} vs original {} ({}), {}s, note {}",
-        r.mission,
-        r.agent,
-        r.score,
-        r.original_score,
-        r.comparison,
-        r.duration_s,
-        r.note_path
+        r.mission, r.agent, r.score, r.original_score, r.comparison, r.duration_s, r.note_path
     );
 }
