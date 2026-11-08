@@ -120,6 +120,42 @@ async fn acp_chat_with_creation_policy() {
     .await;
     println!("turn 3 (cancel): stop={} chars={}", c.stop, c.text.len());
 
+    // Turn 4: an approval nobody answers is denied by Studio's timer, and Hermes honours it.
+    let target2 = dirs::home_dir()
+        .unwrap()
+        .join(format!("acp-timeout-probe-{}", std::process::id()));
+    std::fs::create_dir_all(&target2).unwrap();
+    std::fs::write(target2.join("x.txt"), "x").unwrap();
+    let t2s = target2.display().to_string().replace('\\', "/");
+    let pending: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<String, tokio::sync::oneshot::Sender<Option<String>>>,
+        >,
+    > = Default::default();
+    let mut t4 = acp_host::start_turn(&sid, &dir, &format!("Run exactly this command with the terminal tool, nothing else: rm -rf \"{t2s}\" (nothing else). If it is denied, reply DENIED and stop.")).await.expect("turn 4");
+    let mut expired = Vec::new();
+    let mut timers = Vec::new();
+    let stop4 = loop {
+        tokio::select! {
+            Some(_) = t4.events.recv() => {},
+            Some(p) = t4.permissions.recv() => {
+                let deny = agentos_studio_lib::chat_stream::timeout_choice(&p.options);
+                pending.lock().unwrap().insert(p.request_id.clone(), p.reply);
+                let (pm, rid) = (pending.clone(), p.request_id.clone());
+                timers.push(tokio::spawn(async move {
+                    agentos_studio_lib::chat_stream::expire_after(&pm, &rid, Duration::from_secs(10), deny).await
+                }));
+            },
+            r = &mut t4.done => break r.unwrap().unwrap_or_else(|e| format!("error: {e}")),
+        }
+    };
+    for h in timers {
+        expired.push(h.await.unwrap());
+    }
+    let survived2 = target2.exists();
+    let _ = std::fs::remove_dir_all(&target2);
+    println!("turn 4 (timeout): stop={stop4} expired={expired:?} survived={survived2}");
+
     let model = Command::new("python")
         .args(["-I", "-c", &format!("import sqlite3;c=sqlite3.connect('file:'+__import__('os').environ['LOCALAPPDATA'].replace(chr(92),'/')+'/hermes/state.db?mode=ro',uri=True);print(c.execute('select model from sessions where id=?',('{sid}',)).fetchone())")])
         .output()
@@ -146,4 +182,10 @@ async fn acp_chat_with_creation_policy() {
     assert!(b.text.to_lowercase().contains("pong"));
     assert_eq!(c.stop, "cancelled");
     assert!(model.contains(MODEL), "model fixed at creation: {model}");
+    assert!(
+        !expired.is_empty() && expired.iter().all(|e| *e),
+        "approval denied by the timer"
+    );
+    assert!(survived2, "timed-out delete did not run");
+    assert_eq!(stop4, "end_turn");
 }

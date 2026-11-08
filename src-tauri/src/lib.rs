@@ -278,6 +278,8 @@ pub fn run_gui() {
             ops::hermes_chat_transport,
             ops::set_hermes_chat_transport,
             ops::warm_hermes_chat,
+            ops::approval_timeout,
+            ops::set_approval_timeout,
             ops::computer_use_status,
             ops::computer_use_set_enabled,
             ops::computer_use_activity,
