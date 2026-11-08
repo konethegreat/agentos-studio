@@ -49,11 +49,6 @@ pub fn parse_verdict(text: &str) -> Option<(String, String)> {
     Some((verdict, note))
 }
 
-/// The folder a mission's repository lives in, from Hermes projects.
-pub fn repo_dir(repo: &str) -> PathBuf {
-    project_dir(repo).unwrap_or_else(crate::settings::home)
-}
-
 /// The repository's folder from Hermes projects, with no fallback. Anything that lets an agent
 /// work in the folder (kanban workers, `hermes verify`) must use this: the home folder is never a
 /// valid workspace.
@@ -88,6 +83,13 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
     }
     let number = missions::pr_number(&m)
         .ok_or_else(|| anyhow::anyhow!("{} has no pull request to review", m.id))?;
+    // The reviewer runs in the project folder, never in the home folder.
+    let dir = project_dir(&m.repo).filter(|d| d.is_dir()).ok_or_else(|| {
+        anyhow::anyhow!(
+            "repository '{}' is not a known project with a folder, so the reviewer has nowhere to run",
+            m.repo
+        )
+    })?;
     // A mission stores the project slug. `gh` can resolve the repo from the working folder, so use
     // that when the value is not `owner/name`.
     let diff = if m.repo.contains('/') {
@@ -95,7 +97,7 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
     } else {
         let mut cmd = Command::new("gh");
         cmd.args(["pr", "diff", &number.to_string()])
-            .current_dir(repo_dir(&m.repo))
+            .current_dir(&dir)
             .env("PATH", procs::search_path());
         #[cfg(windows)]
         {
@@ -113,7 +115,6 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
     }
     let diff: String = diff.chars().take(MAX_DIFF).collect();
 
-    let dir = repo_dir(&m.repo);
     let prompt_text = prompt(&m, &diff);
     let qfile = dirs::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
