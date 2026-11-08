@@ -27,9 +27,14 @@ When a mission is created, its provider and model come from the first of these t
 2. **routing.json:** the repository's policy for the mission's role.
 3. **Router:** only with "Let the router pick" on (Missions), and only for Hermes missions. The
    router scores each provider and model per role from decided missions: smoothed approval rate
-   minus a small cost penalty. It pins its best candidate only when that candidate has at least 5
-   decided missions and leads the next one by 5 points; otherwise it declines and says why.
+   minus a small cost penalty. Only the role's own Hermes missions decided in the last 60 days
+   count. It pins only when the role has at least 5 of them, the best candidate has at least 5,
+   and that candidate leads the next one by 5 points; otherwise it declines and says why.
 4. **Inherit:** Hermes' active model.
+
+Every new Hermes mission also records what the router would have chosen (or why it declined),
+even with "Let the router pick" off; hover a mission's model label to see it. That shadow log is
+how to judge the router before letting it act.
 
 The mission list shows where a chosen model came from (`via routing.json`, `via router`) with the
 reason on hover. The router never changes the global model, a mission that is already pinned, or
