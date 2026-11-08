@@ -29,7 +29,12 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Hermes usage report | yes | `hermes insights` on demand (MCP and Providers > Hermes) | |
 | Supply-chain audit | yes | `hermes security audit --json` in Safety | |
 | Mission notices to a phone | yes | `hermes send` to a target you set, when a mission is done or fails | |
-| Parallel agents on one repo | yes | up to 4 Hermes missions per repository, each on a kanban git worktree with its own branch; other agents run alone in their repository | |
+| Parallel agents on one repo | yes | up to 4 missions per repository, each in its own git worktree and branch (kanban worktrees for Hermes, Studio worktrees for the rest) | |
+| Headless missions for other agents | yes | Claude Code (`claude -p`) and Antigravity (`agy` stream-json) start themselves, with the repository's tool allowlist and never skipping permissions | |
+| IDE-only agents | part | Qoder (no CLI installed here) is offered its missions first; unclaimed after the IDE pickup wait they go to a headless agent with a note | Qoder CLI when installed |
+| Stuck mission recovery | yes | heartbeat per running mission; 15 quiet minutes means one retry, then blocked with the reason | |
+| Agent identity on the shared bus | yes | per-agent token in each agentos-hub entry, `whoami`, agents write only as themselves, unknown callers read-only | |
+| Event-driven task pickup | yes | the vault watcher starts delegated headless work within seconds | |
 
 ## Models
 

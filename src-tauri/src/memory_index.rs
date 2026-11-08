@@ -38,14 +38,17 @@ pub fn db_path_for(vault_root: &Path) -> PathBuf {
     );
     // The index location must not follow AGENTOS_STUDIO_DB, which tests point at a temp store.
     // AGENTOS_STUDIO_MEMORY_DIR keeps test indexes out of the user's app data.
+    // Without an override, a unit test still never writes into the user's app data: every test
+    // that reached recall with a temp vault used to leave a memory-<hash>.db there.
     #[cfg(test)]
-    {
+    let base = {
         let mut found = None;
         TEST_DIR.with(|c| found = c.borrow().clone());
-        if let Some(base) = found {
-            return base.join(format!("memory-{}.db", &digest[..10]));
-        }
-    }
+        let b = found.unwrap_or_else(|| std::env::temp_dir().join("agentos-studio-test-memory"));
+        let _ = std::fs::create_dir_all(&b);
+        b
+    };
+    #[cfg(not(test))]
     let base = std::env::var("AGENTOS_STUDIO_MEMORY_DIR")
         .ok()
         .filter(|d| !d.trim().is_empty())
