@@ -575,6 +575,45 @@ pub fn run(app: Option<AppHandle>) -> BootReport {
         }
     });
 
+    // 9. Agent identities on the hub. Each agent's agentos-hub entry carries its own token; a
+    // registration without one (new, or from before 0.11) gets one now, so no agent is left
+    // read-only after an update and nobody has to do anything.
+    r.run("identity", "agentos-hub identities", Some("control"), || {
+        let given = crate::mcp_manager::provision_hub_tokens();
+        let failed: Vec<String> = given
+            .iter()
+            .filter(|o| !o.ok)
+            .map(|o| o.agent.clone())
+            .collect();
+        let added: Vec<String> = given
+            .iter()
+            .filter(|o| o.ok)
+            .map(|o| o.agent.clone())
+            .collect();
+        if !failed.is_empty() {
+            return (
+                Status::Warn,
+                format!(
+                    "Could not give {} an agentos-hub identity; they stay read-only on the hub. Use Update agentos-hub in MCP and Providers",
+                    failed.join(", ")
+                ),
+            );
+        }
+        if !added.is_empty() {
+            return (
+                Status::Repaired,
+                format!(
+                    "Gave {} their own agentos-hub identity. Open agent sessions pick it up when restarted",
+                    added.join(", ")
+                ),
+            );
+        }
+        (
+            Status::Ok,
+            "Every registered agent has its own agentos-hub identity".to_string(),
+        )
+    });
+
     let mut report = BootReport {
         app_version: env!("CARGO_PKG_VERSION").into(),
         started_at: crate::vault::now(),

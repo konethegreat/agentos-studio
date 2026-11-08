@@ -80,7 +80,7 @@ fn comp(
 }
 
 /// Tools the native hub must list in its self-test; kept in step with `mcp_stdio::tool_definitions`.
-pub const HUB_TOOLS: usize = 9;
+pub const HUB_TOOLS: usize = 10;
 
 fn optional(mut c: Component) -> Component {
     c.optional = true;

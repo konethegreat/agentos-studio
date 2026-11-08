@@ -19,6 +19,7 @@ pub mod github;
 pub mod help;
 pub mod hermes_engine;
 pub mod hermes_surfaces;
+pub mod hub_identity;
 pub mod kanban;
 pub mod mcp_manager;
 pub mod mcp_stdio;

@@ -12,7 +12,30 @@ use crate::vault::{DelegateArgs, Vault, AGENTS, PRIORITIES};
 
 pub const SERVER_NAME: &str = "AgentOS-Hub";
 const PROTOCOL_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
-const INSTRUCTIONS: &str = "Local-first Agent Bus and Shared Memory backed by an Obsidian vault. At session start call fetch_pending_tasks(agent_name=<you>) and search_shared_memory(<topic>). Hand work to other agents with delegate_task instead of asking the user to copy prompts. Record architectural decisions with write_shared_memory.";
+const INSTRUCTIONS: &str = "Local-first Agent Bus and Shared Memory backed by an Obsidian vault. At session start call whoami (your identity comes from AGENTOS_HUB_TOKEN; you may write only as yourself), then fetch_pending_tasks(agent_name=<you>) and search_shared_memory(<topic>). Hand work to other agents with delegate_task instead of asking the user to copy prompts. Record architectural decisions with write_shared_memory.";
+
+static CALLER: std::sync::OnceLock<crate::hub_identity::Caller> = std::sync::OnceLock::new();
+
+thread_local! {
+    static TEST_CALLER: std::cell::RefCell<Option<crate::hub_identity::Caller>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Who this hub process serves: resolved once from `AGENTOS_HUB_TOKEN` at start-up.
+pub fn caller() -> crate::hub_identity::Caller {
+    if let Some(c) = TEST_CALLER.with(|t| t.borrow().clone()) {
+        return c;
+    }
+    CALLER
+        .get()
+        .cloned()
+        .unwrap_or_else(|| crate::hub_identity::Caller::unknown("hub started without an identity"))
+}
+
+/// Act as `caller` on this thread (tests; the process-wide caller is fixed at start-up).
+pub fn set_thread_caller(c: Option<crate::hub_identity::Caller>) {
+    TEST_CALLER.with(|t| *t.borrow_mut() = c);
+}
 
 /// Resolve the vault from `--vault <path>`, then `AGENTOS_VAULT`, then saved settings.
 pub fn vault_from_args(args: &[String]) -> PathBuf {
@@ -36,6 +59,16 @@ pub fn run_from_args(args: &[String]) -> i32 {
         println!("{SERVER_NAME} OK - vault: {}", vault.root.display());
         return 0;
     }
+    let me = crate::hub_identity::resolve(std::env::var(crate::hub_identity::ENV).ok().as_deref());
+    // Never the token: only who it resolved to.
+    match me.agent.as_deref() {
+        Some(a) => eprintln!("{SERVER_NAME}: caller is {a}"),
+        None => eprintln!(
+            "{SERVER_NAME}: read-only caller ({})",
+            me.reason.as_deref().unwrap_or("unknown")
+        ),
+    }
+    let _ = CALLER.set(me);
     if let Err(e) = vault.ensure_dirs() {
         eprintln!(
             "{SERVER_NAME}: cannot prepare vault {}: {e:#}",
@@ -178,7 +211,31 @@ pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Valu
     if let Err(msg) = crate::policy::check("agentos-hub", name) {
         anyhow::bail!("{msg}");
     }
+    // Identity: who may write, and only as themselves.
+    let me = caller();
+    let claimed = match name {
+        "claim_task" | "complete_task" => args.get("agent_name").and_then(Value::as_str),
+        "delegate_task" => args.get("creator").and_then(Value::as_str),
+        "remember" | "write_shared_memory" => args.get("agent").and_then(Value::as_str),
+        _ => None,
+    };
+    crate::hub_identity::check(&me, name, claimed)?;
+    // Memory written without an agent name is attributed to the caller.
+    let mut args = args.clone();
+    if matches!(name, "remember" | "write_shared_memory") && args.get("agent").is_none() {
+        if let (Some(a), Some(obj)) = (me.agent.as_deref(), args.as_object_mut()) {
+            obj.insert("agent".into(), json!(a));
+        }
+    }
+    let args = &args;
     match name {
+        "whoami" => Ok(json!({
+            "agent": me.agent,
+            "verified": me.agent.is_some(),
+            "read_only": me.agent.is_none(),
+            "reason": me.reason,
+            "read_tools": crate::hub_identity::READ_ONLY_TOOLS,
+        })),
         "delegate_task" => {
             let a: DelegateArgs = serde_json::from_value(args.clone())
                 .map_err(|e| anyhow::anyhow!("invalid delegate_task arguments: {e}"))?;
@@ -398,6 +455,11 @@ pub fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "whoami",
+            "description": "Which agent this hub session belongs to, from the AGENTOS_HUB_TOKEN AgentOS Studio put in your agentos-hub entry. A verified agent may claim, complete, delegate and remember as itself only; an unverified caller is read-only (fetch_pending_tasks, search_shared_memory, recall, project_brief, whoami).",
+            "inputSchema": {"type": "object", "properties": {}}
+        },
+        {
             "name": "search_shared_memory",
             "description": "Keyword search across all .md files in 01_Projects/ and 03_Memory/. Returns paths, scores and matching snippets.",
             "inputSchema": {
@@ -459,6 +521,7 @@ mod tests {
                 "recall",
                 "remember",
                 "project_brief",
+                "whoami",
                 "search_shared_memory"
             ]
         );
@@ -467,6 +530,7 @@ mod tests {
     #[test]
     fn memory_tools_round_trip() {
         let (_d, v) = vault();
+        set_thread_caller(Some(crate::hub_identity::Caller::known("hermes")));
         let wrote = call(
             &v,
             11,
@@ -506,6 +570,7 @@ mod tests {
     #[test]
     fn lifecycle_over_jsonrpc() {
         let (_d, v) = vault();
+        set_thread_caller(Some(crate::hub_identity::Caller::known("hermes")));
         let r = call(
             &v,
             3,
@@ -515,6 +580,19 @@ mod tests {
             "context_files": [], "instructions": "Do it.", "priority": "high"}}),
         );
         assert_eq!(r["result"]["isError"], false);
+        // Hermes cannot claim as Claude Code.
+        let r = call(
+            &v,
+            40,
+            "tools/call",
+            json!({"name": "claim_task", "arguments": {"task_id": "TASK-001", "agent_name": "claude-code"}}),
+        );
+        assert_eq!(r["result"]["isError"], true);
+        assert!(r["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("not claude-code"));
+        set_thread_caller(Some(crate::hub_identity::Caller::known("claude-code")));
         let r = call(
             &v,
             4,
@@ -537,6 +615,56 @@ mod tests {
             "title": "x", "assigned_to": "nobody", "creator": "x", "project": "x", "context_files": [], "instructions": "x"}}),
         );
         assert_eq!(bad["result"]["isError"], true);
+        set_thread_caller(None);
+    }
+
+    #[test]
+    fn an_unknown_caller_reads_but_never_writes() {
+        let (_d, v) = vault();
+        set_thread_caller(Some(crate::hub_identity::Caller::unknown("no token")));
+        let who = call(
+            &v,
+            20,
+            "tools/call",
+            json!({"name": "whoami", "arguments": {}}),
+        );
+        let text = who["result"]["content"][0]["text"].as_str().unwrap();
+        let w: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(w["read_only"], true);
+        assert_eq!(w["agent"], Value::Null);
+        let r = call(
+            &v,
+            21,
+            "tools/call",
+            json!({"name": "fetch_pending_tasks", "arguments": {"agent_name": "all"}}),
+        );
+        assert_eq!(r["result"]["isError"], false, "reads still work");
+        let r = call(
+            &v,
+            22,
+            "tools/call",
+            json!({"name": "delegate_task", "arguments": {
+            "title": "x", "assigned_to": "hermes", "creator": "hermes", "project": "x",
+            "context_files": [], "instructions": "x", "priority": "low"}}),
+        );
+        assert_eq!(r["result"]["isError"], true);
+        assert!(
+            v.fetch_pending_tasks("all").unwrap().is_empty(),
+            "nothing written"
+        );
+
+        set_thread_caller(Some(crate::hub_identity::Caller::known("qoder")));
+        let who = call(
+            &v,
+            23,
+            "tools/call",
+            json!({"name": "whoami", "arguments": {}}),
+        );
+        let w: Value =
+            serde_json::from_str(who["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(w["agent"], "qoder");
+        assert_eq!(w["verified"], true);
+        set_thread_caller(None);
     }
 
     #[test]
