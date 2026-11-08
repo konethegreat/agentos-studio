@@ -345,7 +345,10 @@ Phase B of the 2026-11-08 master brief. The bus was wired to four agents but onl
   `tests/live_hub_identity.rs`, and the phase check `tests/live_phase_b_done.rs` against the
   running release build.
 
-## v0.13.0: memory that stays true (in progress)
+## v0.13.0: memory that gets better with every mission (in progress)
+
+Phase E of the 2026-11-08 master brief. Memory becomes something that improves from finished work,
+with the owner approving anything that reaches Hermes.
 
 - **Memory quality (`memory_quality.rs`):** finds notes that point at paths which no longer exist
   and notes that cite a file or symbol `git grep -w` cannot find, then finds pairs of notes on one
@@ -358,6 +361,11 @@ Phase B of the 2026-11-08 master brief. The bus was wired to four agents but onl
   with no agent turn for the stale half (behind `hermes.cron.change`), and a Brain Quality panel
   that starts a run and shows what changed.
 - `tests/live_memory_quality.rs` (ignored) proves the supersede path on a sandbox vault.
+- **Skills from success:** three approved missions that share a role and a normalised task class
+  produce one `SKILL.md` draft, with steps taken from the memory ledger's tool sequence, pitfalls,
+  and the missions as evidence. Approve creates the skill through one Hermes turn behind
+  `hermes.skills.create`; Dismiss records the group in `skills.dismissed.<hash>` so it is not
+  proposed again.
 
 ## v0.10.2: cua-driver stays on the Hermes pin (shipped)
 

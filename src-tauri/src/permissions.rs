@@ -179,6 +179,14 @@ pub const ACTIONS: &[ActionDef] = &[
         "ask",
         false,
     ),
+    def(
+        "hermes.skills.create",
+        "Hermes",
+        "Create a Hermes skill from a Studio proposal (one Hermes turn)",
+        "high",
+        "ask",
+        false,
+    ),
 ];
 
 pub fn action(id: &str) -> Option<&'static ActionDef> {
