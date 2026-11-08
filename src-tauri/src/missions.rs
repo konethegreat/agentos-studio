@@ -211,6 +211,13 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
             m.status
         );
     }
+    // `auto`: the router picks the agent now, from live quota and measured outcomes.
+    let m = if m.agent.trim().eq_ignore_ascii_case(crate::assign::AUTO) {
+        crate::assign::resolve(&m)?;
+        get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?
+    } else {
+        m
+    };
     // A new attempt starts with a clean heartbeat history.
     crate::stuck::reset(id);
     // A design decision goes to a council of agents on different providers, not one worker.
@@ -371,6 +378,19 @@ pub fn reassign(id: &str, agent: &str, reason: &str) -> Result<Mission> {
     )?;
     let _ = store::kv_set(&c, &format!("mission.note.{id}"), reason.trim());
     get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+}
+
+/// Set the agent of a mission that has not started (quota-aware assignment of an `auto` mission).
+pub fn set_agent(id: &str, agent: &str) -> Result<()> {
+    let c = store::open()?;
+    let n = c.execute(
+        "UPDATE missions SET agent = ?1, updated_at = ?2 WHERE id = ?3 AND status IN ('queued', 'blocked')",
+        params![agent, now(), id],
+    )?;
+    if n == 0 {
+        bail!("{id} has started, so its agent is not reassigned here");
+    }
+    Ok(())
 }
 
 /// A handoff: the mission keeps running, now held by `agent` on the new bus task `task_id`.

@@ -1199,3 +1199,9 @@ pub async fn mission_kinds(
 pub async fn set_mission_kind(id: String, kind: String) -> CmdResult<()> {
     blocking(move || crate::missions::set_kind(&id, &kind)).await
 }
+
+/// Urgent missions may spend metered money when the flat subscriptions are out of headroom.
+#[tauri::command]
+pub async fn set_mission_urgent(id: String, urgent: bool) -> CmdResult<()> {
+    blocking(move || crate::assign::set_urgent(&id, urgent)).await
+}

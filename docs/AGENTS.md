@@ -92,3 +92,23 @@ Hermes `kanban swarm` was considered and refused for this: its workers are Herme
 cannot seat Claude Code or Antigravity, and different providers are the point of a council.
 
 Verified by `tests/live_council.rs` in the sandbox repository.
+
+## Quota-aware assignment
+
+Queue a mission for agent `auto` and the router assigns the agent when it starts (the board's
+Dispatch button and the scheduler share `missions::start`), deterministically and without a model
+call:
+
+1. Hard constraints: installed, runs headless, and has every tool the goal needs. A goal or
+   acceptance text naming Notion needs `notion`; kanban, cron or the Hermes CLI needs `kanban`; both
+   mean Hermes.
+2. Measured success for the task class (the mission's role): the router's smoothed approval score per
+   agent, used only with at least three decided missions for that role, compared in 10-point bands.
+3. Cost: a flat subscription with headroom first, then local, then metered. Among equals, Claude
+   Code, then Antigravity, then Hermes.
+
+If the best runnable choice is metered only because the flat subscriptions are under 10 percent
+headroom, a mission that is not marked Urgent is deferred until the earliest window resets (kv
+`mission.defer.<id>`; the scheduler skips it until then) instead of spending. Urgent missions (kv
+`mission.urgent.<id>`, a checkbox when the agent is `auto`) may spend. Every assignment and deferral
+is a row in the exchange log with its reason.

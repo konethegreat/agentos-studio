@@ -41,6 +41,7 @@ export function Missions({ repos }: { repos: string[] }) {
     model: "",
     budget: "0",
     decision: false,
+    urgent: false,
   });
   const [kinds, setKinds] = useState<Record<string, string>>({});
 
@@ -149,7 +150,8 @@ export function Missions({ repos }: { repos: string[] }) {
         budgetUsd: Number(form.budget) || 0,
       });
       if (form.decision) await invoke<void>("set_mission_kind", { id: made.id, kind: "decision" });
-      setForm({ ...form, goal: "", acceptance: "", decision: false });
+      if (form.urgent) await invoke<void>("set_mission_urgent", { id: made.id, urgent: true });
+      setForm({ ...form, goal: "", acceptance: "", decision: false, urgent: false });
       setOpen(false);
       toast("ok", "Mission queued. Dispatch it to put it on the bus.");
       await load();
@@ -384,7 +386,8 @@ export function Missions({ repos }: { repos: string[] }) {
               <input
                 value={form.agent}
                 onChange={(e) => setForm({ ...form, agent: e.target.value })}
-                title="Agent that does the work"
+                title="Agent that does the work, or auto: Studio picks by tools, measured success and quota headroom when it starts"
+                list="mission-agents"
                 className="h-8 w-32 rounded-lg bg-white/[0.03] px-2 text-xs text-slate-200 outline-none ring-1 ring-line"
               />
             </div>
@@ -457,6 +460,17 @@ export function Missions({ repos }: { repos: string[] }) {
             />
             Design decision: run a council of agents and write an ADR instead of one worker
           </label>
+          {form.agent.trim() === "auto" && (
+            <label className="flex items-center gap-2 text-label text-slate-400 md:col-span-2" title="Without this, an auto mission waits for a subscription window to reset instead of spending metered money">
+              <input type="checkbox" checked={form.urgent} onChange={(e) => setForm({ ...form, urgent: e.target.checked })} />
+              Urgent: may use a metered provider when the flat subscriptions are out of headroom
+            </label>
+          )}
+          <datalist id="mission-agents">
+            {["auto", "hermes", "claude-code", "antigravity", "qoder"].map((a) => (
+              <option key={a} value={a} />
+            ))}
+          </datalist>
           <div className="md:col-span-2">
             <button
               onClick={() => void create()}

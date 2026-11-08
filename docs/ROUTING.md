@@ -62,3 +62,9 @@ The mission list shows where a chosen model came from (`via routing.json`, `via 
 reason on hover. The router never changes the global model, a mission that is already pinned, or
 a running mission. Off, it only shows what it would pick.
 
+
+## Choosing the agent (0.12)
+
+A mission for agent `auto` gets its agent from live quota and measured outcomes when it starts, and
+non-urgent work waits for a subscription window to reset instead of switching to metered spend. See
+[AGENTS.md](AGENTS.md#quota-aware-assignment).
