@@ -213,6 +213,18 @@ the session that produced them. A repository whose reviews keep rejecting work f
 blockers gets one convention note that names the missions. Both paths are additive and idempotent:
 rerunning a mission or the reject check writes nothing.
 
+Memory also audits itself. A note that names a repository and points at a backticked path or
+function that the repository no longer has is stale; two active notes with the same topic and type
+whose content opposes are contradiction candidates, resolved by one short Hermes turn. The losing
+note is marked `superseded` with a link or a reason and is never deleted, and a note edited in the
+last seven days is reported instead of changed. The same check runs headless, which is what the
+weekly job calls:
+
+```bash
+agentos-studio --memory-quality --vault "/path/to/your/vault"
+agentos-studio --memory-quality --vault "/path/to/your/vault" --dry-run
+```
+
 ## Navigation
 
 A five-group icon rail replaces the old twelve-item list: **Chat**, **Work** (Projects, Mission
@@ -227,7 +239,9 @@ rejected.
 
 **Brain** shows both memory stores. The Vault side lists the notes agents read and write through the
 hub, with their type, link count and last change, and the recent read and write activity under it. A
-Learning panel lists finished missions and extracts their lessons into notes. The Hermes side shows
+Quality panel shows the last check, stale and superseded counts, each change, and the weekly job
+with a Remove button. A Learning panel lists finished missions and extracts their lessons into
+notes. The Hermes side shows
 `MEMORY.md` and `USER.md` read-only, and the journey nodes Hermes builds from skills and memory
 cards, with a permission-gated delete. Below 1280 px wide the two become tabs.
 
@@ -373,7 +387,7 @@ src/                      React 19 + TypeScript + Tailwind 4 UI
   lib/studio.ts           Typed bindings for terminals, updates, organisation, GitHub and safety
   lib/chat.ts             Stream event reducer and history loader
 src-tauri/src/
-  main.rs                 GUI by default, MCP server with --mcp-stdio
+  main.rs                 GUI by default, MCP server with --mcp-stdio, memory quality with --memory-quality
   hermes_engine.rs        Heartbeat, provider switchboard, model discovery, state.db sessions
   chat_stream.rs          Streaming chat turns for Hermes and Claude Code, event parsers, Apply
   mcp_manager.rs          MCP registry across four agents, native MCP client, catalog

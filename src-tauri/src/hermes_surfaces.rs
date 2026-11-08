@@ -269,6 +269,7 @@ pub fn cron_action(id: &str, action: &str) -> Result<String> {
 #[derive(Deserialize, Debug, Default)]
 pub struct CronSpec {
     pub schedule: String,
+    #[serde(default)]
     pub prompt: String,
     #[serde(default)]
     pub name: Option<String>,
@@ -276,6 +277,12 @@ pub struct CronSpec {
     pub workdir: Option<String>,
     #[serde(default)]
     pub paused: bool,
+    /// Run a script on the schedule without an LLM turn.
+    #[serde(default)]
+    pub no_agent: bool,
+    /// A file under the Hermes scripts folder that the job runs.
+    #[serde(default)]
+    pub script: Option<String>,
 }
 
 /// Arguments for `hermes cron create`. Output goes to `local` (the run is kept in Hermes and shown
@@ -283,8 +290,19 @@ pub struct CronSpec {
 pub fn cron_create_args(spec: &CronSpec) -> Result<Vec<String>> {
     let schedule = spec.schedule.trim();
     let prompt = spec.prompt.trim();
-    if schedule.is_empty() || prompt.is_empty() {
-        bail!("A schedule and a prompt are both required");
+    let script = spec
+        .script
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if schedule.is_empty() {
+        bail!("A schedule is required");
+    }
+    if prompt.is_empty() && !(spec.no_agent && script.is_some()) {
+        bail!("A prompt is required unless a no-agent job runs a script");
+    }
+    if spec.no_agent && script.is_none() {
+        bail!("A no-agent job needs a script");
     }
     let mut a: Vec<String> = ["cron", "create", "--deliver", "local"]
         .map(String::from)
@@ -311,8 +329,19 @@ pub fn cron_create_args(spec: &CronSpec) -> Result<Vec<String>> {
     if spec.paused {
         a.push("--paused".into());
     }
+    if spec.no_agent {
+        a.push("--no-agent".into());
+    }
+    if let Some(s) = script {
+        if !Path::new(s).is_file() {
+            bail!("Script {s} does not exist");
+        }
+        a.extend(["--script".into(), s.into()]);
+    }
     a.push(schedule.into());
-    a.push(prompt.into());
+    if !prompt.is_empty() {
+        a.push(prompt.into());
+    }
     Ok(a)
 }
 
@@ -560,6 +589,43 @@ mod tests {
         assert!(cron_create_args(&CronSpec::default()).is_err());
         assert!(cron_action("../x", "pause").is_err());
         assert!(cron_action("abc123", "delete-all").is_err());
+    }
+
+    #[test]
+    fn a_no_agent_job_runs_a_script_without_a_prompt() {
+        let d = tempfile::tempdir().unwrap();
+        let script = d.path().join("check.py");
+        fs::write(&script, "print('ok')\n").unwrap();
+        let a = cron_create_args(&CronSpec {
+            schedule: crate::memory_quality::WEEKLY_SCHEDULE.into(),
+            name: Some(crate::memory_quality::WEEKLY_JOB.into()),
+            no_agent: true,
+            script: Some(script.display().to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            a.join(" "),
+            format!(
+                "cron create --deliver local --name agentos-memory-quality --no-agent \
+--script {} 0 6 * * 1",
+                script.display()
+            )
+        );
+        // A no-agent job without a script, or a script that is missing, is refused.
+        assert!(cron_create_args(&CronSpec {
+            schedule: "0 6 * * 1".into(),
+            no_agent: true,
+            ..Default::default()
+        })
+        .is_err());
+        assert!(cron_create_args(&CronSpec {
+            schedule: "0 6 * * 1".into(),
+            no_agent: true,
+            script: Some(d.path().join("missing.py").display().to_string()),
+            ..Default::default()
+        })
+        .is_err());
     }
 
     #[test]

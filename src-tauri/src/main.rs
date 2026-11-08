@@ -4,6 +4,9 @@
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--memory-quality") {
+        std::process::exit(agentos_studio_lib::memory_quality::run_from_args(&args));
+    }
     if args.iter().any(|a| a == "--mcp-stdio" || a == "--check") {
         std::process::exit(agentos_studio_lib::mcp_stdio::run_from_args(&args));
     }

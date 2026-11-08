@@ -1004,6 +1004,50 @@ pub async fn extract_lessons(
     blocking(move || crate::learning::extract_lessons(&v, &id)).await
 }
 
+/// The last memory quality run, recorded by the app or by the weekly headless job.
+#[tauri::command]
+pub async fn memory_quality_last() -> CmdResult<Option<crate::memory_quality::MemoryQualityReport>>
+{
+    blocking(|| Ok(crate::memory_quality::last_report())).await
+}
+
+/// Check memory notes for stale references and contradictions. A dry run reports and writes
+/// nothing.
+#[tauri::command]
+pub async fn memory_quality_run(
+    state: tauri::State<'_, AppState>,
+    dry_run: Option<bool>,
+) -> CmdResult<crate::memory_quality::MemoryQualityReport> {
+    let v = current_vault(&state);
+    blocking(move || crate::memory_quality::run(&v, dry_run.unwrap_or(false))).await
+}
+
+/// Schedule the weekly memory quality check as a no-agent Hermes cron job.
+#[tauri::command]
+pub async fn memory_quality_schedule(
+    state: tauri::State<'_, AppState>,
+    approved: Option<bool>,
+) -> CmdResult<String> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let exe = std::env::current_exe()
+            .map_err(|e| anyhow::anyhow!("cannot find the Studio binary: {e}"))?;
+        crate::permissions::run_guarded(
+            "hermes.cron.change",
+            crate::memory_quality::WEEKLY_JOB,
+            &format!(
+                "hermes cron create \"{}\" --name {} --no-agent --script <hermes scripts>/{}",
+                crate::memory_quality::WEEKLY_SCHEDULE,
+                crate::memory_quality::WEEKLY_JOB,
+                crate::memory_quality::WEEKLY_JOB
+            ),
+            approved.unwrap_or(false),
+            || crate::memory_quality::schedule(&v, &exe),
+        )
+    })
+    .await
+}
+
 #[tauri::command]
 pub fn working_dir_default() -> crate::workdir::WorkingDir {
     crate::workdir::resolve()
