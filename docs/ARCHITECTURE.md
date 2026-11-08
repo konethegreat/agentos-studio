@@ -113,7 +113,10 @@ the first paint is never competing with a full probe.
 | `hermes_engine.rs` | Heartbeat, provider switchboard, model discovery, sessions in `state.db`. |
 | `mcp_manager.rs` | MCP registry across four agents, native MCP client, catalog. |
 | `cli_runner.rs` | One-shot command runner (kept for quick actions with captured output). |
-| `vault.rs`, `bus.rs`, `mcp_stdio.rs` | Agent Bus, shared memory and the `agentos-hub` MCP server. |
+| `vault.rs`, `bus.rs`, `mcp_stdio.rs` | Agent Bus, shared memory and the `agentos-hub` MCP server. `bus.rs` also starts headless workers (Hermes, Claude Code, Antigravity) for the scheduler and the event-driven watcher. |
+| `worktree.rs` | One git worktree and branch per bus mission attempt, excluded locally, removed when the mission ends. |
+| `stuck.rs` | Heartbeat per running mission (kanban times and session messages, worker process and log, worktree changes); one retry, then blocked. |
+| `hub_identity.rs` | Per-agent hub tokens (hash only in `studio.db`), caller resolution, the write-as-yourself and read-only rules, `whoami`. |
 
 ### Approval flow
 

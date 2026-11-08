@@ -282,6 +282,29 @@ This completes the design-system bullet listed under v0.4.1, which was never bui
   Python server had, plus recall, remember and project_brief.
 - Verified by `tests/live_hub_cutover.rs` against the real agent configs.
 
+## v0.11.0: every agent can actually do the work (shipped)
+
+Phase B of the 2026-11-08 master brief. The bus was wired to four agents but only Hermes ever ran.
+
+- Every mission bus task names its repository (`Repository:` plus context files); a mission whose
+  repository is not a known project does not start, and no agent works in the home folder (#66).
+- Claude Code missions start themselves and finish: one git worktree per attempt, `claude -p
+  --permission-mode acceptEdits` with the repository's `allowed_tools` from `.agentos/routing.json`
+  (each `Bash` rule mirrored for `PowerShell`), never skipping permissions (#67).
+- Antigravity runs headless (`agy` stream-json, the same allowlist as session rules); Qoder is IDE
+  only on this machine (its CLI is not installed), so its missions are offered to it first and
+  reassigned to the best headless agent after the IDE pickup wait, default 30 minutes (#68).
+- Stuck detection: a heartbeat for every running mission; quiet for 15 minutes means one automatic
+  retry, then blocked with the reason (#69).
+- Per-agent identity on the hub: a token per agent in its agentos-hub entry, only the hash kept,
+  `whoami`, agents write only as themselves, unknown callers are read-only; boot provisions
+  missing tokens (#70).
+- Event-driven bus: the vault watcher starts new headless work and moves finished work to review
+  within seconds; the minute tick is the safety net (#71).
+- Verified live: `tests/live_claude_mission.rs`, `tests/live_agy_mission.rs`,
+  `tests/live_hub_identity.rs`, and the phase check `tests/live_phase_b_done.rs` against the
+  running release build.
+
 ## v0.10.2: cua-driver stays on the Hermes pin (shipped)
 
 - Computer Use no longer offers the driver's own `update --apply`: it installed an unused copy, an
@@ -334,7 +357,7 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
   `hermes security` in Safety and `hermes insights` as a panel (shipped, verified by
   `tests/live_hermes_surfaces.rs`).
 
-## v0.11: plan mode and the model layer
+## v0.10.1: plan mode and the model layer (shipped)
 
 - Plan first in chat (shipped): Hermes `/plan` scoped to the folder, plan shown for approval, run
   on Approve. Verified by `tests/live_plan_mode.rs`.
@@ -348,7 +371,7 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
   Providers > Hermes). Verified by `tests/live_kanban_mission.rs`: two missions dispatched in one
   tick, each in `<repo>/.worktrees/<task>` on its own branch, both to Studio review.
 
-## v0.11: Hermes chat over ACP
+## v0.10.1: Hermes chat over ACP (shipped)
 
 - Shipped: ACP is the Hermes chat transport (Providers > Hermes > Chat transport), with sessions
   created through interactive `hermes chat` so model, skills and checkpoints are fixed at
