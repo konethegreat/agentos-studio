@@ -217,6 +217,10 @@ export function ChatStudio({
       if ((e.kind === "status" || e.kind === "stderr") && e.text) setStatusLine(e.text);
       if (e.kind === "tool_start") setStatusLine(`Calling ${e.server ? `${e.server.replace(/_/g, "-")} / ` : ""}${e.tool_name}`);
       if (e.kind === "token") setStatusLine("Writing");
+      if (e.kind === "permission_closed") {
+        setPermission((p) => (p && p.requestId === e.tool_id ? null : p));
+        return;
+      }
       if (e.kind === "permission" && e.tool_id) {
         setPermission({ requestId: e.tool_id, title: e.text ?? "Hermes asks for permission", options: Array.isArray(e.input) ? (e.input as PermissionOption[]) : [] });
         setStatusLine("Waiting for your approval");
@@ -937,7 +941,7 @@ export function ChatStudio({
             </>
           }
         >
-          <p className="mb-2 text-small leading-relaxed text-slate-400">Hermes flagged this as dangerous and is waiting for you. Nothing runs until you choose; closing this window denies it.</p>
+          <p className="mb-2 text-small leading-relaxed text-slate-400">Hermes flagged this as dangerous and is waiting for you. Nothing runs until you choose; closing this window denies it, and so does no answer within the timeout set in Providers &gt; Hermes &gt; Chat transport.</p>
           <pre className="whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-xs text-slate-200 ring-1 ring-line">{permission.title}</pre>
         </Modal>
       )}
