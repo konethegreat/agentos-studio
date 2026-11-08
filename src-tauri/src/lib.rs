@@ -4,6 +4,7 @@ pub mod acp;
 pub mod acp_host;
 pub mod agent_log;
 pub mod agents;
+pub mod ask;
 pub mod automation;
 pub mod boot;
 pub mod bootstrapper;

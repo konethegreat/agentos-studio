@@ -340,6 +340,20 @@ pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Valu
             )?))
         }
         "project_brief" => Ok(json!(vault.project_brief(str_arg(args, "repo")?)?)),
+        "ask_agent" => {
+            let from = me
+                .agent
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("ask_agent needs a verified caller"))?;
+            Ok(serde_json::to_value(crate::ask::ask(
+                &from,
+                str_arg(args, "to")?,
+                str_arg(args, "question")?,
+                args.get("context").and_then(Value::as_str).unwrap_or(""),
+                args.get("mission_id").and_then(Value::as_str),
+                args.get("timeout").and_then(Value::as_u64),
+            )?)?)
+        }
         "handoff" => {
             let from = me
                 .agent
@@ -492,6 +506,21 @@ pub fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "ask_agent",
+            "description": "Ask another agent a question and get its answer back, without the owner copying anything. AgentOS Studio runs one short headless turn on the target (hermes chat, claude -p or agy) in the mission's worktree when mission_id is given, and returns its final answer. Use it for a step another agent is better placed to do (Claude Code asks Hermes for a Notion or CLI fact; Hermes asks Claude Code or Antigravity for a review comment). The asked agent may read but not edit, and cannot ask onward while it answers. Every ask and answer is logged on the mission. Qoder is IDE only and cannot be asked.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "to": {"type": "string", "enum": ["hermes", "claude-code", "antigravity"], "description": "Agent to ask."},
+                    "question": {"type": "string", "description": "The question, self-contained."},
+                    "context": {"type": "string", "description": "Anything the target needs that is not in the repository or shared memory."},
+                    "mission_id": {"type": "string", "description": "The mission this is about; the answer is logged on it and the target reads its worktree."},
+                    "timeout": {"type": "integer", "default": 120, "description": "Seconds to wait, 10 to 600."}
+                },
+                "required": ["to", "question"]
+            }
+        },
+        {
             "name": "handoff",
             "description": "Hand the running mission you hold to another agent, so it continues without starting cold. AgentOS Studio builds the packet (project brief, goal and acceptance criteria, the diff so far in the mission worktree, failing PR checks, relevant recall) around your summary, next step, files and questions, gives it to the receiver as a new bus task in the same worktree (headless receivers start within seconds), moves the mission to them and closes your task. After a handoff, stop: do not call complete_task. Check agents first to pick a receiver that is ready.",
             "inputSchema": {
@@ -585,6 +614,7 @@ mod tests {
                 "recall",
                 "remember",
                 "project_brief",
+                "ask_agent",
                 "handoff",
                 "agents",
                 "whoami",
