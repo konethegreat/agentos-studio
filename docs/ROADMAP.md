@@ -282,6 +282,12 @@ This completes the design-system bullet listed under v0.4.1, which was never bui
   Python server had, plus recall, remember and project_brief.
 - Verified by `tests/live_hub_cutover.rs` against the real agent configs.
 
+## v0.10.2: cua-driver stays on the Hermes pin (shipped)
+
+- Computer Use no longer offers the driver's own `update --apply`: it installed an unused copy, an
+  elevated logon task, and a newer daemon incompatible with the version Hermes pins. Repair and
+  doctor run `hermes computer-use install|doctor` instead. Found by the Phase A click-through.
+
 ## v0.10.1: safe to ship (shipped)
 
 Phase A of the 2026-11-08 master brief. Everything since 0.10.0 (plan first, model layer, parallel
