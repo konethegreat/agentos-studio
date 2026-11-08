@@ -70,6 +70,14 @@ deliberately boring.
 
 - **Scheduler:** a tick every minute reads due missions and enqueues them, respecting a global
   concurrency cap and a per-repository cap of one running mission.
+- **Event-driven bus.** With Automations on, the vault watcher reacts to every change under
+  `02_Agent_Bus/`: within a few seconds it claims and starts each Pending task assigned to an
+  installed headless agent (Hermes, Claude Code, Antigravity) that names a `Repository:`, so work
+  one agent delegates to another starts without waiting, and it runs the scheduler tick so
+  completed work moves to review. Bursts of events become one pass (a 3 second gap, and an event
+  during a pass reruns it afterwards). A task the watcher could not start is not retried from
+  events in that session, because its failure note is itself an event; stuck detection covers it.
+  The minute tick stays as the safety net, and passes never overlap (one tick at a time).
 - **Hermes missions run on Hermes' kanban board.** Hermes owns execution: Dispatch runs
   `hermes kanban --board agentos-studio create` with the goal and acceptance criteria, the repository
   folder as the workspace (`dir:`), the implementer profile from MCP and Providers > Hermes, the

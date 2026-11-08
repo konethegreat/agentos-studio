@@ -158,6 +158,10 @@ pub struct TickReport {
 /// One scheduler pass. Safe to call often and safe to call when automations are off:
 /// with automations off it still advances running missions, it just starts nothing new.
 pub fn tick(v: &Vault) -> TickReport {
+    // The minute scheduler, the bus watcher and Run now all call this: one pass at a time, or two
+    // passes could both start the same queued mission.
+    static TICK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one = TICK.lock().unwrap_or_else(|p| p.into_inner());
     let mut report = TickReport {
         enabled: enabled(),
         max_concurrent: max_concurrent(),
