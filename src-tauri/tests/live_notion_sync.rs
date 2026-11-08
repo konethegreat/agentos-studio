@@ -80,12 +80,62 @@ fn missions_round_trip_through_notion() {
     println!("sync 4: {r4:?}");
     let cancelled = missions::get(&first.id).unwrap().unwrap();
 
+    // Trust: the proposal above came from the integration itself, which is not trusted, so it is
+    // blocked. Trust that author, propose again, and it queues. An unknown agent is declined.
+    let me = notion::request("GET", "/users/me", &tok, None).unwrap();
+    let bot = me["id"].as_str().unwrap().to_string();
+    notion_sync::set_trusted_authors(&[bot.clone()]).unwrap();
+    notion::request(
+        "POST",
+        "/pages",
+        &tok,
+        Some(&row("Trusted proposal", "demo", "a file exists")),
+    )
+    .unwrap();
+    let mut bad = row("Wrong agent", "demo", "x");
+    bad["properties"]["Agent"] = json!({ "select": { "name": "cursor" } });
+    notion::request("POST", "/pages", &tok, Some(&bad)).unwrap();
+    let r5 = notion_sync::sync(false);
+    println!("sync 5: {r5:?}");
+    let trusted = missions::list(20)
+        .unwrap()
+        .into_iter()
+        .find(|m| m.goal == "Trusted proposal");
+    let approved = notion_sync::approve(&proposed.as_ref().unwrap().id, false).unwrap();
+
     notion_sync::archive_board().unwrap();
     let _ = std::fs::remove_dir_all(&tmp);
 
     assert!(r3.error.is_none(), "{:?}", r3.error);
     let proposed = proposed.expect("proposal became a mission");
-    assert_eq!(proposed.status, "queued");
+    assert_eq!(
+        proposed.status, "blocked",
+        "an untrusted proposal waits for approval"
+    );
+    assert!(proposed
+        .review_note
+        .as_deref()
+        .unwrap_or("")
+        .contains("needs approval in Studio"));
+    assert_eq!(r3.awaiting_approval, vec![proposed.id.clone()]);
+    assert_eq!(approved.status, "queued", "Approve in Studio releases it");
+    let trusted = trusted.expect("trusted proposal became a mission");
+    assert_eq!(
+        trusted.status, "queued",
+        "a trusted author's proposal queues directly"
+    );
+    assert!(r5.awaiting_approval.is_empty());
+    assert!(
+        r5.declined
+            .iter()
+            .any(|d| d.contains("not one Studio knows")),
+        "{:?}",
+        r5.declined
+    );
+    assert!(missions::list(20)
+        .unwrap()
+        .iter()
+        .all(|m| m.goal != "Wrong agent"));
     assert_eq!(r3.proposed, vec![proposed.id.clone()]);
     assert_eq!(
         written_id, proposed.id,
