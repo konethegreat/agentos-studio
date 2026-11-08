@@ -27,7 +27,7 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Hermes Chat Studio.** A Claude-Desktop-style chat over Hermes (or Claude Code), bound to any of your repositories. Replies stream in with rendered Markdown, highlighted code blocks with Copy and Apply-to-file, and expandable cards for every MCP and tool call. Your whole Hermes history is in the sidebar, read straight from `state.db`, with rename, delete and export to Obsidian.
 - **Hot-swap provider switchboard.** Run on your Claude Pro or Max subscription today, then move to OpenRouter, Gemini, the Anthropic or OpenAI APIs, DeepSeek, Nous Portal or a local Ollama model from a dropdown. Keys go into Hermes's own `.env`, and every switch can be checked with a live test turn.
 - **Universal MCP router.** One table of every MCP server across Hermes, Claude Code, Qoder and Antigravity: which agent has it, whether it answers, how fast, and every tool it exposes. Add servers from a one-click catalog, sync them to all four agents, toggle them per conversation, or run OAuth sign-in.
-- **Native Rust MCP bus.** The same binary run with `--mcp-stdio` is `agentos-hub`: 12 tools for a shared task queue, typed memory, ranked recall, agent identity, the agent registry and handoffs, no Python, a full initialize plus tools/list round trip in about 35 ms.
+- **Native Rust MCP bus.** The same binary run with `--mcp-stdio` is `agentos-hub`: 13 tools for a shared task queue, typed memory, ranked recall, agent identity, the agent registry, handoffs and asks between agents, no Python, a full initialize plus tools/list round trip in about 35 ms.
 - **Real terminals.** A docked panel with true PTY terminals (ConPTY on Windows) for interactive Hermes, the Hermes TUI, Claude Code or your shell, plus a one-shot command runner. Any chat can be continued in a terminal with one click.
 - **Workspaces and folders.** Organise chats into workspaces, folders and sub-folders with drag and drop, pins, tags, archive and file attachments. Map a folder to a repository and every chat run there lands in it automatically; link it to a Hermes project.
 - **GitHub.** Pull requests (diff, checks, review, merge, create), issues, Actions runs (failed logs, re-run), branches and commits, all through your `gh` login, with "Ask Hermes" hand-offs into chat.
@@ -126,7 +126,7 @@ On first launch open **Setup and Integrations** and press **Auto-Setup and Repai
 | 2 | Hermes Agent Engine | `hermes --version`, default model in `config.yaml` | Official Hermes installer, `hermes model` |
 | 3 | Obsidian Shared Brain | `00_Inbox` to `04_Agent_Engine` tree | Scaffolds the vault and seed files at any folder you pick |
 | 4 | Notion Cloud Sync | Notion MCP server configured and authorized in Hermes | `hermes mcp install notion`, `hermes mcp login notion` |
-| 5 | AgentOS Rust MCP Bus | Self-test over stdio (`initialize` + `tools/list` returns 12 tools), Hermes registration | `hermes mcp add agentos-hub --command <studio> --args --mcp-stdio --vault <vault>` |
+| 5 | AgentOS Rust MCP Bus | Self-test over stdio (`initialize` + `tools/list` returns 13 tools), Hermes registration | `hermes mcp add agentos-hub --command <studio> --args --mcp-stdio --vault <vault>` |
 | 6 | IDE Fleet Connectors | `agentos-hub` in `~/.claude.json`, `~/.qoder/settings.json`, `~/.gemini/config/mcp_config.json` | `claude mcp add` and JSON merges (existing files are backed up once) |
 
 Foundations (Git, GitHub CLI, Node, user `PATH` entries for `~/.local/bin`, npm and Cargo) are checked and repaired the same way. Studio also resolves tools through the persisted user `PATH`, so a freshly installed CLI works without restarting the app.
@@ -331,6 +331,7 @@ claude mcp add agentos-hub --scope user -- /path/to/agentos-studio --mcp-stdio -
 | `remember(type, topic, content, supersedes?)` | Typed write: decision, fact, convention, episode or gotcha, with optional supersede |
 | `project_brief(repo)` | One page: purpose, stack, commands, open tasks, last five decisions, gotchas |
 | `whoami()` | Which agent this hub session belongs to, and whether it is verified or read-only |
+| `ask_agent(to, question, context?, mission_id?, timeout?)` | Run one short headless turn on another agent (Hermes, Claude Code, Antigravity) and return its answer; logged on the mission |
 | `handoff(to, mission_id, summary, next_step, files?, questions?)` | Pass the running mission you hold to another agent with a packet Studio assembles (brief, acceptance, diff so far, failing checks, recall); the receiver starts in the same worktree |
 | `agents(name?, refresh?)` | The agent registry: how each agent starts, strengths, tools, cost model, live quota headroom, measured outcomes and health. See [docs/AGENTS.md](docs/AGENTS.md) |
 

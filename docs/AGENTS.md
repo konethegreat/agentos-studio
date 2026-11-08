@@ -45,3 +45,27 @@ logged. Only the agent holding a running mission can hand it off, never to itsel
 After a handoff the sender stops; it does not call `complete_task`.
 
 Verified by `tests/live_handoff.rs` (sandbox repository, temporary bus).
+
+## Asking another agent
+
+`ask_agent(to, question, context?, mission_id?, timeout?)` runs one short headless turn on the target
+agent and returns its final answer to the caller:
+
+| Target | Turn |
+|---|---|
+| `hermes` | `hermes chat -Q --oneshot --max-turns 12 --query-file <prompt> --in <folder>` |
+| `claude-code` | `claude -p --output-format json` with only read tools (`Read`, `Grep`, `Glob`) and the hub's `recall`, `project_brief`, `search_shared_memory` |
+| `antigravity` | `agy` with one stream-json line and only `mcp(agentos-hub/*)` allowed |
+
+The target runs in the mission's worktree when `mission_id` is given, else in its repository, else in
+Studio's own `asks` folder; never in the home folder. The prompt tells it not to edit, commit or call
+`ask_agent`, `handoff`, `claim_task` or `complete_task`. While an agent answers, kv
+`ask.busy.<agent>` holds a deadline and that agent's own asks are refused, so two agents cannot ask
+each other in a loop (MCP clients do not pass their environment to the hub, so the guard lives in
+`studio.db`). Qoder is IDE only and cannot be asked. The timeout defaults to 120 seconds (10 to 600).
+
+Every ask and every answer (or failure) is a row in the exchange log with the duration; a metered
+Hermes answer adds its cost to the mission's spend.
+
+Verified by `tests/live_ask.rs`: Claude Code asks Hermes and Hermes asks Claude Code in the sandbox
+repository, and the Hermes sessions the asks created are deleted afterwards.
