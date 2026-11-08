@@ -699,11 +699,91 @@ pub fn sync_server_to_agents(name: &str, targets: &[String]) -> Result<Vec<Agent
 /// (`--mcp-stdio --vault <vault>`). Sessions already running keep the binary they started with.
 pub fn cutover_agentos_hub(vault: &Path) -> Result<Vec<AgentOutcome>> {
     let exe = stage_hub_binary()?.display().to_string();
-    let spec = agentos_hub_spec(&exe, vault);
-    add_mcp_server(
-        &spec,
-        &AGENTS.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-    )
+    let sources = all_sources();
+    let mut out = Vec::new();
+    for agent in AGENTS {
+        // Keep each agent's own environment (its hub identity token among it).
+        let mut spec = agentos_hub_spec(&exe, vault);
+        if let Some(d) = sources.get(agent).and_then(|m| m.get("agentos-hub")) {
+            spec.env_vars = d.env.clone();
+        }
+        out.extend(add_mcp_server(&spec, &[agent.to_string()])?);
+    }
+    // A new registration has no token yet: give it one now, not at the next start.
+    out.extend(provision_hub_tokens());
+    Ok(out)
+}
+
+/// Give every agent that has an agentos-hub entry its own identity token, unless its entry already
+/// carries a valid one. The token is written into the entry (Hermes through `hermes config set`,
+/// Claude Code through `claude mcp`, Qoder and Antigravity in their JSON) and only its hash is
+/// kept. Outcomes never contain the token.
+pub fn provision_hub_tokens() -> Vec<AgentOutcome> {
+    use crate::hub_identity as id;
+    let sources = all_sources();
+    let mut out = Vec::new();
+    for agent in id::AGENTS {
+        let Some(def) = sources.get(agent).and_then(|m| m.get("agentos-hub")) else {
+            continue;
+        };
+        let valid = def
+            .env
+            .get(id::ENV)
+            .and_then(|t| id::agent_for(t))
+            .is_some_and(|a| a == agent);
+        if valid {
+            continue;
+        }
+        let token = id::generate();
+        let r = set_hub_token(agent, def, &token).and_then(|_| id::store(agent, &token));
+        out.push(outcome(
+            agent,
+            r.map(|_| format!("{agent} has its own agentos-hub identity")),
+        ));
+    }
+    out
+}
+
+fn set_hub_token(agent: &str, def: &ServerDef, token: &str) -> Result<()> {
+    let key = crate::hub_identity::ENV;
+    match agent {
+        "hermes" => {
+            let path = format!("mcp_servers.agentos-hub.env.{key}");
+            // Hermes masks the value in its own output; never echo ours.
+            cli("hermes", &["config", "set", &path, token], None, 60)
+                .map(|_| ())
+                .map_err(|_| anyhow!("hermes config set for the agentos-hub identity failed"))
+        }
+        "claude-code" => {
+            let mut env = def.env.clone();
+            env.insert(key.into(), token.into());
+            let spec = ServerSpec {
+                name: "agentos-hub".into(),
+                transport: "stdio".into(),
+                command_or_url: def.command.clone().unwrap_or_default(),
+                args: def.args.clone(),
+                env_vars: env,
+                auth: None,
+            };
+            claude_upsert(&spec, true)
+                .map(|_| ())
+                .map_err(|_| anyhow!("claude mcp add for the agentos-hub identity failed"))
+        }
+        other => {
+            let path = agent_file(other).ok_or_else(|| anyhow!("no config file for {other}"))?;
+            let mut doc = read_json(&path);
+            let entry = doc
+                .get_mut("mcpServers")
+                .and_then(|m| m.get_mut("agentos-hub"))
+                .filter(|e| e.is_object())
+                .ok_or_else(|| anyhow!("{other} has no agentos-hub entry"))?;
+            if !entry.get("env").is_some_and(Value::is_object) {
+                entry["env"] = json!({});
+            }
+            entry["env"][key] = json!(token);
+            write_json_preserving(&path, &doc)
+        }
+    }
 }
 
 /// Agents whose agentos-hub is a Studio-staged hub (under `root`) but not `want`: what an app
@@ -1137,7 +1217,7 @@ pub fn catalog(vault: &Path) -> Vec<CatalogEntry> {
             id: "agentos-hub",
             name: "AgentOS-Hub (Rust)",
             description:
-                "The native Rust Agent Bus, typed shared memory and ranked recall: 9 tools over your Obsidian vault.",
+                "The native Rust Agent Bus, typed shared memory, ranked recall and agent identity: 10 tools over your Obsidian vault.",
             transport: "stdio",
             command_or_url: exe,
             args: vec![

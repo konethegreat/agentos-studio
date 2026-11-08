@@ -7,7 +7,7 @@ use agentos_studio_lib::mcp_manager::{probe_stdio, ServerDef};
 use agentos_studio_lib::vault::Vault;
 
 #[test]
-fn native_probe_lists_all_nine_hub_tools() {
+fn native_probe_lists_all_ten_hub_tools() {
     let exe = PathBuf::from(env!("CARGO_BIN_EXE_agentos-studio"));
     let d = tempfile::tempdir().unwrap();
     Vault::new(d.path()).scaffold().unwrap();
@@ -25,7 +25,7 @@ fn native_probe_lists_all_nine_hub_tools() {
     let r = probe_stdio("agentos-hub", &def, Duration::from_secs(30)).unwrap();
     assert!(r.ok);
     assert_eq!(r.server_name, "AgentOS-Hub");
-    assert_eq!(r.tools.len(), 9);
+    assert_eq!(r.tools.len(), 10);
     for name in [
         "recall",
         "remember",
