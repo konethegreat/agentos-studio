@@ -160,8 +160,12 @@ pub fn discard(repo_dir: &Path, id: &str) -> Result<()> {
     let Some(branch) = recorded_branch(id) else {
         return Ok(());
     };
-    remove(repo_dir, id)?;
+    // A worktree folder that is briefly held (a worker still exiting) must not leak the branches:
+    // record the failure and still delete the local and remote branch.
     let mut errors = Vec::new();
+    if let Err(e) = remove(repo_dir, id) {
+        errors.push(e.to_string());
+    }
     if git(repo_dir, &["rev-parse", "--verify", "--quiet", &branch]).is_ok() {
         if let Err(e) = git(repo_dir, &["branch", "-D", &branch]) {
             errors.push(e.to_string());
