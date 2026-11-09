@@ -311,9 +311,10 @@ job agree. The turn is injected (`run_with`), so every write path is unit tested
 The audit runs on demand from the Brain Quality panel and headlessly:
 `agentos-studio.exe --memory-quality --vault <vault>` (add `--dry-run` to print changes without
 writing). "Schedule weekly check" writes `agentos-memory-quality.py` under the Hermes scripts
-folder and creates `0 6 * * 1 --name agentos-memory-quality --no-agent --script <path>` behind the
-`hermes.cron.change` permission. The live check (`tests/live_memory_quality.rs`) is ignored by
-default.
+folder and creates `0 6 * * 1 --name agentos-memory-quality --no-agent --script
+agentos-memory-quality.py` behind the `hermes.cron.change` permission; the job names the script by
+file name alone, because Hermes resolves it inside the profile's scripts folder and rejects an
+absolute path. The live check (`tests/live_memory_quality.rs`) is ignored by default.
 
 ## Skills from success
 
