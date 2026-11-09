@@ -395,6 +395,16 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   `03_Memory`, an outcome line in `01_Projects/<repo>.md`, the Notion goals page republished
   (one line per goal; the goals database with a Decision column is Phase F) and the report sent
   to the messaging target. A failing check gets one fix mission; a second failure escalates.
+- **Digest and the phone:** a morning and evening digest (kv `digest.times`, default 07:30 and
+  18:00, set in Work: Goals, with Send now) leads with what waits on the owner, then what
+  finished, metered spend, what runs, flaky tests and late goals. It is written to
+  `04_Agent_Engine/digests/`, published as the Notion "AgentOS digest" page and sent through
+  `hermes send` to the messaging target set in Providers: Hermes. Escalations go to the same
+  target with a four-digit code; a reply such as `E-3 4821 merge` is read from the Hermes
+  gateway's session store (read only) and applied when the code matches. Verified in Hermes
+  v0.23.0: the gateway's own approvals already reach a paired platform with `/approve` buttons
+  or text. On this machine WhatsApp is enabled but not paired yet, so phone delivery waits for
+  the owner (bus TASK-015).
 
 ## v0.13.0: memory that gets better with every mission (shipped)
 

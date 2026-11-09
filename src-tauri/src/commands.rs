@@ -1507,3 +1507,27 @@ pub fn escalation_settings() -> serde_json::Value {
 pub async fn set_escalation_timeout(minutes: i64) -> CmdResult<()> {
     blocking(move || crate::escalation::set_timeout_minutes(minutes)).await
 }
+
+/// Write, publish and send a digest now. Returns the vault path of the note.
+#[tauri::command]
+pub async fn digest_now(state: State<'_, AppState>) -> CmdResult<String> {
+    let v = current_vault(&state);
+    blocking(move || crate::digest::send_now(&v)).await
+}
+
+#[tauri::command]
+pub fn digest_settings() -> serde_json::Value {
+    let times: Vec<String> = crate::digest::times()
+        .iter()
+        .map(|t| t.format("%H:%M").to_string())
+        .collect();
+    serde_json::json!({
+        "times": times.join(","),
+        "notify_target": crate::hermes_surfaces::notify_target(),
+    })
+}
+
+#[tauri::command]
+pub async fn set_digest_times(times: String) -> CmdResult<()> {
+    blocking(move || crate::digest::set_times(&times)).await
+}

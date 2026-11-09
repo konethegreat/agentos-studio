@@ -276,7 +276,9 @@ pub fn tick(v: &Vault) -> TickReport {
         }
     }
 
-    // 1c. Merge what the autonomy level allows, raise the escalation list, apply answers.
+    // 1c. Answers from the phone first, so this pass applies them.
+    let _ = crate::digest::poll_phone_replies();
+    // Merge what the autonomy level allows, raise the escalation list, apply answers.
     let gp = crate::goal_loop::pass(v, report.enabled);
     report.merged = gp.merged;
     report.escalated = gp.escalated;
@@ -455,6 +457,8 @@ pub fn start_scheduler(vault_root: std::path::PathBuf) {
             std::thread::sleep(std::time::Duration::from_secs(60));
             // An active goal is the owner's instruction to run its missions, so the pass runs
             // for it even with Automations off; the tick itself starts no standalone mission then.
+            // The digest goes out at its times whatever else is on.
+            let _ = crate::digest::tick(&Vault::new(&vault_root));
             let goals_active = crate::goals::any_active();
             if !enabled() && !goals_active {
                 keep_awake(false);
