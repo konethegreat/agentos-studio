@@ -98,11 +98,16 @@ Grab the latest installer from [Releases](https://github.com/konethegreat/agento
 
 | Platform | File |
 |---|---|
-| Windows 10 / 11 | `AgentOS Studio_<version>_x64-setup.exe` (NSIS) or `_x64_en-US.msi` |
+| Windows 10 / 11 | `AgentOS.Studio_<version>_x64-setup.exe` (NSIS) or `_x64_en-US.msi` |
 | macOS | `_aarch64.dmg` (Apple Silicon) or `_x64.dmg` (Intel) |
 | Linux | `.AppImage`, `.deb` or `.rpm` |
 
-Builds are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper ask for confirmation on first launch. Every `v*` tag is built for all three platforms by [`.github/workflows/release.yml`](.github/workflows/release.yml).
+Builds are not code-signed with a paid certificate, so Windows SmartScreen asks for confirmation
+on the first launch: click **More info**, then **Run anyway**. Every release also attaches
+`SHA256SUMS-<platform>.txt` so you can compare the hash of the file you downloaded.
+[docs/INSTALL.md](docs/INSTALL.md) has the exact clicks for SmartScreen and Gatekeeper, the
+Smart App Control note, and the hash commands for each platform. Every `v*` tag is built for all
+three platforms by [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 ## Build from source
 
