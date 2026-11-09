@@ -345,7 +345,7 @@ Phase B of the 2026-11-08 master brief. The bus was wired to four agents but onl
   `tests/live_hub_identity.rs`, and the phase check `tests/live_phase_b_done.rs` against the
   running release build.
 
-## v0.14.0: goal in, finished work out (in progress)
+## v0.14.0: goal in, finished work out (shipped; the phone half of the done check is pending)
 
 Phase D of the 2026-11-08 master brief, built by Hermes while Qoder prepares Phase H and Phase G
 items 1 and 2 (`03_Memory/Phase_D_H_Coordination.md`). The owner states an outcome; Studio plans,
@@ -410,6 +410,30 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   `fleet.paused`), and Hermes' own `hermes pause` stops its cron, kanban and new gateway work.
   Running work finishes and still reaches review; escalations still expire to their safe answer
   and are applied on resume. Resume reverses both.
+- **Done check, part 1 (passed live, #118):** `tests/live_planner.rs`
+  `phase_d_done_a_goal_goes_from_one_sentence_to_merged_verified_and_reported` against the running
+  release build. The test only creates the goal at Ask on risk from one sentence ("Add a probe()
+  function to lib.js that returns { ok: true }, with a test in test.js, and document it in
+  README.md") and plans it, as the Goals screen does. Hermes' decomposer made two missions, Hermes
+  worked them, Antigravity reviewed them, Studio merged them (agentos-sandbox-1 #13 and #14), ran
+  the three done checks on the merged default branch (`npm test`, a `node -e` probe check,
+  `README.md` present) and wrote the report: 11 minutes, $0.00 metered, no escalation and nothing
+  answered in Studio. The merges were reverted afterwards. The first runs found a real bug, fixed
+  in the same PR: done-check commands with inner quotes broke under `cmd /C`.
+- **Done check, part 2 (pending):** an escalation reaches the phone and the answer is honoured
+  (`phase_d_done_an_escalation_reaches_the_phone_and_the_answer_is_honoured`, ready). It waits for
+  the owner to pair WhatsApp in Hermes (bus TASK-015).
+- Known issue: `hermes verify` falls back to the owner's checkout when a mission's worktree is gone
+  (#117, since 0.10).
+
+Also in this release, built by Qoder in parallel (Phase H preparation and Phase G item 1):
+
+- First run without a fleet (#100), install docs with SHA-256 checksums for every installer (#102;
+  the checksum file now lists the names GitHub gives the assets, with dots for spaces), and the
+  getting-started, glossary, troubleshooting and privacy pages (#104).
+- Tool permissions per agent and per project (#116), described under v0.16.0 below.
+- The two-job build cap for this 11.4 GB machine (#108): `.cargo/config.toml` `jobs = 2`, line
+  tables only for dev and test builds.
 
 ## v0.16.0: safety for unattended work (in progress)
 
