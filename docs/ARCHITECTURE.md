@@ -114,7 +114,7 @@ the first paint is never competing with a full probe.
 | `updates.rs` (new) | Version detection for Hermes, Claude Code and Studio; changelog extraction; skip and snooze state; OS notifications; backup, update and rollback runners. |
 | `org.rs` (new) | `studio.db`: workspaces, nested folders, chat placement, pins, tags, attachments, archive; links folders to Hermes projects through `hermes project`. |
 | `github.rs` (new) | Typed wrappers over `gh ... --json` for auth, repos, branches, commits, PRs (diff, checks, review, merge, create), issues (create, comment, close) and Actions runs (logs, rerun). |
-| `permissions.rs` (new) | Per-action policy (`allow`, `ask`, `deny`) enforced in Rust before any sensitive command runs, the append-only audit log, and scoped MCP tool policies per agent and per project (repo > agent > global, stored in `kv` under `perm.`). |
+| `permissions.rs` (new) | Per-action policy (`allow`, `ask`, `deny`) enforced in Rust before any sensitive command runs, the append-only audit log, scoped MCP tool policies per agent and per project (repo > agent > global, stored in `kv` under `perm.`), and the unattended worker profile (environment allowlist and the guarantees Safety shows). |
 | `hermes_engine.rs` | Heartbeat, provider switchboard, model discovery, sessions in `state.db`. |
 | `mcp_manager.rs` | MCP registry across four agents, native MCP client, catalog. |
 | `cli_runner.rs` | One-shot command runner (kept for quick actions with captured output). |
@@ -168,6 +168,21 @@ the next scope down. Every change is audited as `tool_policy.set` with the targe
 `<scope>:<key>:agentos-hub/<tool>` and the detail `policy = allow|ask|deny|inherit`. The Safety view
 lists the real hub tools, the registered hub agents and the unarchived projects, and shows per tool
 whether the scope inherits, or sets its own policy.
+
+### Unattended profile
+
+A mission worker runs with nobody watching, so it gets less than a session a person started.
+`permissions::unattended_env(base, repo, vault)` rebuilds the environment from a fixed allowlist
+(PATH, temp folders, profile folders and the Windows basics), adds `AGENTOS_REPO` when the mission
+names a project, always adds `AGENTOS_UNATTENDED=1` and `AGENTOS_VAULT`, and drops everything else.
+API keys, tokens and any other variable the desktop app inherited never reach a headless agent; an
+agent authenticates through its own config or the OS keychain.
+
+Safety shows the profile as one row per guarantee with the side that holds it: `enforced` (live in
+this build), `ready` (the helper ships here and takes effect when the Hermes worker calls it, which
+is a REQUEST on the coordination note) and `hermes` (depends on the Hermes runtime, for example
+worktree-only starts, egress rules and `hermes secrets`). The card also lists the allowlist, so the
+rule is visible rather than implied.
 
 ### Who owns what with Hermes
 

@@ -395,6 +395,7 @@ pub fn run_gui() {
             commands::set_tool_policy,
             commands::tool_policy_model,
             commands::set_scoped_tool_policy,
+            commands::unattended_profile,
             commands::hub_tools,
             commands::studio_update_check,
             commands::studio_update_install,

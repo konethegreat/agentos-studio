@@ -839,6 +839,12 @@ pub fn set_scoped_tool_policy(
         .map_err(|e| e.to_string())
 }
 
+/// The unattended worker profile: what it inherits, and which guarantees are live. Read only.
+#[tauri::command]
+pub fn unattended_profile() -> crate::permissions::UnattendedProfile {
+    crate::permissions::unattended_profile()
+}
+
 /// The tools the hub exposes, so the policy UI lists exactly what exists.
 #[tauri::command]
 pub fn hub_tools() -> Vec<String> {

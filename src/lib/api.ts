@@ -786,6 +786,19 @@ export interface ToolPolicyModel {
   scoped: ScopedToolPolicy[];
 }
 
+export interface UnattendedGuarantee {
+  id: string;
+  title: string;
+  detail: string;
+  /** `enforced` is live now, `ready` ships here and waits on the worker, `hermes` is Hermes-side. */
+  status: "enforced" | "ready" | "hermes";
+}
+
+export interface UnattendedProfile {
+  env_allowlist: string[];
+  guarantees: UnattendedGuarantee[];
+}
+
 export const api = {
   getSettings: () => invoke<SettingsView>("get_settings"),
   saveSettings: (vault: string, scanRoots: string[]) => invoke<SettingsView>("save_settings", { vault, scanRoots }),
@@ -934,6 +947,7 @@ export const api = {
     tool: string,
     policy: "allow" | "ask" | "deny" | null,
   ) => invoke<void>("set_scoped_tool_policy", { scope, key, server, tool, policy }),
+  unattendedProfile: () => invoke<UnattendedProfile>("unattended_profile"),
   hubTools: () => invoke<string[]>("hub_tools"),
 
   offlineStatus: () =>
