@@ -207,7 +207,7 @@ export function Memory() {
           <button
             onClick={() => void publish()}
             disabled={busy}
-            title={notion?.connected ? "Publish the digest, tasks, missions and fleet" : "No NOTION_API_KEY set: this runs a dry run"}
+            title={notion?.connected ? "Publish the decision summary, the latest digest, tasks, missions, fleet and goals pages" : "No NOTION_API_KEY set: this runs a dry run"}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-slate-300 ring-1 ring-line hover:bg-white/[0.04] disabled:opacity-50"
           >
             <Upload className="size-3.5" /> {notion?.connected ? "Publish" : "Dry run"}

@@ -105,6 +105,23 @@ fn goals_round_trip_through_notion() {
         .as_str()
         .unwrap_or("")
         .to_string();
+    // A lost ID write-back: the row looks like a fresh proposal again. The inbound ledger knows
+    // this page already produced a goal, so the sync repairs the row instead of creating another.
+    notion::request(
+        "PATCH",
+        &format!("/pages/{pid}"),
+        &tok,
+        Some(&json!({ "properties": { "ID": { "rich_text": [] } } })),
+    )
+    .unwrap();
+    let goals_before = goals::list(50).unwrap().len();
+    let r4b = sync(&v, "sync 4b");
+    let goals_after = goals::list(50).unwrap().len();
+    let repaired = notion::request("GET", &format!("/pages/{pid}"), &tok, None).unwrap();
+    let repaired_id = repaired["properties"]["ID"]["rich_text"][0]["plain_text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
     let note_written = notion::request("GET", &format!("/pages/{page}"), &tok, None).unwrap();
     let decision_cleared = note_written["properties"]["Decision"]["select"].is_null();
 
@@ -117,6 +134,7 @@ fn goals_round_trip_through_notion() {
     decide("merge");
     let r6 = sync(&v, "sync 6");
     let answered = escalation::get(&e.id).unwrap().unwrap();
+    let (_, ledger_in) = notion::ledger_counts();
     let r7 = sync(&v, "sync 7");
 
     // A deleted goal's row is archived.
@@ -156,6 +174,16 @@ fn goals_round_trip_through_notion() {
     assert!(proposed.note.contains("not a trusted author"));
     assert_eq!(r4.proposed, vec![proposed.id.clone()]);
     assert_eq!(r4.held_at_watch, vec![proposed.id.clone()]);
+    assert!(r4b.proposed.is_empty(), "{:?}", r4b.proposed);
+    assert_eq!(
+        goals_before, goals_after,
+        "no second goal from the same row"
+    );
+    assert_eq!(repaired_id, proposed.id, "the lost ID was written back");
+    assert!(
+        ledger_in >= 2,
+        "the proposal and the Decision are in the inbound ledger"
+    );
     assert_eq!(
         written_id, proposed.id,
         "the ID was written back to the row"

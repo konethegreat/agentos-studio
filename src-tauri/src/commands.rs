@@ -918,6 +918,10 @@ pub fn notion_status() -> serde_json::Value {
         "has_parent": crate::notion::setting(crate::notion::KV_PARENT).is_some()
             || std::env::var("NOTION_PARENT_PAGE").is_ok(),
         "token_var": "NOTION_API_KEY",
+        "missions_board": crate::notion::setting(crate::notion_sync::KV_DB).is_some(),
+        "goals_board": crate::notion::setting(crate::notion_goals::KV_DB).is_some(),
+        "ledger_out": crate::notion::ledger_counts().0,
+        "ledger_in": crate::notion::ledger_counts().1,
     })
 }
 
