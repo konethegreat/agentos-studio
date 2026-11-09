@@ -9,10 +9,15 @@
 //!
 //! With few samples the score is smoothed toward the middle, because one approval out of one is not
 //! evidence. The smoothing falls away as samples accumulate.
+//!
+//! Approval history alone is not enough to move a default: the candidate model also has to beat the
+//! original run on at least three eval replays of its own. The replays are the same repository tests
+//! and reviewer verdict scored by the harness in `eval.rs`.
 
 use anyhow::Result;
 use serde::Serialize;
 
+use crate::eval::EvalSummary;
 use crate::missions;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
@@ -209,6 +214,41 @@ pub fn pick(
     Ok(best.clone())
 }
 
+/// Replays that must beat their original run before a model may become the default.
+pub const MIN_EVAL_REPLAYS: usize = 3;
+
+/// How many eval notes for this model scored better than the mission they replayed. Level and
+/// losing replays are not evidence that the model is an improvement. Pure.
+pub fn improving_replays(model: &str, evals: &[EvalSummary]) -> usize {
+    evals
+        .iter()
+        .filter(|e| e.model.trim() == model.trim() && e.score > e.original_score)
+        .count()
+}
+
+/// Hold a pick back until the harness has replays of that model that beat the original. Pure: the
+/// notes are passed in, so this stays testable in a temporary vault.
+pub fn with_eval_evidence(
+    s: Suggestion,
+    evals: &[EvalSummary],
+) -> std::result::Result<Suggestion, String> {
+    let n = improving_replays(&s.model, evals);
+    if n < MIN_EVAL_REPLAYS {
+        return Err(format!(
+            "{} has {n} improving eval replays, needs {MIN_EVAL_REPLAYS}",
+            s.model
+        ));
+    }
+    Ok(s)
+}
+
+/// The eval notes in the configured vault, newest first. A missing or unreadable vault means no
+/// evidence, which declines the pick instead of failing mission creation.
+fn eval_notes() -> Vec<EvalSummary> {
+    let v = crate::vault::Vault::new(crate::settings::vault_path());
+    crate::eval::list(&v).unwrap_or_default()
+}
+
 /// Where a new mission's provider and model come from.
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
 pub struct Pin {
@@ -301,13 +341,16 @@ pub fn create_mission(
     let policy =
         crate::review_agent::project_dir(repo).and_then(|d| crate::routing::defaults_for(&d, role));
     // Always judge Hermes missions, so the shadow log exists even when the router may not act.
+    // Approval history alone does not move a default: the pick also needs eval replays that beat
+    // the original run.
     let judged = (agent.trim() == "hermes")
         .then(|| {
             missions::list(500)
                 .map(|all| pick(&all, role, chrono::Utc::now().timestamp()))
                 .ok()
         })
-        .flatten();
+        .flatten()
+        .map(|r| r.and_then(|s| with_eval_evidence(s, &eval_notes())));
     let router = judged.clone().filter(|_| auto_enabled());
     let mut pin = resolve_pin(provider, model, policy.as_ref(), router);
     pin.shadow = judged.as_ref().map(shadow_line);
@@ -578,5 +621,61 @@ mod tests {
     fn empty_history_is_neutral_not_confident() {
         let s = score(0, 0, 0.0);
         assert!((s - 50.0).abs() < 1.0, "got {s}");
+    }
+
+    fn eval(model: &str, score: u32, original: u32) -> crate::eval::EvalSummary {
+        crate::eval::EvalSummary {
+            file: format!("{model}-{score}-{original}.md"),
+            date: "2026-11-09".into(),
+            mission: "M".into(),
+            repo: "r".into(),
+            agent: "claude-code".into(),
+            model: model.into(),
+            reviewer: "hermes".into(),
+            score,
+            original_score: original,
+            verdict: "approve".into(),
+            tests: "pass".into(),
+            cost_usd: 0.0,
+            duration_s: 1,
+            comparison: String::new(),
+        }
+    }
+
+    fn strong_history() -> Suggestion {
+        Suggestion {
+            role: "implementer".into(),
+            provider: "openrouter".into(),
+            model: "a".into(),
+            attempts: 9,
+            approvals: 8,
+            score: 80.0,
+            avg_cost_usd: 0.0,
+            reason: "8/9 approved".into(),
+        }
+    }
+
+    #[test]
+    fn a_default_needs_three_replays_that_beat_the_original() {
+        let level_or_worse = vec![eval("a", 50, 50), eval("a", 40, 90), eval("b", 90, 10)];
+        assert_eq!(
+            improving_replays("a", &level_or_worse),
+            0,
+            "level and worse replays do not count, and another model's replay does not count"
+        );
+        let few = vec![eval("a", 100, 20), eval("a", 90, 30)];
+        let err = with_eval_evidence(strong_history(), &few).unwrap_err();
+        assert!(err.contains("2 improving eval replays, needs 3"), "{err}");
+        let enough = vec![
+            eval("a", 100, 20),
+            eval("a", 90, 30),
+            eval("b", 90, 10),
+            eval("a", 80, 30),
+        ];
+        assert_eq!(improving_replays("a", &enough), 3);
+        assert_eq!(
+            with_eval_evidence(strong_history(), &enough).unwrap().model,
+            "a"
+        );
     }
 }

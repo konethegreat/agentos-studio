@@ -390,7 +390,8 @@ original score comes from the same rubric applied to the mission's `hermes verif
 notes and starts a replay behind the `eval.run` permission (default ask). The memory index skips
 `03_Memory/evals`, so run records never mix with memory notes.
 
-The router rule from the brief (a default changes only after three replays show an improvement) edits
-the Phase C router, so it lands as a separate PR after v0.12.0. The live check (`tests/live_eval.rs`)
-is ignored by default: it replays one finished sandbox mission, asserts one note was written, and
-asserts no worktree, no local branch and no routing change remain.
+The router rule from the brief is in `router.rs`: a model may become the default only when at least
+three of its own eval notes scored better than the mission they replayed. Level or losing replays do
+not count, and the shadow log records the decline when the evidence is short. The live check
+(`tests/live_eval.rs`) is ignored by default: it replays one finished sandbox mission, asserts one
+note was written, and asserts no worktree, no local branch and no routing change remain.

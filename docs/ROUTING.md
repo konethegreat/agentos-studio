@@ -51,7 +51,9 @@ When a mission is created, its provider and model come from the first of these t
    router scores each provider and model per role from decided missions: smoothed approval rate
    minus a small cost penalty. Only the role's own Hermes missions decided in the last 60 days
    count. It pins only when the role has at least 5 of them, the best candidate has at least 5,
-   and that candidate leads the next one by 5 points; otherwise it declines and says why.
+   and that candidate leads the next one by 5 points; otherwise it declines and says why. A model
+   also needs at least three of its own eval notes that scored better than the mission they
+   replayed; level or losing replays do not count.
 4. **Inherit:** Hermes' active model.
 
 Every new Hermes mission also records what the router would have chosen (or why it declined),
