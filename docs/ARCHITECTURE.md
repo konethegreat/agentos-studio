@@ -127,6 +127,7 @@ the first paint is never competing with a full probe.
 | `council.rs`, `assign.rs` | Design-decision councils on different providers with an ADR pull request, and quota-aware assignment of `auto` missions. |
 | `timeline.rs` | Read-only run timeline per mission from the exchange log, bus, worker logs, kanban, `state.db` and the memory ledger. |
 | `goals.rs` | Goals (schema 10): outcome, repositories, runnable done checks, metered budget, deadline, autonomy level and the per-repository default; the vault note `01_Projects/Goals/<id>.md`. Design in [GOALS.md](GOALS.md). |
+| `planner.rs` | Splits a goal with `hermes kanban decompose --json` against a private `HERMES_KANBAN_DB` (no dispatcher scans it), mirrors the tasks as `auto` missions under the goal with their dependencies, Watch plan approval, and the scheduler's start rule for goal missions. |
 
 ### Approval flow
 

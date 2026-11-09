@@ -356,6 +356,13 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   (command, URL, file), a metered budget, a deadline and an autonomy level (Watch, Ask on risk,
   Full; per repository default). Stored in `studio.db` schema 10 with a vault note per goal, shown
   in Work: Goals.
+- **Planner:** a new goal is split by Hermes' own decomposer (`hermes kanban decompose --json`)
+  into missions under the goal, each with its spec, acceptance criteria and dependencies (kv
+  `mission.after.<id>`), agent `auto`. It runs against a private kanban database so nothing in a
+  plan can start as a Hermes worker outside Studio's gate. At Watch the plan waits for Approve
+  plan; otherwise the goal runs at once, and the scheduler starts a goal's missions once their
+  dependencies are done (Watch: each waits for Start). Verified live: `tests/live_planner.rs`
+  (2 missions in 39 s, no Hermes board touched).
 
 ## v0.13.0: memory that gets better with every mission (shipped)
 

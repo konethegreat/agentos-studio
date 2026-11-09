@@ -267,14 +267,33 @@ pub fn tick(v: &Vault) -> TickReport {
     let running: Vec<&Mission> = all.iter().filter(|m| m.status == "running").collect();
     report.running = running.len();
 
-    // 2. Start what can start.
-    if report.enabled {
+    // 2. Start what can start. Standalone missions need Automations on. A goal's missions run
+    // while their goal runs (creating a goal at Ask on risk or Full is the instruction to run it),
+    // never at Watch, and only once the missions they depend on are done.
+    {
         let now = chrono::Utc::now().timestamp();
+        let mut goal_cache: std::collections::HashMap<String, Option<crate::goals::Goal>> =
+            std::collections::HashMap::new();
         // A mission the router deferred to a quota reset waits; it does not take a slot.
         let queued: Vec<&Mission> = all
             .iter()
             .filter(|m| m.status == "queued")
             .filter(|m| crate::assign::deferred_until(&m.id).map_or(true, |t| t <= now))
+            .filter(|m| match crate::goals::goal_of(&m.id) {
+                None => report.enabled,
+                Some(gid) => {
+                    let g = goal_cache
+                        .entry(gid.clone())
+                        .or_insert_with(|| crate::goals::get(&gid).ok().flatten());
+                    g.as_ref().is_some_and(|g| {
+                        crate::planner::goal_mission_startable(
+                            g,
+                            &crate::planner::depends_on(&m.id),
+                            &all,
+                        )
+                    })
+                }
+            })
             .collect();
         for id in startable(
             &queued,
