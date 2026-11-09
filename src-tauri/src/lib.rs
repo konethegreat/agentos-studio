@@ -53,6 +53,7 @@ pub mod router;
 pub mod routing;
 pub mod settings;
 pub mod single;
+pub mod skill_proposals;
 pub mod skills;
 pub mod store;
 pub mod stuck;
@@ -381,6 +382,9 @@ pub fn run_gui() {
             commands::automation_status,
             commands::set_automation,
             commands::automation_tick,
+            commands::skill_proposals,
+            commands::skill_proposal_approve,
+            commands::skill_proposal_dismiss,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")

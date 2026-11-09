@@ -134,3 +134,11 @@ not because code exists.
 | Resolve two notes that disagree | a person notices in review | one strict turn per pair chooses the current note, and the other is marked superseded |
 | Keep the history | edit or delete by hand | supersede flips frontmatter only; the old note stays on disk and ranks last in recall |
 | Run it on a schedule | not offered | a weekly no-agent cron job for the stale half, and a Brain Quality panel for a run on demand |
+
+## Skills from success (v0.13.0)
+
+| Capability | Studio | Notes |
+|---|---|---|
+| Skill proposals from finished work | yes | three approved missions of one role and task class; the draft carries the ledger tool sequence, pitfalls and the missions as evidence |
+| Create a skill from a local draft | yes | `hermes skills install` takes a registry identifier or URL only, so approval asks Hermes to create the skill from the draft and confirms it under the profile's skills folder |
+| Dismiss a proposal for good | yes | `skills.dismissed.<hash>` in `studio.db`; the same group is not proposed again |

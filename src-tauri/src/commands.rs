@@ -1265,3 +1265,45 @@ pub async fn mission_timeline(
 pub async fn timeline_missions(limit: Option<usize>) -> CmdResult<Vec<crate::timeline::Summary>> {
     blocking(move || crate::timeline::summaries(limit.unwrap_or(100))).await
 }
+
+/// Skill proposals from approved missions that repeat one role and one task class.
+#[tauri::command]
+pub async fn skill_proposals(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<crate::skill_proposals::Proposal>> {
+    let v = current_vault(&state);
+    blocking(move || crate::skill_proposals::proposals(&v)).await
+}
+
+/// Create one proposed skill through a Hermes turn. The owner approves every proposal.
+#[tauri::command]
+pub async fn skill_proposal_approve(
+    state: State<'_, AppState>,
+    hash: String,
+    approved: Option<bool>,
+) -> CmdResult<String> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let p = crate::skill_proposals::proposals(&v)?
+            .into_iter()
+            .find(|p| p.hash == hash)
+            .ok_or_else(|| anyhow::anyhow!("no skill proposal {hash}"))?;
+        crate::permissions::run_guarded(
+            "hermes.skills.create",
+            &p.name,
+            &format!(
+                "Create the Hermes skill '{}' from a Studio draft (one Hermes turn)",
+                p.name
+            ),
+            approved.unwrap_or(false),
+            || crate::skill_proposals::approve(&p, None),
+        )
+    })
+    .await
+}
+
+/// Dismiss a proposal so the same group of missions is not proposed again.
+#[tauri::command]
+pub async fn skill_proposal_dismiss(hash: String) -> CmdResult<()> {
+    blocking(move || crate::skill_proposals::dismiss(&hash)).await
+}

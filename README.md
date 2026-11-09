@@ -225,6 +225,11 @@ agentos-studio --memory-quality --vault "/path/to/your/vault"
 agentos-studio --memory-quality --vault "/path/to/your/vault" --dry-run
 ```
 
+Three approved missions that share a role and a task class also become a skill proposal. The draft
+`SKILL.md` carries the normalised procedure, steps taken from the memory ledger, pitfalls and the
+missions as evidence. Approve creates the skill through one Hermes turn, behind a permission that
+defaults to ask; Dismiss records the group so it is not proposed again.
+
 ## Navigation
 
 A five-group icon rail replaces the old twelve-item list: **Chat**, **Work** (Projects, Mission
