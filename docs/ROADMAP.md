@@ -461,8 +461,8 @@ graph that work without Studio.
   and `notion_goals.rs`, unit tested: Studio never writes a value into a Notion-owned column). The
   sync ledger now records the inbound direction too (`in` rows for proposals, Decisions, cancels
   and inbox notes), so a proposal row whose ID write-back failed is repaired instead of creating a
-  second goal or mission. Publish adds the latest morning or evening digest page; the digest and a
-  finished goal refresh the goals board. Archiving a board forgets its ledger, so a later board no
+  second goal or mission. The digest page is published without its frontmatter (and says so when
+  there is no digest yet); the digest and a finished goal refresh the goals board. Archiving a board forgets its ledger, so a later board no
   longer patches the archived rows. `notion_status` reports the ledger counts per direction.
 - **Obsidian views (F3).** `goal_views.rs`: next to each goal note, `01_Projects/Goals/<id>/`
   holds a note per mission and per decision (escalation) with path wikilinks back to the goal,
@@ -489,6 +489,9 @@ Also in this release, merged since 0.14.0:
 - Qoder, Phase H item 3: the Today home screen (#122), described under v0.17.0 below.
 - Hermes: a reused escalation id never inherits an applied marker (#123), found by the 0.14.0
   phone check.
+- One digest page: F2 had added a second "AgentOS digest" artifact next to the Phase D one, and
+  the title-keyed ledger would have rewritten the page twice on every publish (found and fixed
+  before the installed app updated).
 - Help now bundles NOTION.md and COMPUTER-USE.md; installed builds had been missing both user
   guides because bundled docs are an explicit list.
 

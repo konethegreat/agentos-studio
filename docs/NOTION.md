@@ -9,8 +9,9 @@ The vault stays the source of truth for notes; Studio stays the source of truth 
 ## Publish (out)
 
 **Publish** in Memory writes these pages under the parent page: the decision summary (the last
-seven days of `DECISION_LOG.md`), the latest morning or evening digest, task status, missions, the
-fleet and goals. Each page is tracked in a sync ledger with a content hash, so publishing
+seven days of `DECISION_LOG.md`), task status, missions, the fleet, goals and the latest morning or
+evening digest (without its frontmatter). Page titles are unique, because the ledger is keyed by
+title. Each page is tracked in a sync ledger with a content hash, so publishing
 unchanged content makes no request, and a changed page has its content replaced, not appended.
 The digest and a finished goal also publish, and refresh the goals board when it exists.
 
