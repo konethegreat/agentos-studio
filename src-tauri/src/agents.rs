@@ -219,7 +219,7 @@ pub fn parse_usage(json: &str, now: i64) -> Option<Quota> {
             w.label.to_lowercase(),
             w.resets_at
                 .as_deref()
-                .map(|r| format!(", resets {r}"))
+                .map(|r| format!(", resets {}", reset_label(r)))
                 .unwrap_or_default()
         )
     } else if let Some(usd) = remaining_usd {
@@ -486,9 +486,36 @@ pub fn cards(refresh: bool) -> Vec<AgentCard> {
         .collect()
 }
 
+/// A window reset time for people and agents: local time, short ("Sat 14 Nov 02:00"). Hermes
+/// reports RFC 3339 with fractional seconds; anything that does not parse is shown as given.
+pub fn reset_label(rfc3339: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(rfc3339.trim())
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("%a %d %b %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|_| rfc3339.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reset_times_read_as_local_short_dates() {
+        let raw = "2026-11-13T23:59:59.518000+00:00";
+        let want = chrono::DateTime::parse_from_rfc3339(raw)
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .format("%a %d %b %H:%M")
+            .to_string();
+        assert_eq!(reset_label(raw), want);
+        assert!(!reset_label(raw).contains("+00:00"));
+        assert_eq!(reset_label("soon"), "soon");
+        let q = parse_usage(USAGE, 10).unwrap();
+        assert!(!q.summary.contains("T20:50"), "{}", q.summary);
+    }
 
     const USAGE: &str = r#"{
       "provider": "claude-subscription-directsdk-experimental",
