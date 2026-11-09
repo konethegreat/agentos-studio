@@ -35,6 +35,12 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Stuck mission recovery | yes | heartbeat per running mission; 15 quiet minutes means one retry, then blocked with the reason | |
 | Agent identity on the shared bus | yes | per-agent token in each agentos-hub entry, `whoami`, agents write only as themselves, unknown callers read-only | |
 | Event-driven task pickup | yes | the vault watcher starts delegated headless work within seconds | |
+| Agent registry | yes | one card per agent with start mode, strengths, tools, cost model, quota headroom and health; the `agents` hub tool returns the same cards | |
+| Handoff between agents | yes | `handoff` hub tool; Studio builds the packet and the receiver starts in the same worktree | |
+| One agent asking another | yes | `ask_agent` hub tool: one short headless turn on Hermes, Claude Code or Antigravity, logged on the mission | Qoder when its CLI is installed |
+| Multi-agent council | yes | two or three agents on different providers, ADR as a pull request through the same review gate | |
+| Quota-aware agent assignment | yes | agent `auto`: constraints, measured success, then cost; defers instead of going metered | |
+| Run timeline across agents | yes | one mission's path from creation to merge, with replay | |
 
 ## Models
 
