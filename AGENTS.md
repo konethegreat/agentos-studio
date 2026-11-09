@@ -61,3 +61,20 @@ For every task:
 ### Security floor (never overridden by Law 1)
 - Never commit secrets. Reference environment variable names only. Never write secrets to the vault or Notion.
 <!-- AGENTOS:END -->
+
+## Builds on this machine
+
+This laptop has 11.4 GB of RAM, so an unconstrained Rust build pages the whole machine. These
+rules apply to every agent and every terminal in this repository:
+
+- A full run uses `-j 2`: `cargo test -j 2` and `cargo clippy --all-targets -j 2 -- -D warnings`.
+  `.cargo/config.toml` already sets `build.jobs = 2`; the flags make it explicit and cover a
+  machine where that file is missing.
+- Iteration uses a targeted suite, not the full set of test binaries: `cargo test --lib -j 2`,
+  `cargo test --test first_run -j 2`, or `cargo test --test <name> -j 2`.
+- Dev and test builds use `debug = 1` (line tables only), set in `[profile.dev]` and
+  `[profile.test]` in `src-tauri/Cargo.toml`. Release keeps its own profile.
+- Never run two cargo commands at once, and never start cargo while clippy or another agent is
+  building this repository. Wait for the running command to finish.
+- `src-tauri/tests` has one top-level file per test binary. Each one is a separate link, so a full
+  run pays for every file; that is the reason targeted suites matter here.
