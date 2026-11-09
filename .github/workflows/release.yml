@@ -28,17 +28,21 @@ jobs:
           - name: Windows x64
             os: windows-latest
             args: ""
+            slug: windows-x64
           - name: macOS Apple Silicon
             os: macos-latest
             args: "--target aarch64-apple-darwin"
             rust_targets: aarch64-apple-darwin
+            slug: macos-arm64
           - name: macOS Intel
             os: macos-latest
             args: "--target x86_64-apple-darwin"
             rust_targets: x86_64-apple-darwin
+            slug: macos-x64
           - name: Linux x64
             os: ubuntu-22.04
             args: ""
+            slug: linux-x64
     runs-on: ${{ matrix.os }}
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -92,3 +96,25 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      # A stranger can compare the installer they downloaded with this file. One file per
+      # platform so the four matrix jobs never overwrite each other on the release.
+      - name: Publish SHA-256 checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          out="SHA256SUMS-${{ matrix.slug }}.txt"
+          : > "$out"
+          find src-tauri/target -path '*/release/bundle/*' -type f \
+            \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) \
+            | sort | while IFS= read -r f; do
+                if command -v sha256sum >/dev/null 2>&1; then
+                  h=$(sha256sum "$f" | cut -d' ' -f1)
+                else
+                  h=$(shasum -a 256 "$f" | cut -d' ' -f1)
+                fi
+                printf '%s  %s\n' "$h" "$(basename "$f")" >> "$out"
+              done
+          cat "$out"
+          gh release upload "$RELEASE_TAG" "$out" --clobber
