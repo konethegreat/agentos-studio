@@ -131,6 +131,20 @@ export function Goals() {
     }
   }
 
+  async function act(id: string, what: "plan" | "approve") {
+    setBusy(true);
+    try {
+      const g = what === "plan" ? await api.planGoal(id) : await api.approveGoalPlan(id);
+      toast("ok", g.note || `${id} is ${g.status}`);
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove(id: string) {
     try {
       await api.deleteGoal(id);
@@ -295,7 +309,14 @@ export function Goals() {
 
         <div>
           {detail ? (
-            <GoalPanel detail={detail} onLevel={(l) => void changeLevel(detail.goal.id, l)} onDelete={() => void remove(detail.goal.id)} />
+            <GoalPanel
+              detail={detail}
+              busy={busy}
+              onLevel={(l) => void changeLevel(detail.goal.id, l)}
+              onPlan={() => void act(detail.goal.id, "plan")}
+              onApprove={() => void act(detail.goal.id, "approve")}
+              onDelete={() => void remove(detail.goal.id)}
+            />
           ) : (
             rows !== null && rows.length > 0 && <Empty icon={<ChevronRight className="size-5" />} title="Pick a goal" hint="Its checks, missions and spend show here." />
           )}
@@ -305,8 +326,24 @@ export function Goals() {
   );
 }
 
-function GoalPanel({ detail, onLevel, onDelete }: { detail: GoalDetail; onLevel: (l: AutonomyLevel) => void; onDelete: () => void }) {
+function GoalPanel({
+  detail,
+  busy,
+  onLevel,
+  onPlan,
+  onApprove,
+  onDelete,
+}: {
+  detail: GoalDetail;
+  busy: boolean;
+  onLevel: (l: AutonomyLevel) => void;
+  onPlan: () => void;
+  onApprove: () => void;
+  onDelete: () => void;
+}) {
   const { goal, missions, spent_usd } = detail;
+  const planFailed = goal.status === "planning" && goal.note.startsWith("The planner failed");
+  const planning = goal.status === "planning" && !planFailed;
   const finished = goal.status === "done" || goal.status === "failed";
   const inFlight = missions.some((m) => m.status === "running" || m.status === "review");
   return (
@@ -319,6 +356,21 @@ function GoalPanel({ detail, onLevel, onDelete }: { detail: GoalDetail; onLevel:
         </div>
         <h2 className="mt-1 text-body font-semibold text-slate-100">{goal.outcome}</h2>
         {goal.note && <p className="mt-1 text-small text-slate-400">{goal.note}</p>}
+        {planning && <p className="mt-1 text-label text-slate-500">Hermes splits the goal into missions; this takes about half a minute.</p>}
+        {(planFailed || goal.status === "awaiting") && (
+          <div className="mt-2 flex gap-2">
+            {planFailed && (
+              <Button size="sm" variant="primary" busy={busy} icon={<RefreshCw className="size-3.5" />} onClick={onPlan}>
+                Plan again
+              </Button>
+            )}
+            {goal.status === "awaiting" && (
+              <Button size="sm" variant="primary" busy={busy} icon={<CheckCircle2 className="size-3.5" />} onClick={onApprove} title="Let the goal run. At Watch each mission still waits for its Start click in Mission Control.">
+                Approve plan
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3 text-label text-slate-400">

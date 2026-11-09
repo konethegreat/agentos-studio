@@ -45,6 +45,7 @@ pub mod offline;
 pub mod ops;
 pub mod org;
 pub mod permissions;
+pub mod planner;
 pub mod plans;
 pub mod policy;
 pub mod procs;
@@ -348,6 +349,8 @@ pub fn run_gui() {
             commands::goal_delete,
             commands::autonomy_defaults,
             commands::set_repo_autonomy,
+            commands::goal_plan,
+            commands::goal_approve_plan,
             commands::dispatch_mission,
             commands::submit_mission,
             commands::review_mission,

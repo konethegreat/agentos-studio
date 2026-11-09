@@ -1381,6 +1381,8 @@ pub async fn goal_create(
         if let Err(e) = crate::goals::write_note(&v, &g.id) {
             eprintln!("goals: vault note for {} failed: {e:#}", g.id);
         }
+        // Planning takes about half a minute; the view polls for the result.
+        crate::planner::plan_in_background(v.root.clone(), g.id.clone());
         Ok(g)
     })
     .await
@@ -1444,4 +1446,26 @@ pub async fn autonomy_defaults(
 #[tauri::command]
 pub async fn set_repo_autonomy(repo: String, level: String) -> CmdResult<()> {
     blocking(move || crate::goals::set_repo_default(&repo, &level)).await
+}
+
+/// Plan a goal again after the planner failed (it stays in planning with the reason).
+#[tauri::command]
+pub async fn goal_plan(state: State<'_, AppState>, id: String) -> CmdResult<crate::goals::Goal> {
+    let v = current_vault(&state);
+    blocking(move || crate::planner::plan(&v, &id)).await
+}
+
+/// Watch: the owner read the plan and lets the goal run; each mission still waits for Start.
+#[tauri::command]
+pub async fn goal_approve_plan(
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<crate::goals::Goal> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let g = crate::planner::approve(&id)?;
+        let _ = crate::goals::write_note(&v, &id);
+        Ok(g)
+    })
+    .await
 }

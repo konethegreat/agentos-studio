@@ -113,12 +113,26 @@ pub fn run_with_timeout(
     cwd: Option<&Path>,
     limit: std::time::Duration,
 ) -> anyhow::Result<(Option<i32>, String, String)> {
+    run_with_timeout_env(tool, args, stdin_text, cwd, limit, &[])
+}
+
+/// `run_with_timeout` with extra environment variables for the child only (the planner points
+/// Hermes at a private kanban database this way).
+pub fn run_with_timeout_env(
+    tool: &str,
+    args: &[&str],
+    stdin_text: Option<&str>,
+    cwd: Option<&Path>,
+    limit: std::time::Duration,
+    env: &[(&str, &str)],
+) -> anyhow::Result<(Option<i32>, String, String)> {
     use std::io::{Read, Write};
     let exe = find(tool).ok_or_else(|| anyhow::anyhow!("{tool} is not installed"))?;
     let mut cmd = command(&exe);
     cmd.args(args)
         .env("PYTHONIOENCODING", "utf-8")
         .env("NO_COLOR", "1")
+        .envs(env.iter().copied())
         .stdin(if stdin_text.is_some() {
             Stdio::piped()
         } else {
