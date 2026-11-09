@@ -51,7 +51,9 @@
       "../docs/CHAT.md": "docs/CHAT.md",
       "../docs/GUIDES.md": "docs/GUIDES.md",
       "../docs/AUTOMATIONS.md": "docs/AUTOMATIONS.md",
-      "../docs/ROUTING.md": "docs/ROUTING.md"
+      "../docs/ROUTING.md": "docs/ROUTING.md",
+      "../docs/NOTION.md": "docs/NOTION.md",
+      "../docs/COMPUTER-USE.md": "docs/COMPUTER-USE.md"
     }
   },
   "plugins": {

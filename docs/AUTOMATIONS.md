@@ -158,10 +158,13 @@ deliberately boring.
 
 ## Notion and Obsidian
 
-- One vault note per mission in `01_Projects/<repo>/Missions/`, with frontmatter status.
-- The Notion fleet table shows mission counts and the last verdict per repository.
-- The weekly decision digest is the publish path described in `ROADMAP.md` v0.4.2. Nothing is
-  written back from Notion except the Inbox database.
+- Each goal has a vault note (`01_Projects/Goals/<id>.md`) and a folder beside it with a note per
+  mission and per decision and a JSON Canvas mission graph (`GOALS.md`, Obsidian views). Standalone
+  missions have no note of their own; they are listed on the Notion missions page.
+- Publish writes the decision summary, the latest digest, task status, missions, fleet and goals
+  pages. Three things come back from Notion, each narrow: the Inbox database, proposals and cancels
+  on the missions board, and proposals and Decision answers on the goals board (`NOTION.md`).
+  Everything else Notion shows is owned by Studio and overwritten on the next sync.
 
 ## What must exist before a mission can merge anything
 
