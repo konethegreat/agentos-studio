@@ -333,7 +333,10 @@ pub fn cron_create_args(spec: &CronSpec) -> Result<Vec<String>> {
         a.push("--no-agent".into());
     }
     if let Some(s) = script {
-        if !Path::new(s).is_file() {
+        // Hermes resolves a bare file name inside the profile's scripts folder and rejects an
+        // absolute path, so a name is not checked here: it may belong to another profile than the
+        // one this process would resolve against. Only a path is checked.
+        if s.contains(['/', '\\']) && !Path::new(s).is_file() {
             bail!("Script {s} does not exist");
         }
         a.extend(["--script".into(), s.into()]);
@@ -626,6 +629,22 @@ mod tests {
             ..Default::default()
         })
         .is_err());
+    }
+
+    #[test]
+    fn a_script_name_is_passed_without_a_path() {
+        // Hermes resolves the name inside the profile's scripts folder; a path is rejected.
+        let a = cron_create_args(&CronSpec {
+            schedule: crate::memory_quality::WEEKLY_SCHEDULE.into(),
+            name: Some(crate::memory_quality::WEEKLY_JOB.into()),
+            no_agent: true,
+            script: Some(format!("{}.py", crate::memory_quality::WEEKLY_JOB)),
+            ..Default::default()
+        })
+        .unwrap();
+        let at = a.iter().position(|x| x == "--script").unwrap();
+        assert_eq!(a[at + 1], "agentos-memory-quality.py");
+        assert!(!a[at + 1].contains(['/', '\\']));
     }
 
     #[test]

@@ -685,7 +685,9 @@ if result.returncode != 0:\n\
 }
 
 /// Create the weekly Hermes cron job that runs the headless flag. The script lives under
-/// `~/.hermes/scripts/`, where `hermes cron` requires it. Idempotent by job name.
+/// `~/.hermes/scripts/`, where `hermes cron` requires it, and the job names it by file name alone:
+/// Hermes resolves the name inside the profile's scripts folder and rejects an absolute path.
+/// Idempotent by job name.
 pub fn schedule(v: &Vault, exe: &Path) -> Result<String> {
     if let Some(job) = crate::hermes_surfaces::cron_jobs()
         .iter()
@@ -704,7 +706,7 @@ pub fn schedule(v: &Vault, exe: &Path) -> Result<String> {
         workdir: None,
         paused: false,
         no_agent: true,
-        script: Some(script.display().to_string()),
+        script: Some(format!("{WEEKLY_JOB}.py")),
     })
 }
 

@@ -102,6 +102,8 @@ fn the_weekly_job_runs_the_check_and_a_dry_run_changes_nothing() {
     let script = scripts.join(format!("{WEEKLY_JOB}.py"));
     let exe = PathBuf::from(env!("CARGO_BIN_EXE_agentos-studio"));
     std::fs::write(&script, weekly_script(&exe, &vault)).expect("write the weekly script");
+    // Hermes resolves the script inside the profile's scripts folder and rejects an absolute path.
+    let script_name = format!("{WEEKLY_JOB}.py");
 
     let created = hermes(&[
         "-p",
@@ -113,7 +115,7 @@ fn the_weekly_job_runs_the_check_and_a_dry_run_changes_nothing() {
         WEEKLY_JOB,
         "--no-agent",
         "--script",
-        &script.display().to_string(),
+        &script_name,
     ]);
     let id = created
         .lines()
