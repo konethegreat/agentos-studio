@@ -87,9 +87,24 @@ fn optional(mut c: Component) -> Component {
     c
 }
 
+/// An agent that is not installed is optional, so a first run with only Hermes never shows a red
+/// pillar for Claude, Qoder or Antigravity. The component stays on screen with its install action.
+pub fn optional_when_absent(mut c: Component, present: bool) -> Component {
+    if !present {
+        c.optional = true;
+        c.detail = format!("{} (optional)", c.detail);
+    }
+    c
+}
+
+/// Claude Code is installed when its CLI resolves or when a config from another install exists.
+fn claude_present() -> bool {
+    procs::find("claude").is_some() || procs::claude_json().exists()
+}
+
 /// An IDE agent counts as present when its config folder exists; Studio only wires agents the
 /// user actually has.
-fn agent_present(agent: &str) -> bool {
+pub fn agent_present(agent: &str) -> bool {
     let h = crate::settings::home();
     match agent {
         "qoder" => h.join(".qoder").is_dir(),
@@ -333,7 +348,11 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
                     "Sign in",
                 )
             };
-            vec![cli, auth]
+            let present = cli.ok;
+            vec![
+                optional_when_absent(cli, present),
+                optional_when_absent(auth, present),
+            ]
         }),
         std::thread::spawn(|| {
             let hermes = tool_comp("hermes", "Hermes Agent", 2, "hermes", "Install");
@@ -363,7 +382,8 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
                     "Install plugin",
                 )
             };
-            vec![hermes, plugin]
+            // The Claude bridge matters only when Claude Code is present.
+            vec![hermes, optional_when_absent(plugin, claude_present())]
         }),
         std::thread::spawn(move || {
             vec![match bus_selftest(&vault_path) {
@@ -487,13 +507,22 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
     ));
 
     let claude_reg = json_registration(&read_json(&procs::claude_json()));
-    components.push(comp(
-        "mcp-claude",
-        "Claude Code",
-        6,
-        claude_reg.is_some(),
-        claude_reg.unwrap_or_else(|| "not registered".into()),
-        "Wire Config",
+    components.push(optional_when_absent(
+        comp(
+            "mcp-claude",
+            "Claude Code",
+            6,
+            claude_reg.is_some(),
+            claude_reg.unwrap_or_else(|| {
+                if claude_present() {
+                    "not registered".into()
+                } else {
+                    "Claude Code is not installed".into()
+                }
+            }),
+            "Wire Config",
+        ),
+        claude_present(),
     ));
     for (id, label, agent, path) in [
         ("mcp-qoder", "Qoder", "qoder", procs::qoder_settings()),
@@ -950,6 +979,42 @@ pub fn install_or_repair_component(app: AppHandle, vault: Vault, component: Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_agent_is_optional_and_never_reddens_a_pillar() {
+        let absent = optional_when_absent(
+            comp(
+                "claude-cli",
+                "Claude Code CLI",
+                1,
+                false,
+                "claude not found on PATH",
+                "Install",
+            ),
+            false,
+        );
+        assert!(absent.optional);
+        assert!(absent.detail.ends_with("(optional)"));
+        let present = optional_when_absent(
+            comp(
+                "claude-cli",
+                "Claude Code CLI",
+                1,
+                true,
+                "2.0.0",
+                "Reinstall",
+            ),
+            true,
+        );
+        assert!(!present.optional);
+        assert_eq!(present.detail, "2.0.0");
+        let pillars: Vec<Pillar> = vec![Pillar {
+            number: 1,
+            title: "Claude Subscription Bridge".into(),
+            ok: [absent].iter().all(|c| c.ok || c.optional),
+        }];
+        assert!(pillars[0].ok);
+    }
 
     #[test]
     fn json_registration_detects_targets() {

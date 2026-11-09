@@ -185,7 +185,7 @@ mod tests {
             "relative paths are not a folder choice"
         );
         assert!(is_forbidden(Path::new(""), w));
-        assert!(!is_forbidden(Path::new("C:/Users/Konet/agentos-studio"), w));
+        assert!(!is_forbidden(Path::new("C:/Users/me/agentos-studio"), w));
         assert!(!is_forbidden(Path::new("D:/Work/app"), w));
     }
 

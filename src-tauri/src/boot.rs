@@ -106,9 +106,7 @@ impl BootReport {
 }
 
 pub fn config_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(crate::settings::home)
-        .join("agentos-studio")
+    crate::settings::app_config_dir()
 }
 
 pub fn logs_dir() -> PathBuf {
@@ -315,6 +313,63 @@ fn check_tool_cached(
     (status, detail, fresh)
 }
 
+/// First run, or a portable install pointed at a folder through `AGENTOS_VAULT`, creates the
+/// vault at the resolved path. A path saved in settings is never created here: the user may have
+/// picked a folder on a drive that is not mounted, and creating it quietly would hide that.
+pub fn creates_vault_when_missing(configured: Option<&str>) -> bool {
+    !configured.map(|v| !v.trim().is_empty()).unwrap_or(false)
+}
+
+/// Make one vault usable. Missing folders and seed notes are created; existing files are never
+/// touched. A first-run vault is also saved in settings, so the next launch opens the same brain.
+pub fn ensure_vault(vault: &std::path::Path, configured: Option<&str>) -> (Status, String) {
+    let v = crate::vault::Vault::new(vault);
+    if !vault.exists() {
+        if !creates_vault_when_missing(configured) {
+            return (Status::Warn, format!("{} does not exist", vault.display()));
+        }
+        return match v.scaffold() {
+            Ok(made) if made.is_empty() => {
+                (Status::Warn, format!("{} was not created", vault.display()))
+            }
+            Ok(made) => {
+                let mut saved = crate::settings::Settings::load();
+                saved.vault = Some(vault.display().to_string());
+                match saved.save() {
+                    Ok(()) => (
+                        Status::Repaired,
+                        format!(
+                            "First run: created {} ({}) and saved it as the vault",
+                            vault.display(),
+                            made.join(", ")
+                        ),
+                    ),
+                    Err(e) => (
+                        Status::Warn,
+                        format!(
+                            "Created {} but could not save the path: {e:#}",
+                            vault.display()
+                        ),
+                    ),
+                }
+            }
+            Err(e) => (Status::Failed, format!("could not scaffold: {e:#}")),
+        };
+    }
+    let (ok, missing) = v.structure_ok();
+    if ok {
+        return (Status::Ok, vault.display().to_string());
+    }
+    match v.scaffold() {
+        Ok(made) if !made.is_empty() => (Status::Repaired, format!("Created {}", made.join(", "))),
+        Ok(_) => (
+            Status::Warn,
+            format!("Still missing: {}", missing.join(", ")),
+        ),
+        Err(e) => (Status::Failed, format!("could not scaffold: {e:#}")),
+    }
+}
+
 /// Run every check and return the report. Blocking; call it off the UI thread.
 pub fn run(app: Option<AppHandle>) -> BootReport {
     let started = Instant::now();
@@ -371,6 +426,11 @@ pub fn run(app: Option<AppHandle>) -> BootReport {
                     vault.display()
                 ),
             )
+        } else if creates_vault_when_missing(settings.vault.as_deref()) {
+            (
+                Status::Ok,
+                format!("First run: creating the vault at {}", vault.display()),
+            )
         } else {
             (
                 Status::Warn,
@@ -400,24 +460,7 @@ pub fn run(app: Option<AppHandle>) -> BootReport {
 
     // 5. Vault. Missing folders are created; existing files are never touched.
     r.run("vault", "Obsidian vault", Some("setup"), || {
-        let v = crate::vault::Vault::new(&vault);
-        if !vault.exists() {
-            return (Status::Warn, format!("{} does not exist", vault.display()));
-        }
-        let (ok, missing) = v.structure_ok();
-        if ok {
-            return (Status::Ok, vault.display().to_string());
-        }
-        match v.scaffold() {
-            Ok(made) if !made.is_empty() => {
-                (Status::Repaired, format!("Created {}", made.join(", ")))
-            }
-            Ok(_) => (
-                Status::Warn,
-                format!("Still missing: {}", missing.join(", ")),
-            ),
-            Err(e) => (Status::Failed, format!("could not scaffold: {e:#}")),
-        }
+        ensure_vault(&vault, settings.vault.as_deref())
     });
 
     // 6. Tools. Parallel so the total wait is one timeout rather than five, and cached for an
@@ -749,6 +792,14 @@ mod tests {
         assert_eq!(back.steps[0].status, Status::Warn);
         assert!(back.steps[0].fix_view.is_some());
         assert_eq!(back.summary.warn, 1);
+    }
+
+    #[test]
+    fn a_first_run_creates_the_vault_but_a_saved_path_is_only_reported() {
+        assert!(creates_vault_when_missing(None));
+        assert!(creates_vault_when_missing(Some("")));
+        assert!(creates_vault_when_missing(Some("   ")));
+        assert!(!creates_vault_when_missing(Some("D:/Vaults/agentos")));
     }
 
     #[test]
