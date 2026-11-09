@@ -345,7 +345,6 @@ Phase B of the 2026-11-08 master brief. The bus was wired to four agents but onl
   `tests/live_hub_identity.rs`, and the phase check `tests/live_phase_b_done.rs` against the
   running release build.
 
-<<<<<<< HEAD
 ## v0.13.0: memory that gets better with every mission (in progress)
 
 Phase E of the 2026-11-08 master brief. Memory becomes something that improves from finished work,
