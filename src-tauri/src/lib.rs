@@ -26,6 +26,7 @@ pub mod fleet;
 pub mod fork;
 pub mod github;
 pub mod goal_loop;
+pub mod goal_views;
 pub mod goals;
 pub mod handoff;
 pub mod help;

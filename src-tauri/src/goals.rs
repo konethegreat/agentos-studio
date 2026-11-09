@@ -525,7 +525,10 @@ pub fn render_note(g: &Goal, ms: &[Mission]) -> String {
             .unwrap_or_default();
         s.push_str(&format!(
             "- {} ({}, {}): {}{pr}\n",
-            m.id, m.status, m.agent, m.goal
+            crate::goal_views::mission_link(&g.id, &m.id),
+            m.status,
+            m.agent,
+            m.goal
         ));
     }
     if let Some(r) = &g.report {
@@ -536,11 +539,32 @@ pub fn render_note(g: &Goal, ms: &[Mission]) -> String {
     s
 }
 
-/// Write or refresh the goal's vault note. A failure is reported, never fatal to the goal.
+/// The goal note with its Obsidian views: decisions, pull requests and the mission graph
+/// (`goal_views`). Pure.
+pub fn render_note_with(
+    g: &Goal,
+    ms: &[Mission],
+    escs: &[crate::escalation::Escalation],
+) -> String {
+    let mut s = render_note(g, ms);
+    let views = crate::goal_views::goal_sections(g, ms, escs);
+    // The report stays last, after the views.
+    match s.find("\n## Report\n") {
+        Some(at) => s.insert_str(at, &views),
+        None => s.push_str(&views),
+    }
+    s
+}
+
+/// Write or refresh the goal's vault note and its folder (a note per mission and per decision,
+/// and the mission graph canvas). A failure is reported, never fatal to the goal.
 pub fn write_note(v: &crate::vault::Vault, id: &str) -> Result<()> {
     let g = get(id)?.ok_or_else(|| anyhow::anyhow!("no goal '{id}'"))?;
     let ms = missions_of(id)?;
-    v.write_note(&note_rel(id), &render_note(&g, &ms))
+    let (deps, escs) = crate::goal_views::load(id, &ms);
+    v.write_note(&note_rel(id), &render_note_with(&g, &ms, &escs))?;
+    crate::goal_views::write(v, &g, &ms, &deps, &escs)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -688,7 +712,9 @@ mod tests {
             let note = render_note(&g, &ms);
             assert!(note.contains("type: goal") && note.contains("status: planning"));
             assert!(note.contains("- command: `npm test`"));
-            assert!(note.contains("M-001 (queued, auto): Add GET /probe"));
+            assert!(note.contains(
+                "- [[01_Projects/Goals/G-001/M-001|M-001]] (queued, auto): Add GET /probe"
+            ));
             assert!(note.contains("Autonomy: Ask on risk"));
 
             let d = tempfile::tempdir().unwrap();
@@ -696,6 +722,12 @@ mod tests {
             write_note(&v, &g.id).unwrap();
             let on_disk = std::fs::read_to_string(d.path().join(note_rel(&g.id))).unwrap();
             assert!(on_disk.contains("# G-001: Add a probe endpoint"));
+            assert!(on_disk.contains("## Decisions") && on_disk.contains("## Mission graph"));
+            assert!(d.path().join("01_Projects/Goals/G-001/M-001.md").exists());
+            assert!(d
+                .path()
+                .join("01_Projects/Goals/G-001/G-001.canvas")
+                .exists());
 
             assert!(!any_active(), "a planning goal is not active yet");
             set_status(&g.id, &["planning"], "running", "").unwrap();

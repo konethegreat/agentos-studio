@@ -323,6 +323,8 @@ fn restore(v: &Vault, dir: &std::path::Path, goal_id: &str, saved: &Saved) {
         }
     }
     let _ = std::fs::remove_file(v.root.join(goals::note_rel(goal_id)));
+    // The goal's Obsidian views: mission and decision notes and the canvas.
+    let _ = std::fs::remove_dir_all(v.root.join(agentos_studio_lib::goal_views::folder(goal_id)));
     match goals::delete(goal_id) {
         Ok(()) => println!("goal {goal_id} deleted"),
         Err(e) => println!("goal {goal_id} NOT deleted: {e:#}"),
