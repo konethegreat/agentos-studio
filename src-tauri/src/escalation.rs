@@ -38,7 +38,7 @@ pub struct Escalation {
     /// `open`, `answered` or `expired` (the safe answer was taken at the deadline).
     pub status: String,
     pub answer: Option<String>,
-    /// `studio`, `phone` or `timeout`.
+    /// `studio`, `phone`, `notion` (the goals board Decision column) or `timeout`.
     pub answered_by: Option<String>,
     pub created_at: i64,
     pub deadline_at: i64,

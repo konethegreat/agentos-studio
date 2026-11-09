@@ -463,8 +463,19 @@ pub fn keep_awake(_on: bool) {}
 pub fn start_scheduler(vault_root: std::path::PathBuf) {
     std::thread::spawn(move || {
         let mut pass: u64 = 0;
+        let mut goal_pass: u64 = 0;
         loop {
             std::thread::sleep(std::time::Duration::from_secs(60));
+            // Every 5 minutes, once the user has created a Notion goals board: pull goal proposals
+            // and Decision answers, then publish progress. A goal is the owner's instruction, so
+            // this runs with Automations off too; the goal loop below applies a Decision.
+            if goal_pass % 5 == 0
+                && crate::notion::setting(crate::notion_goals::KV_DB).is_some()
+                && crate::notion::token().is_some()
+            {
+                let _ = crate::notion_goals::sync(&Vault::new(&vault_root), false);
+            }
+            goal_pass += 1;
             // An active goal is the owner's instruction to run its missions, so the pass runs
             // for it even with Automations off; the tick itself starts no standalone mission then.
             // The digest goes out at its times whatever else is on.

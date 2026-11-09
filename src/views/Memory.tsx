@@ -119,6 +119,28 @@ export function Memory() {
     }
   }
 
+  async function syncGoals() {
+    setBusy(true);
+    try {
+      const r = await invoke<{ dry_run: boolean; error: string | null; created_rows: number; updated_rows: number; unchanged_rows: number; archived_rows: number; proposed: string[]; held_at_watch: string[]; decided: string[]; declined: string[] }>("notion_sync_goals", { dryRun: !r0connected() });
+      if (r.error) toast("error", r.error);
+      else
+        toast(
+          r.dry_run ? "info" : "ok",
+          `${r.dry_run ? "Dry run: " : ""}${r.created_rows} goal row(s) new, ${r.updated_rows} updated, ${r.unchanged_rows} unchanged` +
+            (r.archived_rows ? `, ${r.archived_rows} archived` : "") +
+            (r.proposed.length ? `; from Notion: ${r.proposed.join(", ")}` : "") +
+            (r.held_at_watch.length ? ` (${r.held_at_watch.length} held at Watch until approved in Goals)` : "") +
+            (r.decided.length ? `; answered: ${r.decided.join(", ")}` : "") +
+            (r.declined.length ? `; declined: ${r.declined.length} (reason written to the row)` : ""),
+        );
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function pullInbox() {
     setBusy(true);
     try {
@@ -197,6 +219,14 @@ export function Memory() {
             className="inline-flex h-8 items-center rounded-lg px-2.5 text-xs text-slate-300 ring-1 ring-line hover:bg-white/[0.04] disabled:opacity-50"
           >
             Missions board
+          </button>
+          <button
+            onClick={() => void syncGoals()}
+            disabled={busy}
+            title={notion?.connected ? "Two-way goals board in Notion: publishes every goal with its progress, spend and open question; a new row with Goal, Repos and Done checks becomes a goal (planned at once if its author is trusted, otherwise held at Watch), and a Decision from a trusted author answers the open escalation. Status, checks and merges stay in Studio. Runs every 5 minutes once the board exists." : "No NOTION_API_KEY set: this runs a dry run"}
+            className="inline-flex h-8 items-center rounded-lg px-2.5 text-xs text-slate-300 ring-1 ring-line hover:bg-white/[0.04] disabled:opacity-50"
+          >
+            Goals board
           </button>
           {notion?.connected && (
             <button

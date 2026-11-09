@@ -94,6 +94,11 @@ session store and only the stored hash of the code is kept. When the deadline pa
 the safe answer is taken (do not merge, stop the mission), the same rule as Hermes approvals:
 doing nothing never runs anything.
 
+The Notion goals board (`notion_goals.rs`, see `NOTION.md`) is a third place to answer: the goal's
+row shows its oldest open question, and a Decision set by a trusted Notion author answers it
+(answered by `notion`) through the same `escalation::answer` path. A goal proposed on that board by
+anyone else is created at Watch.
+
 ## Digest and fleet pause
 
 - **Digest**, morning and evening (kv `digest.times`, default `07:30,18:00`): what finished, what

@@ -442,6 +442,20 @@ Also in this release, built by Qoder in parallel (Phase H preparation and Phase 
 - The two-job build cap for this 11.4 GB machine (#108): `.cargo/config.toml` `jobs = 2`, line
   tables only for dev and test builds.
 
+## v0.15.0: Notion and Obsidian as real control surfaces (in progress)
+
+Phase F of the 2026-11-08 master brief, by Hermes.
+
+- **Goals board in Notion (F1).** `notion_goals.rs`: a database "AgentOS goals board" next to the
+  missions board. Out, one row per goal (outcome, repos, done checks, autonomy, budget, status,
+  progress, spend, the oldest open question and the report) behind the hash ledger
+  (`notion-goal:<id>`); rows of deleted goals are archived. In, a goal proposal (Goal, Repos, Done
+  checks) through `goals::create`, held at Watch unless its author is on `notion.trusted_authors`,
+  and a Decision that answers the open escalation through `escalation::answer` (answered by
+  `notion`) when the last editor is trusted. Status, checks, missions and merges never come from
+  Notion. Synced every 5 minutes once the board exists, and from **Goals board** in Memory.
+  Verified by `tests/live_notion_goals.rs` against the real workspace with a temporary studio.db.
+
 ## v0.16.0: safety for unattended work (in progress)
 
 Phase G of the 2026-11-08 master brief, split between Hermes (items 3 to 5) and Qoder (items 1

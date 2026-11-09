@@ -1234,6 +1234,30 @@ pub async fn set_notion_trusted_authors(ids: Vec<String>) -> CmdResult<Vec<Strin
     blocking(move || crate::notion_sync::set_trusted_authors(&ids)).await
 }
 
+/// Two-way goal sync with the Notion goals board: rows out per goal, proposals and Decision
+/// answers to open escalations in.
+#[tauri::command]
+pub async fn notion_sync_goals(
+    state: State<'_, AppState>,
+    dry_run: Option<bool>,
+) -> CmdResult<crate::notion_goals::SyncReport> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let r = crate::notion_goals::sync(&v, dry_run.unwrap_or(false));
+        // A Decision takes effect at once, like an answer from the Goals screen.
+        if !r.decided.is_empty() && !r.dry_run {
+            let _ = crate::automation::tick(&v);
+        }
+        Ok(r)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn notion_archive_goals_board() -> CmdResult<()> {
+    blocking(crate::notion_goals::archive_board).await
+}
+
 // ------------------------------------------------------------------ Phase C: agents talk
 
 /// The agent registry: one card per agent, the same data the `agents` hub tool returns.

@@ -61,8 +61,8 @@ pub struct Goal {
     pub updated_at: i64,
 }
 
-/// What the form sends.
-#[derive(Debug, Clone, Deserialize)]
+/// What the form sends (and a Notion goals board proposal, `notion_goals::classify`).
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct NewGoal {
     pub outcome: String,
     pub repos: Vec<String>,

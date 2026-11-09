@@ -68,7 +68,7 @@ pub fn set_setting(key: &str, value: &str) {
     }
 }
 
-pub(crate) fn parent_id() -> Option<String> {
+pub fn parent_id() -> Option<String> {
     std::env::var("NOTION_PARENT_PAGE")
         .ok()
         .or_else(|| hermes_env("NOTION_PARENT_PAGE"))
@@ -178,8 +178,8 @@ pub fn artifacts(v: &Vault) -> Vec<(String, String)> {
     }
     out.push(("AgentOS fleet".into(), fleet));
 
-    // Goals: one line per goal (Phase D). The Notion goals database with a Decision column is
-    // Phase F.
+    // Goals: one line per goal (Phase D). The two-way goals board with a Decision column is
+    // `notion_goals.rs` (Phase F).
     let mut gs = String::from("Goals, their autonomy level and progress.\n\n");
     let glist = crate::goals::list(50).unwrap_or_default();
     if glist.is_empty() {
@@ -287,6 +287,34 @@ pub(crate) fn ledger_put(title: &str, notion_id: &str, content_hash: &str) -> Re
             content_hash,
             chrono::Utc::now().timestamp()
         ],
+    )?;
+    Ok(())
+}
+
+/// Outbound ledger entries whose key starts with `prefix`, as `(key, notion id)`.
+pub fn ledger_keys(prefix: &str) -> Vec<(String, String)> {
+    let Ok(c) = store::open() else {
+        return Vec::new();
+    };
+    let Ok(mut st) = c.prepare(
+        "SELECT vault_path, notion_id FROM sync_ledger WHERE direction = 'out' AND substr(vault_path, 1, ?2) = ?1",
+    ) else {
+        return Vec::new();
+    };
+    let out: Vec<(String, String)> = st
+        .query_map(params![prefix, prefix.chars().count() as i64], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .map(|rows| rows.flatten().collect())
+        .unwrap_or_default();
+    out
+}
+
+pub(crate) fn ledger_delete(title: &str) -> Result<()> {
+    let c = store::open()?;
+    c.execute(
+        "DELETE FROM sync_ledger WHERE vault_path = ?1 AND direction = 'out'",
+        params![title],
     )?;
     Ok(())
 }
