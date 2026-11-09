@@ -448,6 +448,13 @@ pub fn extract_lessons(v: &Vault, id: &str) -> Result<LearningReport> {
     Ok(report)
 }
 
+/// What the review path runs when a mission is approved: the same extraction the "Extract
+/// lessons" button runs, for the mission a reviewer just finished. Called in the background by
+/// `missions::review`; idempotent through the same `learning.done.<id>` key.
+pub fn on_mission_reviewed(v: &Vault, id: &str) -> Result<LearningReport> {
+    extract_lessons(v, id)
+}
+
 /// `gh pr diff --name-only` and the PR body, both optional: a mission without a pull request can
 /// still teach something from its review.
 fn pull_request_context(m: &Mission, dir: &Path) -> (String, String) {
