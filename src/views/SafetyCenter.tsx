@@ -2,7 +2,7 @@ import { Loader2, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card } from "../components/ui";
-import { api, errorText } from "../lib/api";
+import { api, errorText, type ToolPolicyModel } from "../lib/api";
 import { HermesAuditCard } from "../components/HermesAudit";
 import { studio, type AuditEntry, type Policy, type PolicyView } from "../lib/studio";
 
@@ -18,14 +18,31 @@ const POLICY_HINT: Record<Policy, string> = {
   deny: "Always refused, even if a chat or agent asks for it.",
 };
 
+type ToolScope = { kind: "global" } | { kind: "agent" | "repo"; key: string };
+
+function scopeValue(scope: ToolScope): string {
+  return scope.kind === "global" ? "global" : `${scope.kind}:${scope.key}`;
+}
+
+function parseScope(value: string): ToolScope {
+  if (value === "global") return { kind: "global" };
+  const i = value.indexOf(":");
+  const kind = value.slice(0, i) === "repo" ? "repo" : "agent";
+  return { kind, key: value.slice(i + 1) };
+}
+
+function policyTone(p: string): string {
+  return p === "deny" ? "bg-red-500/20 text-red-200" : p === "ask" ? "bg-amber-500/15 text-amber-200" : "bg-emerald-500/15 text-emerald-200";
+}
+
 export function SafetyCenter() {
   const toast = useToast();
   const [policies, setPolicies] = useState<PolicyView[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [tools, setTools] = useState<string[]>([]);
-  const [toolPolicy, setToolPolicy] = useState<Record<string, string>>({});
+  const [model, setModel] = useState<ToolPolicyModel | null>(null);
+  const [scope, setScope] = useState<ToolScope>({ kind: "global" });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,18 +57,35 @@ export function SafetyCenter() {
     }
   }, [query, toast]);
 
-  useEffect(() => {
-    void api.hubTools().then(setTools).catch(() => undefined);
-    void api
-      .toolPolicies()
-      .then((rows) => setToolPolicy(Object.fromEntries(rows.map((r) => [r.tool, r.policy]))))
-      .catch(() => undefined);
-  }, []);
-
-  async function setTool(tool: string, policy: "allow" | "ask" | "deny") {
+  const loadModel = useCallback(async () => {
     try {
-      await api.setToolPolicy("agentos-hub", tool, policy);
-      setToolPolicy((cur) => ({ ...cur, [tool]: policy }));
+      setModel(await api.toolPolicyModel());
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    void loadModel();
+  }, [loadModel]);
+
+  const globalPolicy = (tool: string) => model?.global.find((g) => g.server === "agentos-hub" && g.tool === tool)?.policy ?? "allow";
+  const scopedPolicy = (tool: string) =>
+    scope.kind === "global"
+      ? null
+      : model?.scoped.find((s) => s.scope === scope.kind && s.key === scope.key && s.tool === tool && s.server === "agentos-hub")?.policy ?? null;
+  const valueFor = (tool: string) => (scope.kind === "global" ? globalPolicy(tool) : scopedPolicy(tool));
+  const effectiveFor = (tool: string) => scopedPolicy(tool) ?? globalPolicy(tool);
+
+  async function setTool(tool: string, policy: "allow" | "ask" | "deny" | "inherit") {
+    try {
+      if (scope.kind === "global") {
+        if (policy === "inherit") return;
+        await api.setToolPolicy("agentos-hub", tool, policy);
+      } else {
+        await api.setScopedToolPolicy(scope.kind, scope.key, "agentos-hub", tool, policy === "inherit" ? null : policy);
+      }
+      await loadModel();
       toast("ok", `${tool}: ${policy}`);
     } catch (e) {
       toast("error", errorText(e));
@@ -94,35 +128,85 @@ export function SafetyCenter() {
 
         <Card className="p-0">
           <div className="border-b border-line px-4 py-3">
-            <h2 className="text-sm font-semibold text-slate-100">Tool permissions (agentos-hub)</h2>
-            <p className="mt-0.5 text-small text-slate-500">
-              Enforced inside the MCP server, so an agent cannot call around it. Ask means refused in headless sessions, because there is nobody to prompt.
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-semibold text-slate-100">Tool permissions (agentos-hub)</h2>
+                <p className="mt-0.5 text-small text-slate-500">
+                  Checked inside the MCP server, so an agent cannot call around it. A project override wins over an agent override, which wins over the global policy. Ask refuses in headless sessions, because there is nobody to prompt.
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-small text-slate-400">
+                Scope
+                <select
+                  aria-label="Permission scope"
+                  value={scopeValue(scope)}
+                  onChange={(e) => setScope(parseScope(e.target.value))}
+                  className="h-8 rounded-lg bg-canvas px-2 text-small text-slate-100 ring-1 ring-line outline-none"
+                >
+                  <option value="global">Global</option>
+                  <optgroup label="Agent">
+                    {(model?.agents ?? []).map((a) => (
+                      <option key={a} value={`agent:${a}`}>
+                        {a}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Project">
+                    {(model?.repos ?? []).map((r) => (
+                      <option key={r} value={`repo:${r}`}>
+                        {r}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </label>
+            </div>
+            <p className="mt-2 text-caption text-slate-600">
+              {scope.kind === "global" && "This is the default for every agent and project that has no override."}
+              {scope.kind === "agent" && `Applies to ${scope.key} wherever it calls the hub. A project override still wins.`}
+              {scope.kind === "repo" && `Applies to hub sessions that declare this project through AGENTOS_REPO. A session without it follows only the agent and global policies.`}
             </p>
           </div>
-          {tools.length === 0 ? (
+          {!model ? (
             <div className="px-4 py-3 text-xs text-slate-500">Reading the hub tool list...</div>
+          ) : model.tools.length === 0 ? (
+            <div className="px-4 py-3 text-xs text-slate-500">The hub reports no tools.</div>
           ) : (
-            tools.map((t) => (
-              <div key={t} className="flex items-center gap-3 border-t border-line px-4 py-2">
-                <span className="min-w-0 flex-1 font-mono text-small text-slate-300">{t}</span>
-                <div className="flex rounded-lg bg-canvas p-0.5 ring-1 ring-line" role="radiogroup" aria-label={`Policy for ${t}`}>
-                  {(["allow", "ask", "deny"] as const).map((v) => {
-                    const active = (toolPolicy[t] ?? "allow") === v;
-                    return (
-                      <button
-                        key={v}
-                        role="radio"
-                        aria-checked={active}
-                        onClick={() => void setTool(t, v)}
-                        className={`rounded-md px-2 py-1 text-label capitalize ${active ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-300"}`}
-                      >
-                        {v}
-                      </button>
-                    );
-                  })}
+            model.tools.map((t) => {
+              const own = valueFor(t);
+              const inherited = scope.kind !== "global" && own === null;
+              return (
+                <div key={t} className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-4 py-2">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-mono text-small text-slate-300">{t}</span>
+                    {scope.kind !== "global" && (
+                      <span className="ml-2 text-caption text-slate-600">
+                        {inherited ? `inherits global ${globalPolicy(t)}` : `set to ${own} here`}
+                        {scope.kind === "repo" && !inherited && ` · agents without this override follow their own policy`}
+                        {scope.kind === "agent" && ` · effective ${effectiveFor(t)}`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex rounded-lg bg-canvas p-0.5 ring-1 ring-line" role="radiogroup" aria-label={`Policy for ${t} in ${scopeValue(scope)}`}>
+                    {(scope.kind === "global" ? (["allow", "ask", "deny"] as const) : (["inherit", "allow", "ask", "deny"] as const)).map((v) => {
+                      const active = v === "inherit" ? inherited : !inherited && own === v;
+                      return (
+                        <button
+                          key={v}
+                          role="radio"
+                          aria-checked={active}
+                          title={v === "inherit" ? "Use the next wider scope" : POLICY_HINT[v]}
+                          onClick={() => void setTool(t, v)}
+                          className={`rounded-md px-2 py-1 text-label capitalize ${active ? (v === "inherit" ? "bg-white/10 text-slate-200" : policyTone(v)) : "text-slate-500 hover:text-slate-300"}`}
+                        >
+                          {v}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </Card>
 

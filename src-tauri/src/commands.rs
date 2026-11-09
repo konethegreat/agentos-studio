@@ -807,6 +807,38 @@ pub fn set_tool_policy(server: String, tool: String, policy: String) -> CmdResul
     crate::policy::set(&server, &tool, &policy).map_err(|e| e.to_string())
 }
 
+/// One read for the Safety tool policy UI: the hub tools, the agents and projects an override
+/// can name, the global policy and every stored override.
+#[tauri::command]
+pub fn tool_policy_model() -> crate::permissions::ToolPolicyModel {
+    let repos = crate::projects::list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| !p.archived)
+        .map(|p| p.slug)
+        .collect();
+    crate::permissions::ToolPolicyModel {
+        tools: hub_tools(),
+        agents: crate::mcp_manager::hub_agents(),
+        repos,
+        global: crate::policy::list(),
+        scoped: crate::permissions::scoped_list(),
+    }
+}
+
+/// Set or clear (policy = None) one agent or repo tool override.
+#[tauri::command]
+pub fn set_scoped_tool_policy(
+    scope: String,
+    key: String,
+    server: String,
+    tool: String,
+    policy: Option<String>,
+) -> CmdResult<()> {
+    crate::permissions::set_scoped(&scope, &key, &server, &tool, policy.as_deref())
+        .map_err(|e| e.to_string())
+}
+
 /// The tools the hub exposes, so the policy UI lists exactly what exists.
 #[tauri::command]
 pub fn hub_tools() -> Vec<String> {

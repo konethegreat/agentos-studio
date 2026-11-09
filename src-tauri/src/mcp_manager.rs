@@ -276,6 +276,29 @@ pub fn get_all_mcp_servers() -> Vec<McpServer> {
     servers
 }
 
+/// Agents whose agentos-hub registration is present and enabled, which is the set a per-agent
+/// tool policy can affect. Falls back to the four known agents when nothing is registered yet,
+/// so a first-run machine can prepare the policy before the agents are connected.
+pub fn hub_agents() -> Vec<String> {
+    let mut out: Vec<String> = get_all_mcp_servers()
+        .into_iter()
+        .find(|s| s.is_agentos_hub)
+        .map(|s| {
+            s.agents
+                .into_iter()
+                .filter(|a| a.enabled)
+                .map(|a| a.agent)
+                .collect()
+        })
+        .unwrap_or_default();
+    if out.is_empty() {
+        out = AGENTS.iter().map(|a| a.to_string()).collect();
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// Flag agentos-hub when any agent's registration is not this version's staged binary.
 pub fn mark_hub_outdated(servers: &mut [McpServer], expected: &Path) {
     let norm = |s: &str| s.replace('\\', "/").to_lowercase();

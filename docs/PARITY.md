@@ -79,7 +79,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | GitHub operations from chat | yes | `/gh` and "Ask Hermes" hand-off | |
 | MCP server management across agents | yes | registry, native probe, catalog | |
 | Computer use | yes | Work > Computer Use: toolset switch (approval), cua-driver status, install, update, doctor, and the action feed with screenshots ([Computer Use](COMPUTER-USE.md)) | |
-| Per-tool permissions | yes | per MCP tool, enforced inside the agentos-hub server, plus per action in Studio | |
+| Per-tool permissions | yes | per MCP tool, enforced inside the agentos-hub server, plus per action in Studio; one policy per agent and per project as well, resolved repo > agent > global | |
 | Audit log | yes | every guarded action, terminal open, policy change | |
 | Self-update with backup and rollback | yes | Studio, Hermes and Claude Code | |
 | Signed builds and in-place updates | yes | Tauri updater with a minisign-signed manifest; no code signing certificate (Windows shows unknown publisher) | |

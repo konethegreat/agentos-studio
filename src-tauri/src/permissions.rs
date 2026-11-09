@@ -7,7 +7,8 @@
 
 use anyhow::{anyhow, bail, Result};
 use rusqlite::{Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::store;
 
@@ -359,6 +360,305 @@ pub fn run_guarded<T>(
     out
 }
 
+// ---------------------------------------------------------------------------------------------
+// Scoped tool permissions: the same allow, ask, deny idea as `hermes tools`, but for the
+// agentos-hub MCP tools, and per agent and per project on top of the global policy.
+//
+// Precedence when an agent calls a tool through the hub: repo override, then agent override,
+// then the global tool policy (the table Safety already edits), then allow. Overrides live in
+// `studio.db` kv under the `perm.` prefix, so no schema change is needed.
+// ---------------------------------------------------------------------------------------------
+
+/// The scopes an override can be set on. A repo is the project slug a mission records.
+pub const TOOL_SCOPES: [&str; 2] = ["agent", "repo"];
+
+/// The variable a hub session uses to declare which project it works in. Studio sets it for
+/// mission workers; an IDE session can add it to its agentos-hub entry to opt in.
+pub const REPO_ENV: &str = "AGENTOS_REPO";
+
+const SCOPED_INDEX: &str = "perm.tool.scopes";
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ScopeRef {
+    pub scope: String,
+    pub key: String,
+}
+
+/// One stored override, flattened for the UI.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct ScopedToolPolicy {
+    pub scope: String,
+    pub key: String,
+    pub server: String,
+    pub tool: String,
+    pub policy: String,
+}
+
+/// Every override, plus the agents and tools the UI needs, in one read.
+#[derive(Serialize, Clone, Debug)]
+pub struct ToolPolicyModel {
+    pub tools: Vec<String>,
+    pub agents: Vec<String>,
+    pub repos: Vec<String>,
+    pub global: Vec<crate::policy::ToolPolicy>,
+    pub scoped: Vec<ScopedToolPolicy>,
+}
+
+/// Which policy applies to a call, and where it came from.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct ToolDecision {
+    pub policy: String,
+    pub source: String,
+}
+
+fn scoped_key(scope: &str, key: &str) -> String {
+    format!("perm.tool.{scope}.{key}")
+}
+
+fn validate_scope(scope: &str, key: &str) -> Result<()> {
+    if !TOOL_SCOPES.contains(&scope) {
+        bail!("Scope must be agent or repo");
+    }
+    if key.trim().is_empty() {
+        bail!("A {scope} override needs a name");
+    }
+    if scope == "agent" && !crate::hub_identity::AGENTS.contains(&key) {
+        bail!("Unknown agent '{key}'");
+    }
+    Ok(())
+}
+
+fn read_scopes(c: &Connection) -> Vec<ScopeRef> {
+    store::kv_get(c, SCOPED_INDEX)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str::<Vec<ScopeRef>>(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_scopes(c: &Connection, refs: &[ScopeRef]) -> Result<()> {
+    if refs.is_empty() {
+        store::kv_delete(c, SCOPED_INDEX)?;
+    } else {
+        store::kv_set(c, SCOPED_INDEX, &serde_json::to_string(refs)?)?;
+    }
+    Ok(())
+}
+
+type PolicyMap = BTreeMap<String, BTreeMap<String, String>>;
+
+fn read_map(c: &Connection, scope: &str, key: &str) -> PolicyMap {
+    store::kv_get(c, &scoped_key(scope, key))
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str::<PolicyMap>(&s).ok())
+        .unwrap_or_default()
+}
+
+fn policy_of(map: &PolicyMap, server: &str, tool: &str) -> Option<String> {
+    map.get(server)
+        .and_then(|tools| tools.get(tool))
+        .filter(|p| valid_policy(p))
+        .cloned()
+}
+
+pub fn scoped_policy_in(
+    c: &Connection,
+    scope: &str,
+    key: &str,
+    server: &str,
+    tool: &str,
+) -> Option<String> {
+    policy_of(&read_map(c, scope, key), server, tool)
+}
+
+/// Set one override, or clear it when `policy` is None. Clearing the last override for a scope
+/// removes the scope from the index, so the UI never lists an empty tab.
+pub fn set_scoped_in(
+    c: &Connection,
+    scope: &str,
+    key: &str,
+    server: &str,
+    tool: &str,
+    policy: Option<&str>,
+) -> Result<()> {
+    validate_scope(scope, key)?;
+    if server.trim().is_empty() || tool.trim().is_empty() {
+        bail!("A tool override needs a server and a tool");
+    }
+    if let Some(p) = policy {
+        if !valid_policy(p) {
+            bail!("Policy must be allow, ask or deny");
+        }
+    }
+    let key = key.trim();
+    let mut map = read_map(c, scope, key);
+    match policy {
+        Some(p) => {
+            map.entry(server.to_string())
+                .or_default()
+                .insert(tool.to_string(), p.to_string());
+        }
+        None => {
+            if let Some(tools) = map.get_mut(server) {
+                tools.remove(tool);
+                if tools.is_empty() {
+                    map.remove(server);
+                }
+            }
+        }
+    }
+    if map.is_empty() {
+        store::kv_delete(c, &scoped_key(scope, key))?;
+    } else {
+        store::kv_set(c, &scoped_key(scope, key), &serde_json::to_string(&map)?)?;
+    }
+    let mut refs = read_scopes(c);
+    let present = refs
+        .iter()
+        .any(|r| r.scope == scope && r.key.eq_ignore_ascii_case(key));
+    if map.is_empty() && present {
+        refs.retain(|r| !(r.scope == scope && r.key.eq_ignore_ascii_case(key)));
+    } else if !map.is_empty() && !present {
+        refs.push(ScopeRef {
+            scope: scope.to_string(),
+            key: key.to_string(),
+        });
+    }
+    write_scopes(c, &refs)?;
+    audit_in(
+        c,
+        "tool_policy.set",
+        &format!("{scope}:{key}:{server}/{tool}"),
+        &format!("policy = {}", policy.unwrap_or("inherit")),
+        "ok",
+    )?;
+    Ok(())
+}
+
+pub fn set_scoped(
+    scope: &str,
+    key: &str,
+    server: &str,
+    tool: &str,
+    policy: Option<&str>,
+) -> Result<()> {
+    let c = store::open()?;
+    set_scoped_in(&c, scope, key, server, tool, policy)
+}
+
+/// Every stored override, in a stable order: repos first (the narrower scope), then agents.
+pub fn scoped_list_in(c: &Connection) -> Vec<ScopedToolPolicy> {
+    let mut out = Vec::new();
+    let mut sorted = read_scopes(c);
+    sorted.sort_by(|a, b| {
+        (a.scope != "repo")
+            .cmp(&(b.scope != "repo"))
+            .then_with(|| a.key.cmp(&b.key))
+    });
+    for r in sorted {
+        for (server, tools) in read_map(c, &r.scope, &r.key) {
+            for (tool, policy) in tools {
+                if valid_policy(&policy) {
+                    out.push(ScopedToolPolicy {
+                        scope: r.scope.clone(),
+                        key: r.key.clone(),
+                        server: server.clone(),
+                        tool,
+                        policy,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+pub fn scoped_list() -> Vec<ScopedToolPolicy> {
+    match store::open() {
+        Ok(c) => scoped_list_in(&c),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn decide_in(
+    c: &Connection,
+    agent: Option<&str>,
+    repo: Option<&str>,
+    server: &str,
+    tool: &str,
+    global: impl FnOnce() -> String,
+) -> ToolDecision {
+    if let Some(r) = repo.map(str::trim).filter(|r| !r.is_empty()) {
+        if let Some(p) = scoped_policy_in(c, "repo", r, server, tool) {
+            return ToolDecision {
+                policy: p,
+                source: format!("repo:{r}"),
+            };
+        }
+    }
+    if let Some(a) = agent.map(str::trim).filter(|a| !a.is_empty()) {
+        if let Some(p) = scoped_policy_in(c, "agent", a, server, tool) {
+            return ToolDecision {
+                policy: p,
+                source: format!("agent:{a}"),
+            };
+        }
+    }
+    ToolDecision {
+        policy: global(),
+        source: "global".into(),
+    }
+}
+
+/// The policy that applies to a hub call from `agent` (None for an unknown caller) in `repo`.
+pub fn decide_scoped(
+    agent: Option<&str>,
+    repo: Option<&str>,
+    server: &str,
+    tool: &str,
+) -> ToolDecision {
+    match store::open() {
+        Ok(c) => decide_in(&c, agent, repo, server, tool, || {
+            crate::policy::decide(server, tool)
+        }),
+        Err(_) => ToolDecision {
+            policy: crate::policy::decide(server, tool),
+            source: "global".into(),
+        },
+    }
+}
+
+fn source_text(decision: &ToolDecision) -> String {
+    match decision.source.split_once(':') {
+        Some(("repo", r)) => format!("the policy for {r}"),
+        Some(("agent", a)) => format!("the policy for {a}"),
+        _ => "the global tool policy".to_string(),
+    }
+}
+
+/// The gate the hub calls for a verified caller. Same outcomes as the global policy, with the
+/// deciding scope in the message so an owner knows where to change it.
+pub fn check_scoped(
+    agent: Option<&str>,
+    repo: Option<&str>,
+    server: &str,
+    tool: &str,
+) -> Result<(), String> {
+    let d = decide_scoped(agent, repo, server, tool);
+    match d.policy.as_str() {
+        "deny" => Err(format!(
+            "Tool '{tool}' is blocked by {}. Change it in Safety > Tool permissions if this is intended.",
+            source_text(&d)
+        )),
+        "ask" => Err(format!(
+            "Tool '{tool}' requires approval under {}, and this is a headless MCP session with nobody to ask. Set it to allow in Safety > Tool permissions, or run it from a Studio chat.",
+            source_text(&d)
+        )),
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,5 +693,188 @@ mod tests {
         for a in ACTIONS {
             assert!(valid_policy(a.default_policy), "{}", a.id);
         }
+    }
+
+    #[test]
+    fn scoped_overrides_win_in_repo_then_agent_then_global_order() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+
+        let base = decide_scoped(
+            Some("qoder"),
+            Some("agentos-studio"),
+            "agentos-hub",
+            "recall",
+        );
+        assert_eq!(
+            (base.policy.as_str(), base.source.as_str()),
+            ("allow", "global")
+        );
+
+        set_scoped("agent", "qoder", "agentos-hub", "recall", Some("deny")).unwrap();
+        let agent = decide_scoped(
+            Some("qoder"),
+            Some("agentos-studio"),
+            "agentos-hub",
+            "recall",
+        );
+        assert_eq!(
+            (agent.policy.as_str(), agent.source.as_str()),
+            ("deny", "agent:qoder")
+        );
+        let other = decide_scoped(
+            Some("hermes"),
+            Some("agentos-studio"),
+            "agentos-hub",
+            "recall",
+        );
+        assert_eq!(other.policy, "allow", "another agent is unaffected");
+
+        set_scoped(
+            "repo",
+            "agentos-studio",
+            "agentos-hub",
+            "recall",
+            Some("ask"),
+        )
+        .unwrap();
+        let repo = decide_scoped(
+            Some("qoder"),
+            Some("agentos-studio"),
+            "agentos-hub",
+            "recall",
+        );
+        assert_eq!(
+            (repo.policy.as_str(), repo.source.as_str()),
+            ("ask", "repo:agentos-studio")
+        );
+        let no_repo = decide_scoped(Some("qoder"), None, "agentos-hub", "recall");
+        assert_eq!(
+            no_repo.policy, "deny",
+            "without a repo the agent override applies"
+        );
+
+        set_scoped("repo", "agentos-studio", "agentos-hub", "recall", None).unwrap();
+        set_scoped("agent", "qoder", "agentos-hub", "recall", None).unwrap();
+        crate::policy::set("agentos-hub", "recall", "ask").unwrap();
+        let global = decide_scoped(
+            Some("qoder"),
+            Some("agentos-studio"),
+            "agentos-hub",
+            "recall",
+        );
+        assert_eq!(
+            (global.policy.as_str(), global.source.as_str()),
+            ("ask", "global")
+        );
+
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn scoped_entries_validate_and_list_without_empty_scopes() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+
+        assert!(set_scoped("team", "x", "agentos-hub", "recall", Some("deny")).is_err());
+        assert!(set_scoped("agent", "nobody", "agentos-hub", "recall", Some("deny")).is_err());
+        assert!(set_scoped("agent", "qoder", "agentos-hub", "recall", Some("sometimes")).is_err());
+        assert!(set_scoped("repo", "  ", "agentos-hub", "recall", Some("deny")).is_err());
+
+        set_scoped("agent", "qoder", "agentos-hub", "recall", Some("deny")).unwrap();
+        set_scoped(
+            "repo",
+            "agentos-studio",
+            "agentos-hub",
+            "delegate_task",
+            Some("ask"),
+        )
+        .unwrap();
+        set_scoped(
+            "repo",
+            "agentos-studio",
+            "agentos-hub",
+            "complete_task",
+            Some("allow"),
+        )
+        .unwrap();
+        let listed = scoped_list();
+        assert_eq!(listed.len(), 3);
+        assert_eq!(listed[0].scope, "repo", "the narrower scope lists first");
+        assert_eq!(listed[2].scope, "agent");
+
+        set_scoped(
+            "repo",
+            "agentos-studio",
+            "agentos-hub",
+            "delegate_task",
+            None,
+        )
+        .unwrap();
+        set_scoped(
+            "repo",
+            "agentos-studio",
+            "agentos-hub",
+            "complete_task",
+            None,
+        )
+        .unwrap();
+        set_scoped("agent", "qoder", "agentos-hub", "recall", None).unwrap();
+        assert!(scoped_list().is_empty(), "clearing removes the scopes");
+
+        let c = store::open().unwrap();
+        let log = list_audit_in(&c, 20, Some("tool_policy.set")).unwrap();
+        assert!(log.iter().any(|a| a.detail == "policy = inherit"));
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn the_gate_names_the_scope_that_decided() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+
+        set_scoped("agent", "qoder", "agentos-hub", "recall", Some("deny")).unwrap();
+        let e = check_scoped(Some("qoder"), None, "agentos-hub", "recall").unwrap_err();
+        assert!(e.contains("blocked by the policy for qoder"), "{e}");
+        assert!(check_scoped(Some("hermes"), None, "agentos-hub", "recall").is_ok());
+
+        set_scoped(
+            "repo",
+            "agentos-studio",
+            "agentos-hub",
+            "delegate_task",
+            Some("ask"),
+        )
+        .unwrap();
+        let e = check_scoped(
+            Some("qoder"),
+            Some("agentos-studio"),
+            "agentos-hub",
+            "delegate_task",
+        )
+        .unwrap_err();
+        assert!(e.contains("requires approval"), "{e}");
+        assert!(e.contains("the policy for agentos-studio"), "{e}");
+
+        set_scoped("agent", "qoder", "agentos-hub", "recall", None).unwrap();
+        set_scoped(
+            "repo",
+            "agentos-studio",
+            "agentos-hub",
+            "delegate_task",
+            None,
+        )
+        .unwrap();
+        assert!(check_scoped(
+            Some("qoder"),
+            Some("agentos-studio"),
+            "agentos-hub",
+            "recall"
+        )
+        .is_ok());
+        crate::store::set_test_db(None);
     }
 }

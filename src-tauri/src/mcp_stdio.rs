@@ -167,7 +167,31 @@ pub fn handle_message(vault: &Vault, msg: Value) -> Option<Value> {
             )
         }
         "ping" => ok(id, json!({})),
-        "tools/list" => ok(id, json!({"tools": tool_definitions()})),
+        "tools/list" => {
+            // A tool denied for this caller (repo or agent scope, or globally) is not offered at
+            // all, so the list matches what a call would allow. Ask stays listed and refuses at
+            // call time, because a stdio session has nobody to prompt.
+            let me = caller();
+            let repo = repo_env();
+            let tools: Vec<Value> = tool_definitions()
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|t| {
+                    let name = t.get("name").and_then(Value::as_str).unwrap_or_default();
+                    crate::permissions::decide_scoped(
+                        me.agent.as_deref(),
+                        repo.as_deref(),
+                        "agentos-hub",
+                        name,
+                    )
+                    .policy
+                        != "deny"
+                })
+                .collect();
+            ok(id, json!({"tools": tools}))
+        }
         "tools/call" => {
             let name = params
                 .get("name")
@@ -206,13 +230,25 @@ fn str_arg<'a>(args: &'a Value, key: &str) -> anyhow::Result<&'a str> {
         .ok_or_else(|| anyhow::anyhow!("missing required string argument '{key}'"))
 }
 
+/// The project a hub session declares, when the launcher set `AGENTOS_REPO`.
+fn repo_env() -> Option<String> {
+    std::env::var(crate::permissions::REPO_ENV)
+        .ok()
+        .map(|r| r.trim().to_string())
+        .filter(|r| !r.is_empty())
+}
+
 pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Value> {
-    // Per-tool policy is enforced here, not in the UI, so no client can route around it.
-    if let Err(msg) = crate::policy::check("agentos-hub", name) {
+    // Tool policy is enforced here, not in the UI, so no client can route around it. The scoped
+    // check covers repo and agent overrides and falls back to the global policy.
+    let me = caller();
+    let repo = repo_env();
+    if let Err(msg) =
+        crate::permissions::check_scoped(me.agent.as_deref(), repo.as_deref(), "agentos-hub", name)
+    {
         anyhow::bail!("{msg}");
     }
     // Identity: who may write, and only as themselves.
-    let me = caller();
     let claimed = match name {
         "claim_task" | "complete_task" => args.get("agent_name").and_then(Value::as_str),
         "delegate_task" => args.get("creator").and_then(Value::as_str),
@@ -621,6 +657,95 @@ mod tests {
                 "search_shared_memory"
             ]
         );
+    }
+
+    #[test]
+    fn scoped_policy_hides_and_refuses_a_denied_tool_for_one_agent() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        crate::permissions::set_scoped(
+            "agent",
+            "qoder",
+            "agentos-hub",
+            "delegate_task",
+            Some("deny"),
+        )
+        .unwrap();
+        let (_vdir, v) = vault();
+        set_thread_caller(Some(crate::hub_identity::Caller::known("qoder")));
+
+        let tools = call(&v, 50, "tools/list", json!({}));
+        let names: Vec<&str> = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert!(
+            !names.contains(&"delegate_task"),
+            "denied to qoder: {names:?}"
+        );
+        assert!(names.contains(&"recall"));
+
+        let r = call(
+            &v,
+            51,
+            "tools/call",
+            json!({"name": "delegate_task", "arguments": {"title": "x"}}),
+        );
+        assert_eq!(r["result"]["isError"], true);
+        assert!(r["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("blocked by the policy for qoder"));
+
+        set_thread_caller(Some(crate::hub_identity::Caller::known("hermes")));
+        let offered = call(&v, 52, "tools/list", json!({}));
+        assert!(offered["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == "delegate_task"));
+
+        set_thread_caller(None);
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn a_declared_repo_scope_applies_to_the_hub_session() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        crate::permissions::set_scoped(
+            "repo",
+            "hub-repo-scope-test",
+            "agentos-hub",
+            "recall",
+            Some("deny"),
+        )
+        .unwrap();
+        std::env::set_var(crate::permissions::REPO_ENV, "hub-repo-scope-test");
+        let (_vdir, v) = vault();
+        set_thread_caller(Some(crate::hub_identity::Caller::known("hermes")));
+
+        let tools = call(&v, 60, "tools/list", json!({}));
+        assert!(!tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == "recall"));
+
+        std::env::remove_var(crate::permissions::REPO_ENV);
+        let again = call(&v, 61, "tools/list", json!({}));
+        assert!(again["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == "recall"));
+
+        set_thread_caller(None);
+        crate::store::set_test_db(None);
     }
 
     #[test]
