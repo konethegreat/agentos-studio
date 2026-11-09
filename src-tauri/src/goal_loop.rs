@@ -131,8 +131,8 @@ pub fn pass(v: &Vault, automation_on: bool) -> Pass {
     for m in &all {
         let goal = goals::goal_of(&m.id).and_then(|gid| goals::get(&gid).ok().flatten());
         let r = match (m.status.as_str(), goal.as_ref()) {
-            ("done", Some(g)) => merge_step(m, Some(g), &mut p),
-            ("done", None) if automation_on => merge_step(m, None, &mut p),
+            ("done", Some(g)) => merge_step(v, m, Some(g), &mut p),
+            ("done", None) if automation_on => merge_step(v, m, None, &mut p),
             ("queued", Some(g)) => reject_step(m, g, &mut p),
             ("blocked", Some(g)) => blocked_step(m, g, &mut p),
             _ => Ok(()),
@@ -176,7 +176,7 @@ fn budget_step(g: &Goal, p: &mut Pass) -> Result<()> {
     Ok(())
 }
 
-fn merge_step(m: &Mission, goal: Option<&Goal>, p: &mut Pass) -> Result<()> {
+fn merge_step(v: &Vault, m: &Mission, goal: Option<&Goal>, p: &mut Pass) -> Result<()> {
     if m.review_verdict.as_deref() != Some("approve") || m.pr_url.is_none() {
         return Ok(());
     }
@@ -190,11 +190,11 @@ fn merge_step(m: &Mission, goal: Option<&Goal>, p: &mut Pass) -> Result<()> {
     let gid = goal.map(|g| g.id.as_str());
     match goals::merge_decision(level, allowlisted) {
         goals::MergeDecision::Wait => Ok(()),
-        goals::MergeDecision::Merge => try_merge(m, p),
+        goals::MergeDecision::Merge => try_merge(v, m, p),
         goals::MergeDecision::Ask => {
             if let Some(e) = escalation::latest_decided(gid, Some(&m.id), "merge") {
                 return match e.answer.as_deref() {
-                    Some("merge") => try_merge(m, p),
+                    Some("merge") => try_merge(v, m, p),
                     _ => {
                         kv_set(&merge_key(&m.id), "skipped");
                         Ok(())
@@ -229,7 +229,7 @@ fn merge_step(m: &Mission, goal: Option<&Goal>, p: &mut Pass) -> Result<()> {
 
 /// Merge once CI is green. Pending CI waits for a later pass; a pull request merged or closed by
 /// someone else is recorded and left alone.
-fn try_merge(m: &Mission, p: &mut Pass) -> Result<()> {
+fn try_merge(v: &Vault, m: &Mission, p: &mut Pass) -> Result<()> {
     let number = missions::pr_number(m).ok_or_else(|| anyhow::anyhow!("no pull request"))?;
     let repo = crate::github::name_with_owner(&m.repo)?;
     match crate::github::pr_status(&repo, number)?.as_str() {
@@ -244,8 +244,13 @@ fn try_merge(m: &Mission, p: &mut Pass) -> Result<()> {
         _ => {}
     }
     let runs = crate::github::pr_check_runs(&repo, number)?;
-    if crate::github::ci_state(&runs) != crate::github::Ci::Green {
-        return Ok(());
+    match crate::github::ci_state(&runs) {
+        crate::github::Ci::Green => {}
+        crate::github::Ci::Failed(failed) => return heal(m, &repo, number, &failed, p),
+        _ => return Ok(()),
+    }
+    if heal_state(&m.id).is_some_and(|s| s.starts_with("rerun:")) {
+        record_flaky(v, m, &repo, number);
     }
     crate::review_agent::merge(&m.id, true)?;
     kv_set(&merge_key(&m.id), &format!("merged:{}", store::now()));
@@ -261,6 +266,185 @@ fn try_merge(m: &Mission, p: &mut Pass) -> Result<()> {
     });
     p.merged.push(m.id.clone());
     Ok(())
+}
+
+fn heal_key(id: &str) -> String {
+    format!("ci.heal.{id}")
+}
+
+/// Where self-healing stands for a mission's pull request: `rerun:<epoch>` (the failed jobs were
+/// rerun once), `fix:<mission>` (a fix mission was created), `flaky` (the rerun passed).
+pub fn heal_state(id: &str) -> Option<String> {
+    kv_get(&heal_key(id))
+}
+
+/// What a failed CI run on an approved mission's pull request leads to. Pure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Heal {
+    /// First failure: rerun the failed jobs once; passing then means a flaky test.
+    Rerun,
+    /// Failed again after the rerun: a fix mission with the failing log.
+    Fix,
+    /// A fix mission is working on it.
+    Wait,
+    /// Still failing after the fix mission finished: the owner decides.
+    Escalate,
+}
+
+pub fn heal_next(state: Option<&str>, fix_status: Option<&str>) -> Heal {
+    match state {
+        None | Some("flaky") => Heal::Rerun,
+        Some(s) if s.starts_with("rerun:") => Heal::Fix,
+        Some(s) if s.starts_with("fix:") => match fix_status {
+            Some("done") | Some("failed") | None => Heal::Escalate,
+            _ => Heal::Wait,
+        },
+        _ => Heal::Wait,
+    }
+}
+
+/// The fix mission's instructions: the failing checks and log, and the branch to push to. Pure.
+pub fn fix_goal(
+    m: &Mission,
+    pr: &str,
+    branch: &str,
+    failed: &[crate::github::CheckRun],
+    log: &str,
+) -> String {
+    let checks: Vec<String> = failed
+        .iter()
+        .map(|c| format!("- {}: {} {}", c.name, c.state, c.link))
+        .collect();
+    format!(
+        "Fix the failing CI on {pr} (mission {}).\n\nThe pull request was approved, then its checks failed twice (the failed jobs were rerun once). Push the fix to the pull request's own branch `{branch}`: fetch it, commit on it, and `git push origin HEAD:{branch}`. Do not open a new pull request and do not merge. Put {pr} in your complete_task summary.\n\nFailing checks:\n{}\n\nFailing log (last part):\n```\n{}\n```",
+        m.id,
+        checks.join("\n"),
+        log.trim()
+    )
+}
+
+fn heal(
+    m: &Mission,
+    repo: &str,
+    number: u64,
+    failed: &[crate::github::CheckRun],
+    p: &mut Pass,
+) -> Result<()> {
+    let state = heal_state(&m.id);
+    let fix_status = state
+        .as_deref()
+        .and_then(|s| s.strip_prefix("fix:"))
+        .and_then(|id| missions::get(id).ok().flatten())
+        .map(|f| f.status);
+    let pr = repo_pr(repo, number);
+    match heal_next(state.as_deref(), fix_status.as_deref()) {
+        Heal::Wait => Ok(()),
+        Heal::Rerun => {
+            let mut runs: Vec<u64> = failed
+                .iter()
+                .filter_map(|c| crate::github::run_id_of(&c.link))
+                .collect();
+            runs.sort_unstable();
+            runs.dedup();
+            for r in &runs {
+                crate::github::rerun_failed(repo, *r)?;
+            }
+            kv_set(&heal_key(&m.id), &format!("rerun:{}", store::now()));
+            let names: Vec<&str> = failed.iter().map(|c| c.name.as_str()).collect();
+            let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+                mission_id: Some(&m.id),
+                kind: "note",
+                from_agent: "agentos-studio",
+                summary: &format!(
+                    "CI failed on {pr} ({}); reran the failed jobs once",
+                    names.join(", ")
+                ),
+                ..Default::default()
+            });
+            Ok(())
+        }
+        Heal::Fix => {
+            let log = failed
+                .iter()
+                .find_map(|c| crate::github::run_id_of(&c.link))
+                .and_then(|r| crate::github::failed_log(repo, r, 6000).ok())
+                .unwrap_or_else(|| "(the failing log could not be read)".into());
+            let branch = crate::github::pr_head_branch(repo, number)?;
+            let url = m.pr_url.clone().unwrap_or_else(|| pr.clone());
+            let text = fix_goal(m, &url, &branch, failed, &log);
+            let fix = crate::router::create_mission(
+                &m.repo,
+                &text,
+                &format!("Every CI check on {url} passes, and the change is limited to fixing the failure."),
+                "implementer",
+                crate::assign::AUTO,
+                "",
+                "",
+                m.budget_usd,
+            )?;
+            if let Some(g) = goals::goal_of(&m.id) {
+                goals::attach(&g, &fix.id)?;
+            }
+            kv_set(&heal_key(&m.id), &format!("fix:{}", fix.id));
+            let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+                mission_id: Some(&m.id),
+                kind: "note",
+                from_agent: "agentos-studio",
+                summary: &format!(
+                    "CI failed again on {pr} after the rerun; created fix mission {}",
+                    fix.id
+                ),
+                detail: &log,
+                ..Default::default()
+            });
+            Ok(())
+        }
+        Heal::Escalate => {
+            let Some(gid) = goals::goal_of(&m.id) else {
+                return Ok(());
+            };
+            let e = escalation::raise_and_send(
+                Some(&gid),
+                Some(&m.id),
+                "stuck",
+                &format!("CI on {pr} still fails after a fix mission. Try another fix, or stop?"),
+                &["retry", "stop"],
+                "stop",
+            )?;
+            if !p.escalated.contains(&e.id) {
+                p.escalated.push(e.id);
+            }
+            Ok(())
+        }
+    }
+}
+
+/// A check that failed and then passed on a plain rerun is a flaky test: recorded once as a
+/// gotcha in the vault and on the timeline (the digest reports it), never retried in a loop.
+fn record_flaky(v: &Vault, m: &Mission, repo: &str, number: u64) {
+    kv_set(&heal_key(&m.id), "flaky");
+    let pr = repo_pr(repo, number);
+    let _ = v.write_typed_memory(
+        &format!("Flaky CI in {}", m.repo),
+        &format!(
+            "A CI check on {pr} (mission {}) failed and then passed when the failed jobs were rerun with no change. Treat a first failure there as possibly flaky; if it keeps happening, fix the test rather than rerunning it.",
+            m.id
+        ),
+        "gotcha",
+        &crate::vault::MemMeta {
+            kind: Some(crate::vault::MemKind::Gotcha),
+            agent: Some("agentos-studio".into()),
+            repo: Some(m.repo.clone()),
+            ..Default::default()
+        },
+    );
+    let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+        mission_id: Some(&m.id),
+        kind: "note",
+        from_agent: "agentos-studio",
+        summary: &format!("flaky test: CI on {pr} passed on the rerun; recorded as a gotcha"),
+        ..Default::default()
+    });
 }
 
 fn repo_pr(repo: &str, n: u64) -> String {
@@ -366,6 +550,11 @@ fn apply(v: &Vault, e: &Escalation) -> Result<()> {
         }
         ("stuck" | "destructive", "retry") => {
             if let Some(m) = e.mission_id.as_deref() {
+                // CI still failing on approved work: the next pass creates another fix mission.
+                if missions::get(m)?.is_some_and(|x| x.status == "done") {
+                    kv_set(&heal_key(m), &format!("rerun:{}", store::now()));
+                    return Ok(());
+                }
                 missions::unblock(m, &format!("Retry: {why}"))?;
                 crate::stuck::reset(m);
                 crate::review_agent::clear_auto(m);
@@ -405,6 +594,70 @@ fn apply(v: &Vault, e: &Escalation) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failing_check_is_rerun_once_then_fixed_then_escalated() {
+        assert_eq!(heal_next(None, None), Heal::Rerun);
+        assert_eq!(heal_next(Some("rerun:100"), None), Heal::Fix);
+        assert_eq!(heal_next(Some("fix:M-009"), Some("running")), Heal::Wait);
+        assert_eq!(heal_next(Some("fix:M-009"), Some("queued")), Heal::Wait);
+        assert_eq!(heal_next(Some("fix:M-009"), Some("done")), Heal::Escalate);
+        assert_eq!(
+            heal_next(Some("fix:M-009"), None),
+            Heal::Escalate,
+            "fix mission gone"
+        );
+        assert_eq!(
+            heal_next(Some("flaky"), None),
+            Heal::Rerun,
+            "a new failure later"
+        );
+    }
+
+    #[test]
+    fn the_fix_mission_carries_the_log_and_pushes_to_the_same_branch() {
+        let m = missions_test_mission();
+        let failed = vec![crate::github::CheckRun {
+            name: "build-and-test".into(),
+            state: "FAILURE".into(),
+            link: "https://github.com/o/r/actions/runs/7/job/8".into(),
+        }];
+        let g = fix_goal(
+            &m,
+            "https://github.com/o/r/pull/9",
+            "agentos/M-001-1",
+            &failed,
+            "assert failed: 2 != 3",
+        );
+        assert!(g.contains("git push origin HEAD:agentos/M-001-1"));
+        assert!(g.contains("Do not open a new pull request"));
+        assert!(g.contains("- build-and-test: FAILURE https://github.com/o/r/actions/runs/7/job/8"));
+        assert!(g.contains("assert failed: 2 != 3"));
+    }
+
+    fn missions_test_mission() -> Mission {
+        Mission {
+            id: "M-001".into(),
+            repo: "agentos-sandbox-1".into(),
+            goal: "g".into(),
+            acceptance: "a".into(),
+            role: "implementer".into(),
+            agent: "claude-code".into(),
+            status: "done".into(),
+            provider: String::new(),
+            model: String::new(),
+            budget_usd: 0.0,
+            spent_usd: 0.0,
+            task_id: None,
+            reviewer: Some("antigravity".into()),
+            review_verdict: Some("approve".into()),
+            review_note: None,
+            pr_url: Some("https://github.com/o/r/pull/9".into()),
+            created_at: 0,
+            updated_at: 0,
+            verify: None,
+        }
+    }
 
     #[test]
     fn a_destructive_approval_is_told_apart_from_stuck_work() {

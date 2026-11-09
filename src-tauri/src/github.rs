@@ -577,6 +577,47 @@ pub fn squash_subject(title: &str, number: u64) -> Option<String> {
     Some(format!("{title} (#{number})"))
 }
 
+/// The pull request's head branch, where a fix mission pushes.
+pub fn pr_head_branch(repo: &str, number: u64) -> Result<String> {
+    let r = repo_arg(repo)?;
+    let n = number.to_string();
+    let v = gh_json(
+        &["pr", "view", n.as_str(), "-R", r, "--json", "headRefName"],
+        None,
+    )?;
+    v.get("headRefName")
+        .and_then(Value::as_str)
+        .map(String::from)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow!("no head branch for {repo}#{number}"))
+}
+
+/// The Actions run id in a check's link (`.../actions/runs/<id>/job/<job>`). Pure.
+pub fn run_id_of(link: &str) -> Option<u64> {
+    let rest = link.split("/actions/runs/").nth(1)?;
+    rest.split(|c: char| !c.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// Rerun only the failed jobs of an Actions run.
+pub fn rerun_failed(repo: &str, run_id: u64) -> Result<()> {
+    let r = repo_arg(repo)?;
+    let id = run_id.to_string();
+    gh(&["run", "rerun", &id, "--failed", "-R", r], None, None).map(|_| ())
+}
+
+/// The failed steps' log of an Actions run, trimmed to its last `max` characters.
+pub fn failed_log(repo: &str, run_id: u64, max: usize) -> Result<String> {
+    let r = repo_arg(repo)?;
+    let id = run_id.to_string();
+    let out = gh(&["run", "view", &id, "--log-failed", "-R", r], None, None)?;
+    let chars: Vec<char> = out.chars().collect();
+    let start = chars.len().saturating_sub(max);
+    Ok(chars[start..].iter().collect())
+}
+
 /// `OPEN`, `MERGED` or `CLOSED`.
 pub fn pr_status(repo: &str, number: u64) -> Result<String> {
     let r = repo_arg(repo)?;
@@ -777,6 +818,15 @@ pub fn run_rerun(repo: &str, id: u64, failed_only: bool, approved: bool) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_check_link_names_its_actions_run() {
+        assert_eq!(
+            run_id_of("https://github.com/o/r/actions/runs/42655657348/job/129293323580"),
+            Some(42655657348)
+        );
+        assert_eq!(run_id_of("https://dashboard.gitguardian.com"), None);
+    }
 
     #[test]
     fn ci_waits_for_pending_checks_and_names_the_failed_ones() {
