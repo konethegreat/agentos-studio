@@ -393,6 +393,21 @@ pub fn pr_merge(
     delete_branch: bool,
     approved: bool,
 ) -> Result<String> {
+    pr_merge_with(repo, number, method, delete_branch, approved, None, None)
+}
+
+/// Merge with an explicit commit subject and body. The mission gate uses it to keep the pull
+/// request's description and append the provenance trailers to it.
+#[allow(clippy::too_many_arguments)]
+pub fn pr_merge_with(
+    repo: &str,
+    number: u64,
+    method: &str,
+    delete_branch: bool,
+    approved: bool,
+    subject: Option<&str>,
+    body: Option<&str>,
+) -> Result<String> {
     let r = repo_arg(repo)?;
     let flag = match method {
         "squash" => "--squash",
@@ -410,13 +425,62 @@ pub fn pr_merge(
         }
     );
     permissions::run_guarded("github.pr.merge", &target, &summary, approved, || {
-        let n = number.to_string();
-        let mut args = vec!["pr", "merge", n.as_str(), "-R", r, flag];
-        if delete_branch {
-            args.push("--delete-branch");
-        }
-        gh(&args, None, None).map(|o| format!("Merged {target}. {}", o.trim()))
+        let args = merge_args(r, number, flag, delete_branch, subject, body);
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        gh(&refs, None, None).map(|o| format!("Merged {target}. {}", o.trim()))
     })
+}
+
+fn merge_args(
+    repo: &str,
+    number: u64,
+    flag: &str,
+    delete_branch: bool,
+    subject: Option<&str>,
+    body: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec![
+        "pr".to_string(),
+        "merge".to_string(),
+        number.to_string(),
+        "-R".to_string(),
+        repo.to_string(),
+        flag.to_string(),
+    ];
+    if delete_branch {
+        args.push("--delete-branch".into());
+    }
+    if let Some(s) = subject.filter(|s| !s.trim().is_empty()) {
+        args.push("--subject".into());
+        args.push(s.to_string());
+    }
+    if let Some(b) = body.filter(|b| !b.trim().is_empty()) {
+        args.push("--body".into());
+        args.push(b.to_string());
+    }
+    args
+}
+
+/// The pull request title and description, for a merge that keeps them and appends to the body.
+pub fn pr_title_and_body(repo: &str, number: u64) -> Result<(String, String)> {
+    let r = repo_arg(repo)?;
+    let n = number.to_string();
+    let v = gh_json(
+        &["pr", "view", n.as_str(), "-R", r, "--json", "title,body"],
+        None,
+    )?;
+    Ok((
+        v.get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string(),
+        v.get("body")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim_end()
+            .to_string(),
+    ))
 }
 
 pub fn pr_review(
@@ -610,6 +674,43 @@ mod tests {
         assert!(comment("o/r", "commit", 1, "hi", true).is_err());
         assert!(issues("o/r", "weird").is_err());
         assert!(prs("o/r", "weird").is_err());
+    }
+
+    #[test]
+    fn a_merge_can_carry_a_subject_and_a_body() {
+        let plain = merge_args("o/r", 7, "--squash", true, None, None);
+        assert_eq!(
+            plain,
+            [
+                "pr",
+                "merge",
+                "7",
+                "-R",
+                "o/r",
+                "--squash",
+                "--delete-branch"
+            ]
+        );
+        let mission = merge_args(
+            "o/r",
+            7,
+            "--squash",
+            false,
+            Some("Add the helper"),
+            Some("The helper is tested.\n\nMission: M-1\n"),
+        );
+        let at = |flag: &str| mission.iter().position(|a| a == flag);
+        assert_eq!(
+            at("--subject").map(|i| mission[i + 1].as_str()),
+            Some("Add the helper")
+        );
+        assert_eq!(
+            at("--body").map(|i| mission[i + 1].as_str()),
+            Some("The helper is tested.\n\nMission: M-1\n")
+        );
+        assert!(!mission.iter().any(|a| a == "--delete-branch"));
+        let blank = merge_args("o/r", 7, "--squash", false, Some("  "), Some(""));
+        assert!(!blank.iter().any(|a| a == "--subject" || a == "--body"));
     }
 
     #[test]

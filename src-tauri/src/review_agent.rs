@@ -188,7 +188,22 @@ pub fn merge(id: &str, allowlisted: bool) -> Result<String> {
     if !blockers.is_empty() {
         bail!("not merging: {}", blockers.join("; "));
     }
-    crate::github::pr_merge(&repo, number, "squash", true, true)
+    // The squash body keeps the pull request's description and names the mission behind the line.
+    let (title, body) = crate::github::pr_title_and_body(&repo, number)?;
+    let mut message = body;
+    if !message.is_empty() {
+        message.push_str("\n\n");
+    }
+    message.push_str(&crate::provenance::trailers(&m));
+    crate::github::pr_merge_with(
+        &repo,
+        number,
+        "squash",
+        true,
+        true,
+        Some(&title),
+        Some(&message),
+    )
 }
 
 /// `session_id: <id>` as Hermes prints it on stderr after a one-shot turn. Pure.
