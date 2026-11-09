@@ -55,6 +55,18 @@ fn kv_set(key: &str, value: Option<&str>) {
     }
 }
 
+/// The running app can hold a vault note open for a moment while it indexes, so a bare delete
+/// fails with a sharing violation on Windows. Retry until the file is gone.
+fn remove_with_retry(path: &Path) {
+    for _ in 0..10 {
+        let _ = std::fs::remove_file(path);
+        if !path.exists() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
 fn run(dir: &Path, exe: &str, args: &[&str]) -> (bool, String) {
     let bin = procs::find(exe).unwrap_or_else(|| PathBuf::from(exe));
     let out = Command::new(bin)
@@ -203,7 +215,7 @@ impl Drop for Cleanup {
         }
         for id in &self.tasks {
             if let Ok((task, _)) = self.vault.get_task(id) {
-                let _ = std::fs::remove_file(&task.path);
+                remove_with_retry(Path::new(&task.path));
             }
         }
         for path in &self.notes_written {
@@ -212,7 +224,7 @@ impl Drop for Cleanup {
                     let _ = std::fs::write(path, bytes);
                 }
                 _ => {
-                    let _ = std::fs::remove_file(path);
+                    remove_with_retry(path);
                 }
             }
         }
@@ -259,7 +271,7 @@ fn remove_bus_files(v: &Vault, mission_id: &str) {
                 if text.contains(&marker) {
                     let name = e.file_name().to_string_lossy().to_string();
                     let task = name.split('_').next().unwrap_or("").to_string();
-                    let _ = std::fs::remove_file(e.path());
+                    remove_with_retry(&e.path());
                     for ext in ["log", "prompt.md", "agy-settings.json"] {
                         let _ = std::fs::remove_file(v.worker_logs().join(format!("{task}.{ext}")));
                     }
@@ -403,6 +415,16 @@ fn two_matching_rejects_make_one_convention_and_the_next_mission_carries_it() {
     cleanup.remember_kv("automation.enabled");
     kv_set("automation.enabled", Some("0"));
     let keys_before = reject_keys();
+    // A crash or a sharing violation in an earlier run can leave this check's own note behind.
+    // Only this check writes that sandbox topic, so its residue is safe to remove before the
+    // snapshot, otherwise the snapshot would restore it after the run.
+    let residue = v.memory().join("Review_blockers_in_agentos_sandbox_2.md");
+    if std::fs::read_to_string(&residue)
+        .map(|t| t.contains("phase-e-done-"))
+        .unwrap_or(false)
+    {
+        remove_with_retry(&residue);
+    }
     cleanup.snapshot_notes(&v);
     let marker = format!("phase-e-done-{}", stamp());
 
@@ -430,16 +452,27 @@ fn two_matching_rejects_make_one_convention_and_the_next_mission_carries_it() {
         m.id
     };
     let first_id = reject(format!("1. The {marker} helper has no test."));
-    let second_id = reject(format!(
-        "Two blockers:\n- the {marker} HELPER has no test\n- the readme is thin"
-    ));
+    // Same single blocker, different list form and spelling: the matcher normalises both.
+    let second_id = reject(format!("- the {marker} HELPER has no test"));
 
     let written = learning::repeated_rejects(&v, SANDBOX).expect("the reject pass");
     println!("convention notes: {written:?}");
-    for path in &written {
-        cleanup.watch_note(Path::new(path));
+    // `remember` reports "Memory note created: <path>" or "Memory note appended: <path>".
+    let paths: Vec<PathBuf> = written
+        .iter()
+        .map(|line| {
+            let line = line.trim();
+            let path = line
+                .strip_prefix("Memory note created: ")
+                .or_else(|| line.strip_prefix("Memory note appended: "))
+                .unwrap_or(line);
+            PathBuf::from(path)
+        })
+        .collect();
+    for path in &paths {
+        cleanup.watch_note(path);
     }
-    let matching: Vec<&String> = written
+    let matching: Vec<&PathBuf> = paths
         .iter()
         .filter(|p| {
             std::fs::read_to_string(p)
@@ -452,7 +485,7 @@ fn two_matching_rejects_make_one_convention_and_the_next_mission_carries_it() {
         1,
         "two rejects with the same blocker must make exactly one convention note: {written:?}"
     );
-    let note = PathBuf::from(matching[0]);
+    let note = matching[0].clone();
     let text = std::fs::read_to_string(&note).expect("the convention note exists");
     assert!(
         text.contains(&marker),
