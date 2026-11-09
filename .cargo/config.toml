@@ -1,0 +1,3 @@
+[build]
+# 11.4 GB RAM: more than 2 concurrent rustc/link.exe causes paging
+jobs = 2
