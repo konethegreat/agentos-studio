@@ -345,6 +345,20 @@ Phase B of the 2026-11-08 master brief. The bus was wired to four agents but onl
   `tests/live_hub_identity.rs`, and the phase check `tests/live_phase_b_done.rs` against the
   running release build.
 
+## v0.13.0: memory that stays true (in progress)
+
+- **Memory quality (`memory_quality.rs`):** finds notes that point at paths which no longer exist
+  and notes that cite a file or symbol `git grep -w` cannot find, then finds pairs of notes on one
+  topic whose bodies contradict each other. One strict turn per pair decides which note is current.
+- **Supersede, never delete:** the losing note keeps its bytes; only its frontmatter gains
+  `status: superseded` and a `superseded_by` pointer, so recall ranks it last instead of losing
+  history. Notes edited
+  in the last 7 days are reported, not changed.
+- **When it runs:** `agentos-studio --memory-quality --vault <vault> [--dry-run]`, a weekly cron job
+  with no agent turn for the stale half (behind `hermes.cron.change`), and a Brain Quality panel
+  that starts a run and shows what changed.
+- `tests/live_memory_quality.rs` (ignored) proves the supersede path on a sandbox vault.
+
 ## v0.10.2: cua-driver stays on the Hermes pin (shipped)
 
 - Computer Use no longer offers the driver's own `update --apply`: it installed an unused copy, an
