@@ -389,8 +389,9 @@ with the owner approving anything that reaches Hermes.
   duration, cost, tests and reviewer note, plus the original run's score on the same rubric. The
   Brain view has an Evaluations panel that lists them and starts a replay behind the new
   `eval.run` permission.
-- **Not in this release:** the router rule that changes a default only after three replays show an
-  improvement. It edits the Phase C router, so it lands after v0.12.0.
+- **Router rule:** a model may become the router's default only when at least three of its own eval
+  notes score better than the mission they replayed. Level or losing replays do not count. Until
+  then the router declines and the shadow log says how many improving replays it has.
 - `tests/live_eval.rs` (ignored) replays one finished sandbox mission and asserts the worktree,
   branch and routing policy are unchanged.
 
