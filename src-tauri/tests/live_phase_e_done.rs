@@ -723,6 +723,9 @@ fn a_mission_merged_by_studio_carries_the_provenance_trailers() {
         .unwrap();
     }
 
+    let tree_before = must(&dir, "git", &["rev-parse", "origin/main^{tree}"])
+        .trim()
+        .to_string();
     let mut merged = None;
     for _ in 0..12 {
         let r = review_agent::merge(&m.id, true);
@@ -738,6 +741,9 @@ fn a_mission_merged_by_studio_carries_the_provenance_trailers() {
         merged.as_ref().is_some_and(|r| r.is_ok()),
         "the gate merged the pull request: {merged:?}"
     );
+    // From here on the sandbox main carries the merge, so every later assertion runs under a guard
+    // that reverts it, including when the missing E5 hook makes the trailer check fail.
+    let mut undo = UndoMerge::new(dir.clone());
 
     // Read the squash commit from origin, then blame the added line in a detached worktree.
     let _ = run(&dir, "git", &["fetch", "-q", "origin", "main"]);
@@ -803,11 +809,71 @@ fn a_mission_merged_by_studio_carries_the_provenance_trailers() {
     assert_eq!(found.agent, "claude-code");
     assert_eq!(found.cost, "flat");
 
-    // Undo the merge on the sandbox so the fixture stays as it was.
-    let _ = run(&blame_wt, "git", &["revert", "--no-edit", "HEAD"]);
-    let _ = run(&blame_wt, "git", &["push", "-q", "origin", "HEAD:main"]);
     let _ = run(&dir, "git", &["worktree", "remove", "--force", &blame_wt_s]);
-    let _ = run(&dir, "git", &["worktree", "prune"]);
+    // Undo the merge on the sandbox so the fixture stays as it was.
+    undo.undo();
+    let mut tree_after = String::new();
+    for _ in 0..10 {
+        let _ = run(&dir, "git", &["fetch", "-q", "origin", "main"]);
+        tree_after = run(&dir, "git", &["rev-parse", "origin/main^{tree}"])
+            .1
+            .trim()
+            .to_string();
+        if tree_after == tree_before {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(3));
+    }
+    assert_eq!(
+        tree_after, tree_before,
+        "the revert must return the sandbox main tree to its state before the merge"
+    );
+}
+
+/// Reverts the squash merge on the sandbox main. `undo` is idempotent and runs from `Drop`, so a
+/// failed assertion after the merge never leaves the fixture changed.
+struct UndoMerge {
+    repo: PathBuf,
+    active: bool,
+}
+
+impl UndoMerge {
+    fn new(repo: PathBuf) -> UndoMerge {
+        UndoMerge { repo, active: true }
+    }
+
+    fn undo(&mut self) {
+        if !self.active {
+            return;
+        }
+        self.active = false;
+        let wt = self
+            .repo
+            .join(".worktrees")
+            .join(format!("revert-{}", stamp()));
+        let wt_s = wt.display().to_string();
+        let _ = run(&self.repo, "git", &["fetch", "-q", "origin", "main"]);
+        let added = run(
+            &self.repo,
+            "git",
+            &["worktree", "add", "-q", "--detach", &wt_s, "origin/main"],
+        )
+        .0;
+        if added {
+            let reverted = run(&wt, "git", &["revert", "--no-edit", "HEAD"]).0;
+            if reverted {
+                let _ = run(&wt, "git", &["push", "-q", "origin", "HEAD:main"]);
+            }
+            let _ = run(&self.repo, "git", &["worktree", "remove", "--force", &wt_s]);
+        }
+        let _ = run(&self.repo, "git", &["worktree", "prune"]);
+    }
+}
+
+impl Drop for UndoMerge {
+    fn drop(&mut self) {
+        self.undo();
+    }
 }
 
 fn wait_for_checks(repo: &Path, number: u64) {
