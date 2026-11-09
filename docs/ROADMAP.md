@@ -345,7 +345,7 @@ Phase B of the 2026-11-08 master brief. The bus was wired to four agents but onl
   `tests/live_hub_identity.rs`, and the phase check `tests/live_phase_b_done.rs` against the
   running release build.
 
-## v0.14.0: goal in, finished work out (shipped; the phone half of the done check is pending)
+## v0.14.0: goal in, finished work out (shipped; both halves of the done check passed)
 
 Phase D of the 2026-11-08 master brief, built by Hermes while Qoder prepares Phase H and Phase G
 items 1 and 2 (`03_Memory/Phase_D_H_Coordination.md`). The owner states an outcome; Studio plans,
@@ -403,8 +403,8 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   target with a four-digit code; a reply such as `E-3 4821 merge` is read from the Hermes
   gateway's session store (read only) and applied when the code matches. Verified in Hermes
   v0.23.0: the gateway's own approvals already reach a paired platform with `/approve` buttons
-  or text. On this machine WhatsApp is enabled but not paired yet, so phone delivery waits for
-  the owner (bus TASK-015).
+  or text. WhatsApp was paired on 2026-11-09 (bus TASK-015, done) and the messaging target is
+  the home channel, `whatsapp`.
 - **Fleet pause:** Pause fleet in the status bar stops all new work in one click. Studio starts no
   mission, merges nothing, applies no escalation answer and creates no fix mission (kv
   `fleet.paused`), and Hermes' own `hermes pause` stops its cron, kanban and new gateway work.
@@ -420,9 +420,16 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   `README.md` present) and wrote the report: 11 minutes, $0.00 metered, no escalation and nothing
   answered in Studio. The merges were reverted afterwards. The first runs found a real bug, fixed
   in the same PR: done-check commands with inner quotes broke under `cmd /C`.
-- **Done check, part 2 (pending):** an escalation reaches the phone and the answer is honoured
-  (`phase_d_done_an_escalation_reaches_the_phone_and_the_answer_is_honoured`, ready). It waits for
-  the owner to pair WhatsApp in Hermes (bus TASK-015).
+- **Done check, part 2 (passed live, 2026-11-09):** an escalation reaches the phone and the answer
+  is honoured (`phase_d_done_an_escalation_reaches_the_phone_and_the_answer_is_honoured`), run
+  against the installed 0.14.0 app with WhatsApp as the messaging target. A goal at Ask on risk on
+  a repository with `allow_merge` off: Hermes planned two missions, the reviewer approved them, the
+  merge question for the first went to the owner's phone, the owner replied with the code and
+  `merge`, the escalation read answered from the phone, Studio merged and the goal finished with
+  every done check passing (28 minutes, most of it waiting for the reply). The merges were
+  reverted afterwards. The run found a real bug, fixed in #123: deleting a goal kept the
+  applied markers of its escalations, so a later escalation that got the same id would have been
+  answered and never acted on.
 - Known issue: `hermes verify` falls back to the owner's checkout when a mission's worktree is gone
   (#117, since 0.10).
 
