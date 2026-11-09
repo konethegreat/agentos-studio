@@ -10,7 +10,34 @@
 use std::path::Path;
 use std::process::Command;
 
-use agentos_studio_lib::{missions, provenance};
+use agentos_studio_lib::{missions, provenance, store};
+
+/// Holds the automation loop off while the test runs: the running app would otherwise start the
+/// seeded queued mission in its real repository. The previous value is put back on drop.
+struct AutomationOff(Option<String>);
+
+impl AutomationOff {
+    fn new() -> AutomationOff {
+        let c = store::open().unwrap();
+        let before = store::kv_get(&c, "automation.enabled").unwrap();
+        store::kv_set(&c, "automation.enabled", "0").unwrap();
+        AutomationOff(before)
+    }
+}
+
+impl Drop for AutomationOff {
+    fn drop(&mut self) {
+        let c = store::open().unwrap();
+        match &self.0 {
+            Some(v) => {
+                let _ = store::kv_set(&c, "automation.enabled", v);
+            }
+            None => {
+                let _ = store::kv_delete(&c, "automation.enabled");
+            }
+        }
+    }
+}
 
 fn git(dir: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -53,6 +80,7 @@ impl Drop for Seeded {
 #[test]
 #[ignore = "needs git and the owner's real store; run it on the live machine under the lock"]
 fn a_trailered_commit_names_its_mission_and_a_plain_one_does_not() {
+    let _off = AutomationOff::new();
     let m = missions::create(
         "agentos-studio",
         "Prove the provenance line",
