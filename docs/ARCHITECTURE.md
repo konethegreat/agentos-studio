@@ -355,9 +355,10 @@ its trailers are still the useful part. Paths must be relative and stay inside t
 The backend half is pure enough for unit tests through injected blame, message and pull-request
 seams; the live check (`tests/live_provenance.rs`) runs a real `git blame` on a temporary repository
 under the live-machine lock and needs no Hermes turn. Brain shows the form, and the GitHub diff view
-blames any new line with a hover `why` action against the local clone. The merge hook that appends
-the trailers to a mission's commit lands after the 0.12.0 release, because it edits the mission
-merge path.
+blames any new line with a hover `why` action against the local clone. The merge hook appends the
+same trailers to the commit: `review_agent::merge` builds the pull request title and body, adds
+`provenance::trailers`, and merges with `github::pr_merge_with`, so a mission merged by Studio
+resolves to its mission without the PR mapping fallback.
 
 ## Evaluation harness
 
