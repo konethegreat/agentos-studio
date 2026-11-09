@@ -61,7 +61,15 @@ fn claude_code_mission_reaches_review_with_a_pr() {
     let mut child = Command::new(exe)
         .args(bus::claude_args(&allowed, None))
         .current_dir(&wt)
-        .env("PATH", procs::search_path())
+        // The same cleared, allowlisted environment an unattended worker gets.
+        .env_clear()
+        .envs(bus::worker_env(
+            std::env::vars_os(),
+            &t.project,
+            &v.root,
+            procs::search_path(),
+            true,
+        ))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

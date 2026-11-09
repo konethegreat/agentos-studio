@@ -72,9 +72,11 @@ deliberately boring.
   concurrency cap and a per-repository cap of one running mission.
 - **Event-driven bus.** With Automations on, the vault watcher reacts to every change under
   `02_Agent_Bus/`: within a few seconds it claims and starts each Pending task assigned to an
-  installed headless agent (Hermes, Claude Code, Antigravity) that names a `Repository:`, so work
-  one agent delegates to another starts without waiting, and it runs the scheduler tick so
-  completed work moves to review. Bursts of events become one pass (a 3 second gap, and an event
+  installed headless agent (Hermes, Claude Code, Antigravity) that names a `Worktree:` of its own
+  (every mission and handoff does), and it runs the scheduler tick so completed work moves to
+  review. A task with only a `Repository:` line stays Pending: nobody watches a worker the watcher
+  starts, and an unattended worker never runs in a shared checkout. Queue it as a mission, or use
+  Run now in the Bus view while you watch it. Bursts of events become one pass (a 3 second gap, and an event
   during a pass reruns it afterwards). A task the watcher could not start is not retried from
   events in that session, because its failure note is itself an event; stuck detection covers it.
   The minute tick stays as the safety net, and passes never overlap (one tick at a time).
@@ -104,6 +106,13 @@ deliberately boring.
   to the repository's local `.git/info/exclude`, so no tracked file changes. The task carries
   `Worktree:` and `Branch:` lines, the worker runs there, and the worktree is removed when the
   mission is done or failed (the branch stays, it is the pull request).
+- **Workers inherit nothing.** Every headless worker starts with a cleared environment rebuilt
+  from the allowlist on the Safety card (PATH as Studio's own search path, temp and profile
+  folders, Windows basics), plus `AGENTOS_VAULT`, `AGENTOS_REPO` (the task's project, which scopes
+  the hub's per-repo tool policy) and, for every start nobody watches, `AGENTOS_UNATTENDED=1`.
+  API keys and tokens the app holds or reads never reach an agent: each CLI signs in through its
+  own config (`claude`, `hermes`, `agy`, `gh`). An unattended start is refused with the reason when
+  the task has no worktree or names one that no longer exists.
 - **Workers start themselves.** `missions::start` (the board button and the scheduler alike) starts
   a headless worker as soon as the bus task exists, for every agent whose CLI is installed:
   - Claude Code: `claude -p` with `--permission-mode acceptEdits` and the repository's tool

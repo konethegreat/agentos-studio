@@ -184,6 +184,14 @@ is a REQUEST on the coordination note) and `hermes` (depends on the Hermes runti
 worktree-only starts, egress rules and `hermes secrets`). The card also lists the allowlist, so the
 rule is visible rather than implied.
 
+`bus::spawn_worker` is the caller: `env_clear()` plus `bus::worker_env` (the helper above, with
+PATH replaced by `procs::search_path()`), for every headless worker. Starts nobody watches (the
+scheduler, the bus watcher, stuck retries, all through `bus::launch`) pass `unattended = true`,
+which keeps the marker and applies `bus::unattended_refusal`: no existing `Worktree:`, no worker.
+The two starts the owner makes by hand in the Bus view (dispatch and Run now) pass `false`: the
+same clean environment, no marker, and the repository folder is allowed. Hermes missions on kanban
+are started by the gateway, not by Studio, and already get a worktree per task.
+
 ### Who owns what with Hermes
 
 Hermes owns execution of Hermes work: sessions, tools, approvals of dangerous commands, checkpoints
