@@ -255,8 +255,9 @@ cards, with a permission-gated delete. Below 1280 px wide the two become tabs.
 trailers in its message (`Mission`, `Agent`, `Model`, `Reviewer`, `Cost`) or, for a commit without
 trailers, the merged pull request mapped to a mission, then the mission with its agent, model,
 reviewer, cost and Hermes sessions, and a link to the run timeline. The GitHub diff view has the
-same action on hover over any new line. A lookup that cannot run (no `gh`, no GitHub remote) is
-reported as a note, not an error.
+same action on hover over any new line. When Studio merges a mission's pull request it appends those
+trailers to the squash body itself, so a mission merged from the app resolves without a manual step.
+A lookup that cannot run (no `gh`, no GitHub remote) is reported as a note, not an error.
 
 **Replaying a mission.** The Evaluations panel under Brain replays a finished mission on another
 agent or model: it starts at the pull request's base commit in a detached worktree, gives the agent
@@ -264,7 +265,9 @@ the same goal and acceptance criteria, then runs the repository's own test comma
 over the replay's diff. The score is out of 100 (tests 50, reviewer 50) and each replay writes one
 note to `03_Memory/evals/` that compares it with the original run. The replay never pushes and never
 opens a pull request, and the worktree is removed even when the run fails. Replays are behind the
-`eval.run` permission (Ask by default) because they spend agent time.
+`eval.run` permission (Ask by default) because they spend agent time. The router reads them too: a
+model becomes a route default only after three of its own replays score higher than the mission they
+replayed, so approval history alone does not move a default.
 
 ## Projects, branches and skills
 
