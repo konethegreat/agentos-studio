@@ -161,9 +161,10 @@ session, so it refuses there, exactly like the global ask policy.
 
 Scoped policies live as JSON in `kv` (`perm.tool.agent.<agent>`, `perm.tool.repo.<repo>`, index
 `perm.tool.scopes`), not in the schema: no migration, and removing an override returns the tool to
-the next scope down. Every change is audited as `tool_policy.set` with `<scope>:<key> <server>.<tool>
-= <policy>|inherit`. The Safety view lists the real hub tools, the registered hub agents and the
-unarchived projects, and shows per tool whether the scope inherits, or sets its own policy.
+the next scope down. Every change is audited as `tool_policy.set` with the target
+`<scope>:<key>:agentos-hub/<tool>` and the detail `policy = allow|ask|deny|inherit`. The Safety view
+lists the real hub tools, the registered hub agents and the unarchived projects, and shows per tool
+whether the scope inherits, or sets its own policy.
 
 ### Who owns what with Hermes
 
