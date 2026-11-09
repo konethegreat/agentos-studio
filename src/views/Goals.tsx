@@ -183,6 +183,7 @@ export function Goals() {
         <h1 className="text-body font-semibold text-slate-100">Goals</h1>
         <span className="text-label text-slate-500">{rows === null ? "loading" : rows.length === 0 ? "none yet" : `${openCount} open`}</span>
         <div className="ml-auto flex gap-2">
+          <DigestControls />
           <Button size="sm" variant="ghost" icon={<RefreshCw className="size-3.5" />} onClick={() => void load()}>
             Refresh
           </Button>
@@ -524,6 +525,69 @@ function EscalationRow({ e, busy, onAnswer }: { e: Escalation; busy: boolean; on
           {o}
         </Button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The morning and evening digest: when it goes out, where it goes, and Send now. The messaging
+ * target is set in MCP and Providers: Hermes; without one the digest stays in the vault and Notion.
+ */
+function DigestControls() {
+  const toast = useToast();
+  const [times, setTimes] = useState("");
+  const [saved, setSaved] = useState("");
+  const [target, setTarget] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .digestSettings()
+      .then((s) => {
+        setTimes(s.times);
+        setSaved(s.times);
+        setTarget(s.notify_target);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  async function save() {
+    if (times.trim() === saved) return;
+    try {
+      await api.setDigestTimes(times);
+      setSaved(times.trim());
+      toast("ok", `Digest at ${times.trim()}`);
+    } catch (e) {
+      toast("error", errorText(e));
+      setTimes(saved);
+    }
+  }
+
+  async function sendNow() {
+    setBusy(true);
+    try {
+      const path = await api.digestNow();
+      toast("ok", target ? `Digest written to ${path} and sent to ${target}` : `Digest written to ${path}; set a messaging target in Providers: Hermes to get it on your phone`);
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 text-label text-slate-400" title={target ? `Sent to ${target} through hermes send` : "No messaging target: the digest goes to the vault and Notion only"}>
+      Digest at
+      <input
+        value={times}
+        onChange={(e) => setTimes(e.target.value)}
+        onBlur={() => void save()}
+        aria-label="Digest times, HH:MM comma separated"
+        className="h-7 w-28 rounded-lg border border-line bg-canvas px-2 text-small text-slate-200"
+      />
+      <Button size="sm" variant="ghost" busy={busy} onClick={() => void sendNow()}>
+        Send now
+      </Button>
     </div>
   );
 }
