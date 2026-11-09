@@ -161,13 +161,18 @@ The home screen. Pick a working directory (any of your repositories, or any fold
 
 ## Startup and diagnostics
 
-Every launch runs eight bounded checks and shows them on a boot screen: app folders, the tool
+Every launch runs nine bounded checks and shows them on a boot screen: app folders, the tool
 search path, settings, `studio.db`, the vault structure, the connected tools (git, node, gh, hermes,
-claude), the Hermes configuration, and whether `agentos-hub` is registered with the agents.
+claude), the Hermes configuration, whether `agentos-hub` is registered with the agents, and whether
+each registered agent has its own hub identity.
 
 - Safe repairs run automatically: missing folders, database migrations, PATH entries, and missing
   vault folders. Anything that writes another tool's configuration, installs software or signs in
   is listed with a **Fix** button instead of being changed behind your back.
+- **First run without a fleet:** with no vault on the machine, the first launch creates one (a
+  folder in Documents, or `AGENTOS_VAULT` when set), saves it as your vault and continues. Claude
+  Code, Qoder, Antigravity and Notion are optional rows: when an agent is not installed its rows
+  say so and never count against the Setup health.
 - **Diagnostics** (sidebar) shows every check with its duration, the boot log, the crash log, and a
   **Re-run checks** button. Panics are written to `logs/crash.log` with a backtrace, and the next
   launch surfaces them, so nothing dies silently.

@@ -16,7 +16,8 @@ Open **Setup** (System group in the rail). Every row is a check with a button ne
   Hermes Agent comes from its official installer. If winget is missing, install
   "App Installer" from the Microsoft Store first.
 - **Vault:** pick an empty folder (or an existing Obsidian vault) and press *Initialize and Use*.
-  Studio creates the folders it needs and leaves your own notes alone.
+  Studio creates the folders it needs and leaves your own notes alone. On a machine with no vault
+  yet, the first launch already creates one in Documents and saves it, so you can skip this step.
 
 ## 2. Connect a model
 

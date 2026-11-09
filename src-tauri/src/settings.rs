@@ -14,15 +14,38 @@ pub struct Settings {
     pub scan_roots: Vec<String>,
 }
 
+/// The user's home folder. `USERPROFILE` comes first on Windows for the same reason as
+/// `APPDATA` below: the known-folder call ignores a redirected environment, so a test or a
+/// portable install can move every agent config and vault lookup under one temp folder.
 pub fn home() -> PathBuf {
+    if cfg!(windows) {
+        if let Ok(h) = std::env::var("USERPROFILE") {
+            if !h.trim().is_empty() {
+                return PathBuf::from(h);
+            }
+        }
+    }
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn settings_file() -> PathBuf {
+/// The app config folder. `APPDATA` comes first on Windows because the known-folder call ignores
+/// a redirected environment, so a test or a portable install can point the whole config at a temp
+/// folder with one variable and this app then writes nothing outside it.
+pub fn app_config_dir() -> PathBuf {
+    if cfg!(windows) {
+        if let Ok(a) = std::env::var("APPDATA") {
+            if !a.trim().is_empty() {
+                return PathBuf::from(a).join("agentos-studio");
+            }
+        }
+    }
     dirs::config_dir()
         .unwrap_or_else(home)
         .join("agentos-studio")
-        .join("settings.json")
+}
+
+fn settings_file() -> PathBuf {
+    app_config_dir().join("settings.json")
 }
 
 /// The configured vault, resolved without an AppState. Used by background work and tests.
@@ -57,9 +80,12 @@ impl Settings {
                 return PathBuf::from(v);
             }
         }
-        let hermes_vault = home().join("Obsidian").join("Hermes Obsidian vault");
-        if hermes_vault.is_dir() {
-            return hermes_vault;
+        // The default profile's vault, adopted only when it already exists, so an existing
+        // install keeps its notes. A stranger never has it, so first run lands on the folder
+        // below and boot creates it.
+        let existing = home().join("Obsidian").join("Hermes Obsidian vault");
+        if existing.is_dir() {
+            return existing;
         }
         dirs::document_dir()
             .unwrap_or_else(home)
