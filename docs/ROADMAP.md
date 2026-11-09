@@ -382,6 +382,11 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   answers, a safe answer and a deadline (60 minutes by default, kv
   `escalation.timeout_minutes`); with no answer by the deadline the safe answer is taken. Answered
   in Work: Goals, under Waiting on you.
+- **Self-healing CI:** a failing check on an approved mission's pull request has its failed jobs
+  rerun once. Passing on the rerun makes it a flaky test: a gotcha note in the vault and a line on
+  the timeline and in the digest, with no further retries. Failing again creates one fix mission
+  under the goal with the failing checks and the end of the failing log, told to push to the pull
+  request's own branch. Still failing after that fix escalates.
 
 ## v0.13.0: memory that gets better with every mission (shipped)
 
