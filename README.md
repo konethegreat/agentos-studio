@@ -250,6 +250,13 @@ notes. The Hermes side shows
 `MEMORY.md` and `USER.md` read-only, and the journey nodes Hermes builds from skills and memory
 cards, with a permission-gated delete. Below 1280 px wide the two become tabs.
 
+**Why is this here?** takes a repository, file and line and blames it: the commit, the mission
+trailers in its message (`Mission`, `Agent`, `Model`, `Reviewer`, `Cost`) or, for a commit without
+trailers, the merged pull request mapped to a mission, then the mission with its agent, model,
+reviewer, cost and Hermes sessions, and a link to the run timeline. The GitHub diff view has the
+same action on hover over any new line. A lookup that cannot run (no `gh`, no GitHub remote) is
+reported as a note, not an error.
+
 ## Projects, branches and skills
 
 - **Projects** are Hermes projects: a named workspace over one or more folders (`hermes project`).

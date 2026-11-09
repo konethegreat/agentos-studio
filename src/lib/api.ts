@@ -444,6 +444,43 @@ export interface TimelineSummary {
   updated_at: number;
 }
 
+/** Phase E: the commit trailers a mission merge appends to its commit message. */
+export interface ProvenanceTrailers {
+  mission: string | null;
+  agent: string | null;
+  model: string | null;
+  reviewer: string | null;
+  cost: string | null;
+}
+
+export interface ProvenanceMission {
+  id: string;
+  goal: string;
+  status: string;
+  agent: string;
+  model: string;
+  reviewer: string | null;
+  cost: string;
+  pr_url: string | null;
+  sessions: string[];
+}
+
+/** Phase E: why one line is here, from a blamed commit back to its mission. */
+export interface Provenance {
+  repo: string;
+  file: string;
+  line: number;
+  sha: string;
+  short: string;
+  subject: string;
+  committed_at: number;
+  source: "trailers" | "pull request" | "none";
+  trailers: ProvenanceTrailers;
+  mission: ProvenanceMission | null;
+  pull_request: string | null;
+  note: string | null;
+}
+
 export interface MemoryEntry {
   session_id: string;
   turn: number;
@@ -834,6 +871,8 @@ export const api = {
 
   missionTimeline: (id: string) => invoke<MissionTimeline>("mission_timeline", { id }),
   timelineMissions: (limit = 100) => invoke<TimelineSummary[]>("timeline_missions", { limit }),
+  fileProvenance: (repo: string, file: string, line: number) =>
+    invoke<Provenance>("file_provenance", { repo, file, line }),
 
   runCli: (command: string, cwd: string) => invoke<string>("execute_cli_command", { command, cwd }),
   killCli: (runId: string) => invoke<void>("kill_cli_command", { runId }),

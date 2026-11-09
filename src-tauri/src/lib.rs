@@ -47,6 +47,7 @@ pub mod plans;
 pub mod policy;
 pub mod procs;
 pub mod projects;
+pub mod provenance;
 pub mod pty;
 pub mod review_agent;
 pub mod router;
@@ -385,6 +386,7 @@ pub fn run_gui() {
             commands::skill_proposals,
             commands::skill_proposal_approve,
             commands::skill_proposal_dismiss,
+            commands::file_provenance,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")

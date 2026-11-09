@@ -54,6 +54,16 @@ export function Timeline() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // "Why is this here?" in Brain opens the timeline on one mission.
+  useEffect(() => {
+    const onPick = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (id) setPicked(id);
+    };
+    window.addEventListener("agentos:timeline", onPick);
+    return () => window.removeEventListener("agentos:timeline", onPick);
+  }, []);
+
   useEffect(() => {
     if (!picked) return;
     setTl(null);
