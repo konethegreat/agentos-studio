@@ -339,6 +339,7 @@ fn verify(v: &Vault, g: &Goal, ms: &[Mission], out: &mut Outcome) -> Result<()> 
         remember(v, g, &text);
         if !cfg!(test) {
             let _ = crate::notion::publish(v, false);
+            crate::notion_goals::refresh(v);
             if let Some(target) = crate::hermes_surfaces::notify_target() {
                 let _ = crate::hermes_surfaces::send(
                     &target,

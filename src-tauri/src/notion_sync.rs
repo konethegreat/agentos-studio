@@ -19,12 +19,35 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::missions::{self, Mission};
-use crate::notion::{hash, ledger_get, ledger_put, request};
+use crate::notion::{
+    hash, ledger_forget_prefix, ledger_get, ledger_in_for_page, ledger_put, ledger_put_in, request,
+    FieldOwner,
+};
 
 pub const KV_DB: &str = "notion.missions_db";
 pub const DB_TITLE: &str = "AgentOS missions board";
 /// Comma-separated Notion user ids whose proposals queue without approval.
 pub const KV_TRUSTED: &str = "notion.trusted_authors";
+
+/// The one owner of every column (`schema`). `Request` is the only column Notion owns after a
+/// row has an ID; Studio clears it once handled and never writes a value into it.
+pub const OWNERS: [(&str, FieldOwner); 12] = [
+    ("Goal", FieldOwner::ProposalThenStudio),
+    ("ID", FieldOwner::Studio),
+    ("Repo", FieldOwner::ProposalThenStudio),
+    ("Acceptance", FieldOwner::ProposalThenStudio),
+    ("Role", FieldOwner::ProposalThenStudio),
+    ("Agent", FieldOwner::ProposalThenStudio),
+    ("Status", FieldOwner::Studio),
+    ("Verdict", FieldOwner::Studio),
+    ("PR", FieldOwner::Studio),
+    ("Spent USD", FieldOwner::Studio),
+    ("Request", FieldOwner::Notion),
+    ("Studio note", FieldOwner::Studio),
+];
+
+const LEDGER_PREFIX: &str = "notion-row:";
+const CANCEL_PREFIX: &str = "notion-cancel:";
 
 pub fn trusted_authors() -> Vec<String> {
     parse_ids(&crate::notion::setting(KV_TRUSTED).unwrap_or_default())
@@ -129,7 +152,7 @@ pub fn row_props(m: &Mission) -> Value {
 }
 
 fn ledger_key(id: &str) -> String {
-    format!("notion-row:{id}")
+    format!("{LEDGER_PREFIX}{id}")
 }
 
 /// One row as Notion returns it, reduced to what Studio reads.
@@ -346,6 +369,17 @@ fn sync_connected(r: &mut SyncReport, tok: &str, parent: &str) -> Result<()> {
                     r.proposed.push(format!("(dry run) {}", row.goal));
                     continue;
                 }
+                // A page that already produced a mission (the ID write-back failed last time) is
+                // repaired, never turned into a second mission.
+                if let Some((key, _)) = ledger_in_for_page(LEDGER_PREFIX, &row.page_id) {
+                    let id = key[LEDGER_PREFIX.len()..].to_string();
+                    if let Some(m) = missions::get(&id)? {
+                        let props = row_props(&m);
+                        patch_row(tok, &row.page_id, props.clone())?;
+                        ledger_put(&key, &row.page_id, &hash(&props.to_string()))?;
+                    }
+                    continue;
+                }
                 let role = if row.role.is_empty() {
                     "implementer"
                 } else {
@@ -399,6 +433,14 @@ fn sync_connected(r: &mut SyncReport, tok: &str, parent: &str) -> Result<()> {
                             &row.page_id,
                             &hash(&row_props(&m).to_string()),
                         )?;
+                        ledger_put_in(
+                            &ledger_key(&m.id),
+                            &row.page_id,
+                            &hash(&format!(
+                                "{}|{}|{}|{}|{}|{}",
+                                row.goal, row.repo, row.acceptance, row.role, row.agent, row.author
+                            )),
+                        )?;
                         if !is_trusted {
                             r.awaiting_approval.push(m.id.clone());
                         }
@@ -437,6 +479,11 @@ fn sync_connected(r: &mut SyncReport, tok: &str, parent: &str) -> Result<()> {
                     Ok(done) => {
                         if !dry {
                             patch_row(tok, &row.page_id, note_props("Cancelled from Notion"))?;
+                            ledger_put_in(
+                                &format!("{CANCEL_PREFIX}{id}"),
+                                &row.page_id,
+                                &hash(&format!("cancel|{id}")),
+                            )?;
                         }
                         r.cancelled.push(done);
                     }
@@ -499,6 +546,9 @@ pub fn archive_board() -> Result<()> {
         Some(&json!({ "archived": true })),
     )?;
     crate::notion::set_setting(KV_DB, "");
+    // A fresh board starts with a fresh ledger, so the next sync creates every row again.
+    ledger_forget_prefix(LEDGER_PREFIX)?;
+    ledger_forget_prefix(CANCEL_PREFIX)?;
     Ok(())
 }
 
@@ -602,6 +652,42 @@ mod tests {
         let mut m2 = m.clone();
         m2.status = "running".into();
         assert_ne!(hash(&p.to_string()), hash(&row_props(&m2).to_string()));
+    }
+
+    #[test]
+    fn every_column_has_one_owner_and_studio_never_writes_a_notion_column() {
+        let schema = schema();
+        let cols: Vec<&String> = schema.as_object().unwrap().keys().collect();
+        assert_eq!(cols.len(), OWNERS.len());
+        for c in &cols {
+            assert_eq!(OWNERS.iter().filter(|(k, _)| k == c).count(), 1, "{c}");
+        }
+        let m = Mission {
+            id: "M-001".into(),
+            repo: "demo".into(),
+            goal: "g".into(),
+            acceptance: "a".into(),
+            role: "implementer".into(),
+            agent: "hermes".into(),
+            status: "queued".into(),
+            provider: String::new(),
+            model: String::new(),
+            budget_usd: 0.0,
+            spent_usd: 0.0,
+            task_id: None,
+            reviewer: None,
+            review_verdict: None,
+            pr_url: None,
+            review_note: None,
+            created_at: 0,
+            updated_at: 0,
+            verify: None,
+        };
+        for k in row_props(&m).as_object().unwrap().keys() {
+            let owner = OWNERS.iter().find(|(c, _)| c == k).unwrap().1;
+            assert_ne!(owner, FieldOwner::Notion, "Studio writes {k}");
+        }
+        assert!(note_props("x")["Request"]["select"].is_null());
     }
 
     #[test]

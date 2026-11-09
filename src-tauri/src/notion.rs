@@ -126,6 +126,13 @@ pub fn artifacts(v: &Vault) -> Vec<(String, String)> {
     }
     out.push(("AgentOS decision digest".into(), digest));
 
+    // The newest morning or evening digest, as written to 04_Agent_Engine/digests.
+    let latest = crate::digest::latest(v)
+        .map(|t| strip_frontmatter(&t).trim().to_string())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| "No digest yet.".into());
+    out.push(("AgentOS digest".into(), latest));
+
     // Task status across the bus.
     let mut tasks = String::from("Agent Bus status.\n\n");
     let mut open = 0;
@@ -310,11 +317,81 @@ pub fn ledger_keys(prefix: &str) -> Vec<(String, String)> {
     out
 }
 
-pub(crate) fn ledger_delete(title: &str) -> Result<()> {
+/// Who may write a board column. Every column has exactly one owner, so the two sides can never
+/// disagree about a value: Studio overwrites its own columns on every sync and never writes a
+/// value into a Notion-owned one (it only clears a request it acted on); Notion-owned columns are
+/// the only ones Studio reads back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldOwner {
+    Studio,
+    Notion,
+    /// Written by a person to propose a new row (no ID yet), then owned by Studio.
+    ProposalThenStudio,
+}
+
+/// Record something Studio accepted from Notion. `key` names the Studio object the page produced
+/// or changed (`notion-goal:G-002`, `notion-decision:E-1`, an inbox note path), `notion_id` is the
+/// page it came from and `content_hash` the hash of what was read.
+pub(crate) fn ledger_put_in(key: &str, notion_id: &str, content_hash: &str) -> Result<()> {
     let c = store::open()?;
     c.execute(
-        "DELETE FROM sync_ledger WHERE vault_path = ?1 AND direction = 'out'",
-        params![title],
+        "INSERT INTO sync_ledger (vault_path, notion_id, content_hash, synced_at, direction)
+         VALUES (?1, ?2, ?3, ?4, 'in')
+         ON CONFLICT(vault_path, direction) DO UPDATE SET
+           notion_id = excluded.notion_id, content_hash = excluded.content_hash,
+           synced_at = excluded.synced_at",
+        params![key, notion_id, content_hash, chrono::Utc::now().timestamp()],
+    )?;
+    Ok(())
+}
+
+/// The inbound entry with this key prefix that came from Notion page `notion_id`, as
+/// `(key, hash)`: a page that already produced a goal or mission must not produce a second one.
+pub fn ledger_in_for_page(prefix: &str, notion_id: &str) -> Option<(String, String)> {
+    let c = store::open().ok()?;
+    c.query_row(
+        "SELECT vault_path, content_hash FROM sync_ledger
+         WHERE direction = 'in' AND notion_id = ?1 AND substr(vault_path, 1, ?3) = ?2
+         ORDER BY synced_at DESC LIMIT 1",
+        params![notion_id, prefix, prefix.chars().count() as i64],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+    )
+    .ok()
+}
+
+/// Ledger rows per direction, for the Notion status line.
+pub fn ledger_counts() -> (i64, i64) {
+    let Ok(c) = store::open() else {
+        return (0, 0);
+    };
+    let n = |d: &str| {
+        c.query_row(
+            "SELECT COUNT(*) FROM sync_ledger WHERE direction = ?1",
+            params![d],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+    };
+    (n("out"), n("in"))
+}
+
+/// Forget every ledger row, both directions, whose key starts with `prefix`.
+pub(crate) fn ledger_forget_prefix(prefix: &str) -> Result<()> {
+    let c = store::open()?;
+    c.execute(
+        "DELETE FROM sync_ledger WHERE substr(vault_path, 1, ?2) = ?1",
+        params![prefix, prefix.chars().count() as i64],
+    )?;
+    Ok(())
+}
+
+/// Forget one key in both directions.
+pub(crate) fn ledger_forget(key: &str) -> Result<()> {
+    let c = store::open()?;
+    c.execute(
+        "DELETE FROM sync_ledger WHERE vault_path = ?1",
+        params![key],
     )?;
     Ok(())
 }
@@ -475,9 +552,21 @@ pub fn pull_inbox(v: &Vault) -> Result<usize> {
             "---\ntitle: {title}\nnotion_id: {id}\nsource: notion-inbox\nstatus: new\n---\n\n# {title}\n\nPulled from the Notion inbox for an agent to pick up.\n"
         );
         v.write_note(&path, &body)?;
+        ledger_put_in(&path, id, &hash(&title))?;
         written += 1;
     }
     Ok(written)
+}
+
+/// The body of a note without its YAML frontmatter. Pure.
+pub fn strip_frontmatter(text: &str) -> &str {
+    if let Some(rest) = text.strip_prefix("---") {
+        if let Some(end) = rest.find("\n---") {
+            let after = &rest[end + 4..];
+            return after.strip_prefix('\n').unwrap_or(after);
+        }
+    }
+    text
 }
 
 fn slug_simple(s: &str) -> String {
@@ -538,6 +627,64 @@ mod tests {
         assert!(titles.contains(&"AgentOS task status"));
         assert!(titles.contains(&"AgentOS missions"));
         assert!(arts.iter().all(|(_, body)| !body.trim().is_empty()));
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn the_ledger_records_both_directions_and_forgets_by_prefix() {
+        let d = tempfile::tempdir().unwrap();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        ledger_put("notion-goal:G-001", "page-1", "h-out").unwrap();
+        ledger_put_in("notion-goal:G-001", "page-1", "h-in").unwrap();
+        ledger_put_in("notion-decision:E-1", "page-1", "h-d").unwrap();
+        ledger_put_in("00_Inbox/x (abcd).md", "page-9", "h-x").unwrap();
+        assert_eq!(ledger_counts(), (1, 3));
+        assert_eq!(
+            ledger_get("notion-goal:G-001"),
+            Some(("page-1".into(), "h-out".into())),
+            "out and in are separate rows"
+        );
+        assert_eq!(
+            ledger_in_for_page("notion-goal:", "page-1"),
+            Some(("notion-goal:G-001".into(), "h-in".into()))
+        );
+        assert!(ledger_in_for_page("notion-row:", "page-1").is_none());
+        assert_eq!(
+            ledger_keys("notion-goal:").len(),
+            1,
+            "keys lists the out side"
+        );
+        ledger_forget("notion-goal:G-001").unwrap();
+        assert_eq!(ledger_counts(), (0, 2));
+        ledger_forget_prefix("notion-decision:").unwrap();
+        assert_eq!(ledger_counts(), (0, 1));
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn frontmatter_is_stripped_and_the_digest_is_published() {
+        assert_eq!(
+            strip_frontmatter("---\ntype: digest\n---\n# Morning\n"),
+            "# Morning\n"
+        );
+        assert_eq!(strip_frontmatter("# No frontmatter"), "# No frontmatter");
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let v = Vault::new(d.path().join("vault"));
+        v.scaffold().unwrap();
+        let none = artifacts(&v);
+        assert!(none
+            .iter()
+            .any(|(t, b)| t == "AgentOS digest" && b == "No digest yet."));
+        v.write_note(
+            "04_Agent_Engine/digests/2026-11-10-0730-am.md",
+            "---\ntype: digest\n---\n# Morning digest\n- G-001 done\n",
+        )
+        .unwrap();
+        let arts = artifacts(&v);
+        let body = &arts.iter().find(|(t, _)| t == "AgentOS digest").unwrap().1;
+        assert!(body.starts_with("# Morning digest") && !body.contains("type: digest"));
         crate::store::set_test_db(None);
     }
 

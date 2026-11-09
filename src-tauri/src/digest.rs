@@ -264,6 +264,7 @@ pub fn send_now(v: &Vault) -> Result<String> {
     kv_set("digest.last_at", &store::now().to_string());
     if !cfg!(test) {
         let _ = crate::notion::publish(v, false);
+        crate::notion_goals::refresh(v);
         if let Some(target) = crate::hermes_surfaces::notify_target() {
             let _ = crate::hermes_surfaces::send(&target, &phone_text(&d));
         }

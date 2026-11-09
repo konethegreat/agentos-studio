@@ -29,7 +29,10 @@ use std::sync::Mutex;
 use crate::escalation::{self, Escalation};
 use crate::goals::{self, Check, Goal, NewGoal};
 use crate::missions::Mission;
-use crate::notion::{hash, ledger_delete, ledger_get, ledger_keys, ledger_put, request};
+use crate::notion::{
+    hash, ledger_forget, ledger_forget_prefix, ledger_get, ledger_in_for_page, ledger_keys,
+    ledger_put, ledger_put_in, request, FieldOwner,
+};
 use crate::vault::Vault;
 
 pub const KV_DB: &str = "notion.goals_db";
@@ -96,6 +99,29 @@ pub fn schema() -> Value {
         "Studio note": { "rich_text": {} }
     })
 }
+
+/// The one owner of every column (`schema`). Notion-owned and proposal columns are the only
+/// ones Studio reads; Studio-owned columns are overwritten on every sync.
+pub const OWNERS: [(&str, FieldOwner); 16] = [
+    ("Goal", FieldOwner::ProposalThenStudio),
+    ("ID", FieldOwner::Studio),
+    ("Repos", FieldOwner::ProposalThenStudio),
+    ("Done checks", FieldOwner::ProposalThenStudio),
+    ("Autonomy", FieldOwner::ProposalThenStudio),
+    ("Budget USD", FieldOwner::ProposalThenStudio),
+    ("Deadline", FieldOwner::ProposalThenStudio),
+    ("Status", FieldOwner::Studio),
+    ("Progress", FieldOwner::Studio),
+    ("Spent USD", FieldOwner::Studio),
+    ("Status note", FieldOwner::Studio),
+    ("Escalation", FieldOwner::Studio),
+    ("Question", FieldOwner::Studio),
+    ("Decision", FieldOwner::Notion),
+    ("Report", FieldOwner::Studio),
+    ("Studio note", FieldOwner::Studio),
+];
+
+const DECISION_PREFIX: &str = "notion-decision:";
 
 /// Checks as the board shows them and a proposal writes them: one `kind: target` per line.
 pub fn checks_text(checks: &[Check]) -> String {
@@ -513,6 +539,28 @@ fn sync_connected(
                     r.proposed.push(format!("(dry run) {}", row.outcome));
                     continue;
                 }
+                // A page that already produced a goal (the ID write-back failed last time) is
+                // repaired, never turned into a second goal.
+                if let Some((key, _)) = ledger_in_for_page(LEDGER_PREFIX, &row.page_id) {
+                    let id = key[LEDGER_PREFIX.len()..].to_string();
+                    match goals::get(&id)? {
+                        Some(g) => {
+                            let ms = goals::missions_of(&g.id).unwrap_or_default();
+                            let props = row_props(&g, &ms, None);
+                            patch_row(tok, &row.page_id, props.clone())?;
+                            ledger_put(&key, &row.page_id, &hash(&props.to_string()))?;
+                        }
+                        None => {
+                            let note = format!("{id} came from this row and was deleted in Studio");
+                            if row.note != note {
+                                patch_row(tok, &row.page_id, note_props(&note))?;
+                            }
+                            r.declined.push(note);
+                        }
+                    }
+                    continue;
+                }
+                let read = hash(&format!("{input:?}|{}", row.author));
                 let is_trusted = !row.author.is_empty() && trusted.contains(&row.author);
                 if !is_trusted {
                     input.autonomy = Some("watch".into());
@@ -537,6 +585,7 @@ fn sync_connected(
                         if plan {
                             crate::planner::plan_in_background(v.root.clone(), g.id.clone());
                         }
+                        ledger_put_in(&ledger_key(&g.id), &row.page_id, &read)?;
                         let g = goals::get(&g.id)?.unwrap_or(g);
                         let props = row_props(&g, &[], None);
                         let mut first = props.clone();
@@ -587,6 +636,11 @@ fn sync_connected(
                     None => {
                         let note = match escalation::answer(&esc_id, &answer, "notion") {
                             Ok(_) => {
+                                ledger_put_in(
+                                    &format!("{DECISION_PREFIX}{esc_id}"),
+                                    &row.page_id,
+                                    &hash(&format!("{esc_id}|{answer}|{}", row.editor)),
+                                )?;
                                 r.decided.push(format!("{esc_id} {answer}"));
                                 format!("{esc_id} answered {answer} from Notion; Studio applies it on its next pass")
                             }
@@ -652,7 +706,7 @@ fn sync_connected(
                 tok,
                 Some(&json!({ "archived": true })),
             );
-            ledger_delete(&key)?;
+            ledger_forget(&key)?;
         }
         r.archived_rows += 1;
     }
@@ -673,10 +727,17 @@ pub fn archive_board() -> Result<()> {
         Some(&json!({ "archived": true })),
     )?;
     crate::notion::set_setting(KV_DB, "");
-    for (key, _) in ledger_keys(LEDGER_PREFIX) {
-        ledger_delete(&key)?;
-    }
+    ledger_forget_prefix(LEDGER_PREFIX)?;
+    ledger_forget_prefix(DECISION_PREFIX)?;
     Ok(())
+}
+
+/// Sync the board now when it exists and Notion is connected (goal completion, the digest), so
+/// the row is current without waiting for the scheduler.
+pub fn refresh(v: &Vault) {
+    if crate::notion::setting(KV_DB).is_some() && crate::notion::token().is_some() {
+        let _ = sync(v, false);
+    }
 }
 
 #[cfg(test)]
@@ -863,6 +924,36 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|o| o["name"] == d));
+        }
+    }
+
+    #[test]
+    fn every_column_has_one_owner_and_studio_never_writes_a_notion_column() {
+        let schema = schema();
+        let cols: Vec<&String> = schema.as_object().unwrap().keys().collect();
+        assert_eq!(cols.len(), OWNERS.len());
+        for c in &cols {
+            assert_eq!(
+                OWNERS.iter().filter(|(k, _)| k == c).count(),
+                1,
+                "{c} has exactly one owner"
+            );
+        }
+        let notion_owned: Vec<&str> = OWNERS
+            .iter()
+            .filter(|(_, o)| *o == FieldOwner::Notion)
+            .map(|(k, _)| *k)
+            .collect();
+        let props = row_props(&goal(), &[], None);
+        for k in props.as_object().unwrap().keys() {
+            assert!(!notion_owned.contains(&k.as_str()), "Studio writes {k}");
+        }
+        // Handling a request clears it and writes nothing else of Notion's.
+        let n = note_props("x");
+        for (k, v) in n.as_object().unwrap() {
+            if notion_owned.contains(&k.as_str()) {
+                assert!(v["select"].is_null(), "{k} is only cleared");
+            }
         }
     }
 

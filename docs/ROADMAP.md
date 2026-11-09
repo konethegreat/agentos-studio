@@ -455,6 +455,13 @@ Phase F of the 2026-11-08 master brief, by Hermes.
   `notion`) when the last editor is trusted. Status, checks, missions and merges never come from
   Notion. Synced every 5 minutes once the board exists, and from **Goals board** in Memory.
   Verified by `tests/live_notion_goals.rs` against the real workspace with a temporary studio.db.
+- **Publish, do not mirror (F2).** Every board column has one owner (`OWNERS` in `notion_sync.rs`
+  and `notion_goals.rs`, unit tested: Studio never writes a value into a Notion-owned column). The
+  sync ledger now records the inbound direction too (`in` rows for proposals, Decisions, cancels
+  and inbox notes), so a proposal row whose ID write-back failed is repaired instead of creating a
+  second goal or mission. Publish adds the latest morning or evening digest page; the digest and a
+  finished goal refresh the goals board. Archiving a board forgets its ledger, so a later board no
+  longer patches the archived rows. `notion_status` reports the ledger counts per direction.
 
 ## v0.16.0: safety for unattended work (in progress)
 

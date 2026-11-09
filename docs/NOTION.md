@@ -8,9 +8,11 @@ The vault stays the source of truth for notes; Studio stays the source of truth 
 
 ## Publish (out)
 
-**Publish** in Memory writes four pages under the parent page: the decision digest, task status,
-missions and the fleet. Each page is tracked in a sync ledger with a content hash, so publishing
+**Publish** in Memory writes these pages under the parent page: the decision summary (the last
+seven days of `DECISION_LOG.md`), the latest morning or evening digest, task status, missions, the
+fleet and goals. Each page is tracked in a sync ledger with a content hash, so publishing
 unchanged content makes no request, and a changed page has its content replaced, not appended.
+The digest and a finished goal also publish, and refresh the goals board when it exists.
 
 ## Inbox (in)
 
@@ -74,3 +76,26 @@ first use (kv `notion.goals_db`), then keeps it in step:
 
 Once the board exists it syncs every 5 minutes while Studio is open, with Automations on or off:
 a goal is the owner's instruction, the same rule the goal loop follows.
+
+## Publish, do not mirror
+
+The vault and `studio.db` stay the source of truth; Notion gets the pages above and the two
+boards, nothing else. Every board column has exactly one owner (`notion_sync::OWNERS`,
+`notion_goals::OWNERS`, checked by unit tests):
+
+| Board | Studio owns | Notion owns | Proposal, then Studio |
+|---|---|---|---|
+| Missions | ID, Status, Verdict, PR, Spent USD, Studio note | Request | Goal, Repo, Acceptance, Role, Agent |
+| Goals | ID, Status, Progress, Spent USD, Status note, Escalation, Question, Report, Studio note | Decision | Goal, Repos, Done checks, Autonomy, Budget USD, Deadline |
+
+Studio overwrites its own columns on every sync and never writes a value into a Notion-owned
+column; it only clears a Request or Decision once it has acted on it. Proposal columns are read
+once, when the row has no ID, and are Studio's from then on.
+
+The sync ledger records both directions with a hash. `out` rows (one per page or board row) make
+an unchanged publish free. `in` rows record what Studio accepted from Notion: the goal or mission a
+proposal row produced (`notion-goal:G-002`, `notion-row:M-004`), a Decision (`notion-decision:E-1`),
+a cancel (`notion-cancel:M-004`) and each inbox note. A proposal row that already produced a goal
+or mission is repaired (its ID written back) instead of producing a second one when a write-back
+failed. Archiving a board forgets its ledger rows, so a new board starts clean. The counts per
+direction are in `notion_status` (`ledger_out`, `ledger_in`).
