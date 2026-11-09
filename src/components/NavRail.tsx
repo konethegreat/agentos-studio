@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 
 export type RailView =
   | "chat"
+  | "goals"
   | "projects"
   | "mission"
   | "fleet"

@@ -1350,3 +1350,98 @@ pub async fn eval_list(state: State<'_, AppState>) -> CmdResult<Vec<crate::eval:
     let v = current_vault(&state);
     blocking(move || crate::eval::list(&v)).await
 }
+
+/// A goal with the missions it created, for the Goals view.
+#[derive(serde::Serialize)]
+pub struct GoalDetail {
+    pub goal: crate::goals::Goal,
+    pub missions: Vec<crate::missions::Mission>,
+    pub spent_usd: f64,
+}
+
+fn goal_detail_of(id: &str) -> anyhow::Result<GoalDetail> {
+    let goal = crate::goals::get(id)?.ok_or_else(|| anyhow::anyhow!("no goal '{id}'"))?;
+    let missions = crate::goals::missions_of(id)?;
+    let spent_usd = crate::goals::spent(&missions);
+    Ok(GoalDetail {
+        goal,
+        missions,
+        spent_usd,
+    })
+}
+
+#[tauri::command]
+pub async fn goal_create(
+    state: State<'_, AppState>,
+    goal: crate::goals::NewGoal,
+) -> CmdResult<crate::goals::Goal> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let g = crate::goals::create(&goal)?;
+        if let Err(e) = crate::goals::write_note(&v, &g.id) {
+            eprintln!("goals: vault note for {} failed: {e:#}", g.id);
+        }
+        Ok(g)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn goals_list(limit: Option<usize>) -> CmdResult<Vec<GoalDetail>> {
+    blocking(move || {
+        let mut out = Vec::new();
+        for g in crate::goals::list(limit.unwrap_or(100))? {
+            out.push(goal_detail_of(&g.id)?);
+        }
+        Ok(out)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn goal_detail(id: String) -> CmdResult<GoalDetail> {
+    blocking(move || goal_detail_of(&id)).await
+}
+
+#[tauri::command]
+pub async fn goal_set_autonomy(
+    state: State<'_, AppState>,
+    id: String,
+    level: String,
+) -> CmdResult<crate::goals::Goal> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let g = crate::goals::set_autonomy(&id, &level)?;
+        let _ = crate::goals::write_note(&v, &id);
+        Ok(g)
+    })
+    .await
+}
+
+/// Delete a goal with nothing in flight, and its missions. Its vault note is kept as the record.
+#[tauri::command]
+pub async fn goal_delete(id: String) -> CmdResult<()> {
+    blocking(move || crate::goals::delete(&id)).await
+}
+
+/// Each repository's default autonomy level.
+#[tauri::command]
+pub async fn autonomy_defaults(
+    repos: Vec<String>,
+) -> CmdResult<std::collections::BTreeMap<String, String>> {
+    blocking(move || {
+        Ok(repos
+            .into_iter()
+            .map(|r| {
+                let l = crate::goals::repo_default(&r);
+                (r, l)
+            })
+            .collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_repo_autonomy(repo: String, level: String) -> CmdResult<()> {
+    blocking(move || crate::goals::set_repo_default(&repo, &level)).await
+}

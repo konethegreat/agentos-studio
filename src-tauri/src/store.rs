@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 9;
+const SCHEMA_VERSION: i64 = 10;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -194,6 +194,47 @@ const MIGRATION_9_KIND: &str = "
 ALTER TABLE missions ADD COLUMN kind TEXT NOT NULL DEFAULT 'work';
 ";
 
+/// Phase D: goals (an outcome with runnable done checks and an autonomy level), the escalations
+/// that are the only questions Studio asks the owner, and the goal a mission belongs to. Additive:
+/// a 0.13 build still opens the database.
+const MIGRATION_10: &str = "
+CREATE TABLE IF NOT EXISTS goals (
+    id          TEXT PRIMARY KEY,
+    outcome     TEXT NOT NULL,
+    repos       TEXT NOT NULL DEFAULT '[]',
+    checks      TEXT NOT NULL DEFAULT '[]',
+    budget_usd  REAL NOT NULL DEFAULT 0,
+    deadline    TEXT,
+    autonomy    TEXT NOT NULL DEFAULT 'ask',
+    status      TEXT NOT NULL DEFAULT 'planning',
+    note        TEXT NOT NULL DEFAULT '',
+    report      TEXT,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS escalations (
+    id          TEXT PRIMARY KEY,
+    goal_id     TEXT,
+    mission_id  TEXT,
+    kind        TEXT NOT NULL,
+    question    TEXT NOT NULL,
+    options     TEXT NOT NULL DEFAULT '[]',
+    safe_answer TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open',
+    answer      TEXT,
+    answered_by TEXT,
+    code_hash   TEXT,
+    created_at  INTEGER NOT NULL,
+    deadline_at INTEGER NOT NULL,
+    answered_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_escalations_status ON escalations(status, created_at);
+";
+
+const MIGRATION_10_GOAL: &str = "
+ALTER TABLE missions ADD COLUMN goal_id TEXT;
+";
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
@@ -274,6 +315,10 @@ fn migrate(c: &Connection) -> Result<()> {
     if v < 9 {
         c.execute_batch(MIGRATION_9)?;
         let _ = c.execute_batch(MIGRATION_9_KIND);
+    }
+    if v < 10 {
+        c.execute_batch(MIGRATION_10)?;
+        let _ = c.execute_batch(MIGRATION_10_GOAL);
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;

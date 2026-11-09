@@ -371,6 +371,46 @@ export interface Mission {
   verify: string | null;
 }
 
+/** Phase D: a runnable done check on a goal. */
+export interface GoalCheck {
+  kind: "command" | "url" | "file";
+  target: string;
+  repo?: string | null;
+}
+
+export type AutonomyLevel = "watch" | "ask" | "full";
+
+/** Phase D: the owner's outcome, its done checks and how much Studio may do alone. */
+export interface Goal {
+  id: string;
+  outcome: string;
+  repos: string[];
+  checks: GoalCheck[];
+  budget_usd: number;
+  deadline: string | null;
+  autonomy: AutonomyLevel;
+  status: "planning" | "awaiting" | "running" | "verifying" | "done" | "failed" | "paused";
+  note: string;
+  report: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface GoalDetail {
+  goal: Goal;
+  missions: Mission[];
+  spent_usd: number;
+}
+
+export interface NewGoal {
+  outcome: string;
+  repos: string[];
+  checks: GoalCheck[];
+  budget_usd: number;
+  deadline: string | null;
+  autonomy: AutonomyLevel | null;
+}
+
 /** Phase C: one card per agent in the registry (`agents` hub tool and the Agents screen). */
 export interface AgentCard {
   name: string;
@@ -808,6 +848,13 @@ export const api = {
 
   workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
   missions: () => invoke<Mission[]>("list_missions", { limit: 100 }),
+  goals: () => invoke<GoalDetail[]>("goals_list", { limit: 100 }),
+  goalDetail: (id: string) => invoke<GoalDetail>("goal_detail", { id }),
+  createGoal: (goal: NewGoal) => invoke<Goal>("goal_create", { goal }),
+  setGoalAutonomy: (id: string, level: AutonomyLevel) => invoke<Goal>("goal_set_autonomy", { id, level }),
+  deleteGoal: (id: string) => invoke<void>("goal_delete", { id }),
+  autonomyDefaults: (repos: string[]) => invoke<Record<string, AutonomyLevel>>("autonomy_defaults", { repos }),
+  setRepoAutonomy: (repo: string, level: AutonomyLevel) => invoke<void>("set_repo_autonomy", { repo, level }),
   studioUpdateCheck: () => invoke<string | null>("studio_update_check"),
   studioUpdateInstall: () => invoke<string>("studio_update_install"),
 
