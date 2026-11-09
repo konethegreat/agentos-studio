@@ -81,10 +81,6 @@ pub fn count_reject(id: &str) {
     kv_set(&rejects_key(id), &(rejects(id) + 1).to_string());
 }
 
-fn applied_key(id: &str) -> String {
-    format!("escalation.applied.{id}")
-}
-
 /// Is a blocked mission's reason a destructive approval rather than ordinary stuck work? Pure.
 pub fn is_destructive(reason: &str) -> bool {
     let r = reason.to_lowercase();
@@ -104,12 +100,12 @@ pub fn pass(v: &Vault, automation_on: bool) -> Pass {
     match escalation::list(500).map(|l| if paused { Vec::new() } else { l }) {
         Ok(all) => {
             for e in all.iter().filter(|e| e.status != "open") {
-                if kv_get(&applied_key(&e.id)).is_some() {
+                if kv_get(&escalation::applied_key(&e.id)).is_some() {
                     continue;
                 }
                 match apply(v, e) {
                     Ok(()) => {
-                        kv_set(&applied_key(&e.id), &now.to_string());
+                        kv_set(&escalation::applied_key(&e.id), &now.to_string());
                         p.applied.push(e.id.clone());
                     }
                     Err(err) => p.errors.push(format!("{}: {err:#}", e.id)),

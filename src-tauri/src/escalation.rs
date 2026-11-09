@@ -206,6 +206,8 @@ pub fn raise(
     let code = new_code();
     let c = store::open()?;
     let id = next_id(&c)?;
+    // A new escalation has never been applied, whatever an earlier one with this id left behind.
+    store::kv_delete(&c, &applied_key(&id))?;
     let now = store::now();
     c.execute(
         "INSERT INTO escalations (id, goal_id, mission_id, kind, question, options, safe_answer,
@@ -339,9 +341,24 @@ pub fn expire_due(now: i64) -> Result<Vec<Escalation>> {
     Ok(out)
 }
 
-/// Remove a goal's escalations (live tests and goal delete).
+/// The kv key that records an escalation's answer was applied, so it is applied once.
+pub fn applied_key(id: &str) -> String {
+    format!("escalation.applied.{id}")
+}
+
+/// Remove a goal's escalations (live tests and goal delete), with their applied markers: ids
+/// start again from the highest one left, so a marker that outlived its escalation would make
+/// the next escalation with that id look already applied.
 pub fn delete_for_goal(goal_id: &str) -> Result<usize> {
     let c = store::open()?;
+    let ids: Vec<String> = c
+        .prepare("SELECT id FROM escalations WHERE goal_id = ?1")?
+        .query_map(params![goal_id], |r| r.get(0))?
+        .flatten()
+        .collect();
+    for id in &ids {
+        store::kv_delete(&c, &applied_key(id))?;
+    }
     Ok(c.execute(
         "DELETE FROM escalations WHERE goal_id = ?1",
         params![goal_id],
@@ -461,6 +478,44 @@ mod tests {
             assert_eq!(timeout_minutes(), 15);
             assert!(set_timeout_minutes(1).is_err());
             assert_eq!(delete_for_goal("G-001").unwrap(), 1);
+        })
+    }
+
+    #[test]
+    fn a_reused_id_never_inherits_an_applied_marker() {
+        with_db(|| {
+            let ask = || {
+                raise(
+                    Some("G-001"),
+                    Some("M-001"),
+                    "merge",
+                    "Merge?",
+                    &["merge", "skip"],
+                    "skip",
+                )
+                .unwrap()
+                .0
+            };
+            let marked = |id: &str| {
+                let c = store::open().unwrap();
+                store::kv_get(&c, &applied_key(id)).unwrap().is_some()
+            };
+            let mark = |id: &str| {
+                let c = store::open().unwrap();
+                store::kv_set(&c, &applied_key(id), "1").unwrap();
+            };
+
+            // Deleting a goal's escalations takes their markers along.
+            let first = ask();
+            mark(&first.id);
+            assert_eq!(delete_for_goal("G-001").unwrap(), 1);
+            assert!(!marked(&first.id));
+
+            // A marker left by an older build does not survive the id being handed out again.
+            mark(&first.id);
+            let second = ask();
+            assert_eq!(second.id, first.id, "ids restart once the table is empty");
+            assert!(!marked(&second.id));
         })
     }
 }
