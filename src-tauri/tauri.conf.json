@@ -42,6 +42,10 @@
     "createUpdaterArtifacts": true,
     "resources": {
       "../docs/GETTING-STARTED.md": "docs/GETTING-STARTED.md",
+      "../docs/INSTALL.md": "docs/INSTALL.md",
+      "../docs/GLOSSARY.md": "docs/GLOSSARY.md",
+      "../docs/TROUBLESHOOTING.md": "docs/TROUBLESHOOTING.md",
+      "../docs/PRIVACY.md": "docs/PRIVACY.md",
       "../docs/CHAT.md": "docs/CHAT.md",
       "../docs/GUIDES.md": "docs/GUIDES.md",
       "../docs/AUTOMATIONS.md": "docs/AUTOMATIONS.md",
