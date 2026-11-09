@@ -189,19 +189,22 @@ pub fn merge(id: &str, allowlisted: bool) -> Result<String> {
         bail!("not merging: {}", blockers.join("; "));
     }
     // The squash body keeps the pull request's description and names the mission behind the line.
+    // A pull request whose title or body cannot be read is not merged: the trailers are the record
+    // "Why is this here?" resolves, and a merge without them would lose the mission.
     let (title, body) = crate::github::pr_title_and_body(&repo, number)?;
     let mut message = body;
     if !message.is_empty() {
         message.push_str("\n\n");
     }
     message.push_str(&crate::provenance::trailers(&m));
+    let subject = crate::github::squash_subject(&title, number);
     crate::github::pr_merge_with(
         &repo,
         number,
         "squash",
         true,
         true,
-        Some(&title),
+        subject.as_deref(),
         Some(&message),
     )
 }

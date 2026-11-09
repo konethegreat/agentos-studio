@@ -358,7 +358,9 @@ under the live-machine lock and needs no Hermes turn. Brain shows the form, and 
 blames any new line with a hover `why` action against the local clone. The merge hook appends the
 same trailers to the commit: `review_agent::merge` builds the pull request title and body, adds
 `provenance::trailers`, and merges with `github::pr_merge_with`, so a mission merged by Studio
-resolves to its mission without the PR mapping fallback.
+resolves to its mission without the PR mapping fallback. The squash subject keeps GitHub's `(#n)`
+form, and a pull request whose title or body cannot be read is not merged, because the trailers are
+the merge record.
 
 ## Evaluation harness
 
