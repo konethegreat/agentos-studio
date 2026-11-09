@@ -213,11 +213,6 @@ pub fn artifacts(v: &Vault) -> Vec<(String, String)> {
     }
     out.push(("AgentOS goals".into(), gs));
 
-    // The latest morning or evening digest.
-    if let Some(d) = crate::digest::latest(v) {
-        out.push(("AgentOS digest".into(), d));
-    }
-
     out
 }
 
@@ -683,6 +678,14 @@ mod tests {
         )
         .unwrap();
         let arts = artifacts(&v);
+        let mut titles: Vec<&str> = arts.iter().map(|(t, _)| t.as_str()).collect();
+        titles.sort_unstable();
+        titles.dedup();
+        assert_eq!(
+            titles.len(),
+            arts.len(),
+            "one page per title: the ledger is keyed by title, so a duplicate flips its hash on every publish"
+        );
         let body = &arts.iter().find(|(t, _)| t == "AgentOS digest").unwrap().1;
         assert!(body.starts_with("# Morning digest") && !body.contains("type: digest"));
         crate::store::set_test_db(None);
