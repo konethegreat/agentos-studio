@@ -32,6 +32,7 @@ pub mod mcp_manager;
 pub mod mcp_stdio;
 pub mod memory_index;
 pub mod memory_ledger;
+pub mod memory_quality;
 pub mod missions;
 pub mod model_layer;
 pub mod model_watch;
@@ -331,6 +332,9 @@ pub fn run_gui() {
             commands::memory_recent,
             commands::memory_notes,
             commands::extract_lessons,
+            commands::memory_quality_last,
+            commands::memory_quality_run,
+            commands::memory_quality_schedule,
             commands::create_mission,
             commands::list_missions,
             commands::dispatch_mission,

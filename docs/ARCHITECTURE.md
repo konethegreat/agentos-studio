@@ -104,6 +104,7 @@ the first paint is never competing with a full probe.
 | `plans.rs` | Plan mode: the `/plan` prompt scoped to the chat folder, the newest plan in `.hermes/plans`, and the run prompt after approval. |
 | `kanban.rs` | Hermes missions on Hermes' kanban board: create (model pinned at creation, implementer profile, `dir:` workspace, time cap), read runs, decide wait, review or block, collect worker session ids for spend, and run `hermes verify`. Kanban `done` is never Studio approval. |
 | `learning.rs` (new) | The learning loop: one headless Hermes turn per finished mission writes validated lessons into `03_Memory` as typed notes, and repeated review blockers become one convention note per repository. Additive and idempotent; it never runs the reviewer. |
+| `memory_quality.rs` (new) | The memory audit: finds notes whose backticked paths or functions no longer exist in the repository, asks one Hermes turn to judge pairs of active notes that share a topic and type, and marks the loser stale with `status: superseded` and `superseded_by`. Never deletes. Runs from the Brain panel and the `--memory-quality` headless flag, with an optional weekly cron job. |
 | `hermes_surfaces.rs` | Hermes features shown, not rebuilt: built-in memory and journey, insights, security audit, cron jobs, profiles with Studio's role assignment, and `hermes send` for mission notices. Reads Hermes files directly; every change runs a Hermes command behind Studio's permission check. |
 | `acp.rs` (spike, unwired) | Agent Client Protocol client for `hermes acp`: new or loaded session, one streamed turn, permission requests answered through a channel, cancel. Kept to re-run `tests/live_acp_spike.rs` against new Hermes releases; see `ACP-SPIKE.md`. |
 | `pty.rs` (new) | Real terminals: spawn a shell, interactive Hermes, `hermes --resume <id>`, Claude Code or `claude --resume <id>` in a PTY; streams bytes as UTF-8 safe chunks, accepts keystrokes and resizes. |
@@ -258,7 +259,9 @@ file, an unreadable status or a journey
 parse error shows in that column instead of blanking the screen. Deleting a journey node is the only
 write the view offers, and it goes through `hermes.journey.delete` with the default policy `ask`.
 Hermes does not expose a non-interactive edit: `hermes journey edit` opens `$EDITOR`, so the view
-does not offer one.
+does not offer one. The Vault column also carries the Quality panel, which shows the last audit,
+the stale and superseded counts, each change, and whether the weekly job is scheduled; the
+Learning panel shows lessons written from finished missions.
 
 ## Learning loop
 
@@ -281,3 +284,28 @@ The model turn is injected (`lessons_with`), so the write path, the skip rule an
 dropped answer are unit tested without running Hermes. The live check (`tests/live_learning.rs`)
 is ignored by default and runs only under the live-machine lock when the owner has allowed Hermes
 use.
+
+## Memory quality
+
+`memory_quality.rs` audits the vault without deleting anything. A note is stale when it names a
+backticked path (`src/`, `src-tauri/` or `docs/`, with an optional `:line`) that does not exist in
+the repository checkout, or a backticked function (`name()` or `module::name`) that
+`git grep -w` cannot find. A folder that is not a git checkout returns "unknown" and the note is
+left alone. Contradiction candidates are two active notes of the same normalised topic and type
+(`convention` or `fact`) whose bodies differ and carry a cheap opposition signal (one says "never"
+where the other says "always", or the numbers disagree). One short Hermes turn answers a single
+strict JSON object per pair, `{"verdict":"contradiction"|"compatible","keep":<note>,"reason":...}`;
+a malformed answer drops every verdict and nothing is written.
+
+A confirmed stale note or contradiction loser is marked through the existing supersede path:
+frontmatter gains `status: superseded`, `superseded_by` and `superseded_reason`, and `updated`
+moves. A note edited in the last seven days is reported only and never changed. The report is
+stored in `studio.db` under `memory_quality.last_run` on a real run, so the panel and the weekly
+job agree. The turn is injected (`run_with`), so every write path is unit tested offline.
+
+The audit runs on demand from the Brain Quality panel and headlessly:
+`agentos-studio.exe --memory-quality --vault <vault>` (add `--dry-run` to print changes without
+writing). "Schedule weekly check" writes `agentos-memory-quality.py` under the Hermes scripts
+folder and creates `0 6 * * 1 --name agentos-memory-quality --no-agent --script <path>` behind the
+`hermes.cron.change` permission. The live check (`tests/live_memory_quality.rs`) is ignored by
+default.

@@ -125,3 +125,12 @@ not because code exists.
 | Ad hoc grep | `recall` with bm25, recency decay and wikilink in-degree, superseded notes last |
 | Writing notes by hand | `remember(type, topic, content)` with decision, fact, convention, episode and gotcha |
 | Decision history | only `type: decision` reaches `DECISION_LOG.md` |
+
+## Memory quality (v0.13.0)
+
+| Capability | Hermes CLI | Studio |
+|---|---|---|
+| Notice a note that points nowhere | nothing; `recall` still returns it | checks every backticked path and symbol against the repository and reports the misses |
+| Resolve two notes that disagree | a person notices in review | one strict turn per pair chooses the current note, and the other is marked superseded |
+| Keep the history | edit or delete by hand | supersede flips frontmatter only; the old note stays on disk and ranks last in recall |
+| Run it on a schedule | not offered | a weekly no-agent cron job for the stale half, and a Brain Quality panel for a run on demand |

@@ -6,6 +6,7 @@ import { useToast } from "../components/Toasts";
 import { Guide, useReportGuides } from "../components/Guides";
 import { HermesMemoryPanel } from "../components/HermesMemory";
 import { LearningPanel } from "../components/Learning";
+import { MemoryQualityPanel } from "../components/MemoryQuality";
 
 const KIND_STYLE: Record<string, string> = {
   decision: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25",
@@ -281,6 +282,7 @@ export function Memory() {
               </ul>
             )}
           </div>
+          <MemoryQualityPanel onChanged={() => void load()} />
           <LearningPanel onWrote={() => void load()} />
           <div className="max-h-64 shrink-0 overflow-y-auto border-t border-line">
             <div className="flex items-center gap-2 border-b border-line px-4 py-2 text-small font-medium text-slate-400">

@@ -474,6 +474,25 @@ export interface LearningReport {
   dropped: string | null;
 }
 
+export interface QualityChange {
+  note: string;
+  path: string;
+  kind: string;
+  superseded_by: string | null;
+  reason: string;
+  written: boolean;
+  protected: boolean;
+}
+
+export interface QualityReport {
+  ran_at: string;
+  dry_run: boolean;
+  scanned: number;
+  stale: QualityChange[];
+  contradictions: QualityChange[];
+  dropped: string | null;
+}
+
 export interface ChatStarted {
   run_id: string;
   backend: string;
@@ -652,6 +671,9 @@ export const api = {
   memoryRecent: (limit = 50) => invoke<MemoryEntry[]>("memory_recent", { limit }),
   memoryIndexNotes: () => invoke<MemoryNote[]>("memory_notes"),
   extractLessons: (id: string) => invoke<LearningReport>("extract_lessons", { id }),
+  memoryQualityLast: () => invoke<QualityReport | null>("memory_quality_last"),
+  memoryQualityRun: (dryRun = false) => invoke<QualityReport>("memory_quality_run", { dryRun }),
+  memoryQualitySchedule: (approved = false) => invoke<string>("memory_quality_schedule", { approved }),
   stopChat: () => invoke<string>("stop_active_chat"),
   activeChat: () => invoke<string | null>("active_chat"),
   applyCode: (workingDir: string, relPath: string, content: string) =>
