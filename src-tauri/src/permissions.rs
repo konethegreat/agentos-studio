@@ -786,7 +786,7 @@ pub fn unattended_profile() -> UnattendedProfile {
             g(
                 "secrets",
                 "Keys are never echoed or stored here",
-                "Studio never prints a key and never writes one to studio.db. Provider keys today live in the Hermes env file; moving them to the OS keychain through `hermes secrets` is requested from Hermes.",
+                "Studio never prints a key and never writes one to studio.db. Provider keys today live in the Hermes env file; moving them to the OS keychain through hermes secrets is requested from Hermes.",
                 "hermes",
             ),
             g(
