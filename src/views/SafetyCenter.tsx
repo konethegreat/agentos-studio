@@ -2,7 +2,7 @@ import { Loader2, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card } from "../components/ui";
-import { api, errorText, type ToolPolicyModel } from "../lib/api";
+import { api, errorText, type ToolPolicyModel, type UnattendedProfile } from "../lib/api";
 import { HermesAuditCard } from "../components/HermesAudit";
 import { studio, type AuditEntry, type Policy, type PolicyView } from "../lib/studio";
 
@@ -35,6 +35,12 @@ function policyTone(p: string): string {
   return p === "deny" ? "bg-red-500/20 text-red-200" : p === "ask" ? "bg-amber-500/15 text-amber-200" : "bg-emerald-500/15 text-emerald-200";
 }
 
+const PROFILE_STATUS: Record<string, { label: string; tone: string }> = {
+  enforced: { label: "Enforced", tone: "bg-emerald-500/15 text-emerald-200 ring-emerald-400/20" },
+  ready: { label: "Ready for worker", tone: "bg-sky-500/15 text-sky-200 ring-sky-400/20" },
+  hermes: { label: "Needs Hermes", tone: "bg-amber-500/15 text-amber-200 ring-amber-400/20" },
+};
+
 export function SafetyCenter() {
   const toast = useToast();
   const [policies, setPolicies] = useState<PolicyView[]>([]);
@@ -42,6 +48,7 @@ export function SafetyCenter() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [model, setModel] = useState<ToolPolicyModel | null>(null);
+  const [profile, setProfile] = useState<UnattendedProfile | null>(null);
   const [scope, setScope] = useState<ToolScope>({ kind: "global" });
 
   const load = useCallback(async () => {
@@ -59,7 +66,9 @@ export function SafetyCenter() {
 
   const loadModel = useCallback(async () => {
     try {
-      setModel(await api.toolPolicyModel());
+      const [m, p] = await Promise.all([api.toolPolicyModel(), api.unattendedProfile()]);
+      setModel(m);
+      setProfile(p);
     } catch (e) {
       toast("error", errorText(e));
     }
@@ -207,6 +216,49 @@ export function SafetyCenter() {
                 </div>
               );
             })
+          )}
+        </Card>
+
+        <Card className="p-0">
+          <div className="border-b border-line px-4 py-3">
+            <h2 className="text-sm font-semibold text-slate-100">Unattended runs</h2>
+            <p className="mt-0.5 text-small text-slate-500">
+              What a mission worker gets when nobody is watching. Enforced is live now, Ready for worker takes effect when the worker starts through this environment, Needs Hermes depends on the runtime or its egress support.
+            </p>
+          </div>
+          {!profile ? (
+            <div className="px-4 py-3 text-xs text-slate-500">Reading the profile...</div>
+          ) : (
+            <>
+              {profile.guarantees.map((g) => {
+                const s = PROFILE_STATUS[g.status] ?? PROFILE_STATUS.hermes;
+                return (
+                  <div key={g.id} className="border-t border-line px-4 py-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-slate-200">{g.title}</span>
+                      <Badge className={s.tone}>{s.label}</Badge>
+                    </div>
+                    <p className="mt-0.5 text-small text-slate-500">{g.detail}</p>
+                  </div>
+                );
+              })}
+              <div className="border-t border-line px-4 py-2.5">
+                <div className="text-caption font-semibold uppercase tracking-wider text-slate-500">Environment kept</div>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {profile.env_allowlist.map((v) => (
+                    <code key={v} className="rounded bg-canvas px-1.5 py-0.5 text-caption text-slate-400 ring-1 ring-line">
+                      {v}
+                    </code>
+                  ))}
+                  <code className="rounded bg-canvas px-1.5 py-0.5 text-caption text-slate-400 ring-1 ring-line">AGENTOS_REPO (when known)</code>
+                  <code className="rounded bg-canvas px-1.5 py-0.5 text-caption text-slate-400 ring-1 ring-line">AGENTOS_UNATTENDED</code>
+                  <code className="rounded bg-canvas px-1.5 py-0.5 text-caption text-slate-400 ring-1 ring-line">AGENTOS_VAULT</code>
+                </div>
+                <p className="mt-1.5 text-caption text-slate-600">
+                  Everything else, API keys and tokens included, is dropped. The worker switches to <code className="text-slate-400">permissions::unattended_env</code> through a REQUEST on the coordination note.
+                </p>
+              </div>
+            </>
           )}
         </Card>
 

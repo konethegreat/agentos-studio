@@ -659,6 +659,146 @@ pub fn check_scoped(
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// The unattended profile: what a mission worker gets when nobody is watching.
+//
+// The environment rule is the part Studio owns and can prove here. The worker calls
+// `unattended_env` when it starts, so tokens, API keys and anything else the app inherited are not
+// handed to an agent that runs in the dark. The remaining guarantees are listed with the side that
+// owns them, so Safety states what is live and what still waits on the Hermes worker.
+// ---------------------------------------------------------------------------------------------
+
+/// Set on a worker Studio starts without a person watching.
+pub const UNATTENDED: &str = "AGENTOS_UNATTENDED";
+
+/// The environment a headless worker keeps. Everything else, API keys and tokens included, is
+/// dropped: an agent authenticates through its own config or the OS keychain, never through a
+/// variable inherited from the desktop app.
+pub const UNATTENDED_ENV_ALLOW: &[&str] = &[
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "WINDIR",
+    "SYSTEMDRIVE",
+    "COMSPEC",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "PROGRAMDATA",
+    "COMMONPROGRAMFILES",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "HOME",
+    "NUMBER_OF_PROCESSORS",
+    "PROCESSOR_ARCHITECTURE",
+    "OS",
+    "LANG",
+    "LC_ALL",
+];
+
+fn env_allowed(key: &str) -> bool {
+    UNATTENDED_ENV_ALLOW
+        .iter()
+        .any(|a| a.eq_ignore_ascii_case(key))
+}
+
+/// The environment one unattended worker is started with. `repo` is the mission's project slug,
+/// which is also what the hub reads for repo-scoped tool policy. Pure, so the worker can use it
+/// without opening the store.
+pub fn unattended_env<I>(
+    base: I,
+    repo: Option<&str>,
+    vault: Option<&std::path::Path>,
+) -> Vec<(std::ffi::OsString, std::ffi::OsString)>
+where
+    I: IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+{
+    let mut out: Vec<_> = base
+        .into_iter()
+        .filter(|(k, _)| k.to_str().is_some_and(env_allowed))
+        .collect();
+    if let Some(r) = repo.map(str::trim).filter(|r| !r.is_empty()) {
+        out.push((REPO_ENV.into(), r.into()));
+    }
+    out.push((UNATTENDED.into(), "1".into()));
+    if let Some(v) = vault {
+        out.push(("AGENTOS_VAULT".into(), v.as_os_str().to_owned()));
+    }
+    out
+}
+
+/// One guarantee of the unattended profile, and the side that has to hold it.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct UnattendedGuarantee {
+    pub id: String,
+    pub title: String,
+    pub detail: String,
+    /// `enforced` is live now, `ready` ships here and takes effect when the worker calls
+    /// `unattended_env`, `hermes` depends on the Hermes runtime or its egress support.
+    pub status: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct UnattendedProfile {
+    pub env_allowlist: Vec<String>,
+    pub guarantees: Vec<UnattendedGuarantee>,
+}
+
+pub fn unattended_profile() -> UnattendedProfile {
+    let g = |id: &str, title: &str, detail: &str, status: &str| UnattendedGuarantee {
+        id: id.into(),
+        title: title.into(),
+        detail: detail.into(),
+        status: status.into(),
+    };
+    UnattendedProfile {
+        env_allowlist: UNATTENDED_ENV_ALLOW.iter().map(|s| s.to_string()).collect(),
+        guarantees: vec![
+            g(
+                "worktree",
+                "One worktree per mission",
+                "A mission that runs without a person watching works on its own branch in its own worktree. The worker must refuse a shared checkout when no worktree exists.",
+                "hermes",
+            ),
+            g(
+                "environ",
+                "No inherited secrets",
+                "The worker environment is rebuilt from an allowlist: PATH, temp folders and profile folders, plus the repo slug. API keys and tokens the desktop app holds are not passed on.",
+                "ready",
+            ),
+            g(
+                "inside",
+                "Stays inside the worktree",
+                "The worker starts in the worktree and the agent's tool allowlist and the hub tool policy are the fences. This is a rule enforced by the tools, not yet an OS sandbox.",
+                "ready",
+            ),
+            g(
+                "egress",
+                "Egress firewall where supported",
+                "Applied when the installed Hermes offers egress rules. Studio runs the worker behind them rather than inventing a network fence of its own.",
+                "hermes",
+            ),
+            g(
+                "secrets",
+                "Keys are never echoed or stored here",
+                "Studio never prints a key and never writes one to studio.db. Provider keys today live in the Hermes env file; moving them to the OS keychain through `hermes secrets` is requested from Hermes.",
+                "hermes",
+            ),
+            g(
+                "ask",
+                "No approval prompts in the dark",
+                "An ask policy refuses in a headless session instead of waiting for a person. Every hub call is attributed to the agent's own token.",
+                "enforced",
+            ),
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -876,5 +1016,56 @@ mod tests {
         )
         .is_ok());
         crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn unattended_env_drops_secrets_and_declares_repo() {
+        let base: Vec<(std::ffi::OsString, std::ffi::OsString)> = [
+            ("PATH", "C:\\bin"),
+            ("TEMP", "C:\\tmp"),
+            ("ANTHROPIC_API_KEY", "sk-secret"),
+            ("GITHUB_TOKEN", "ghp-secret"),
+            ("OPENROUTER_API_KEY", "sk-or-secret"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect();
+        let env = unattended_env(base, Some("agentos-studio"), None);
+        let get = |key: &str| {
+            env.iter()
+                .find(|(k, _)| k.to_str() == Some(key))
+                .map(|(_, v)| v.to_string_lossy().to_string())
+        };
+        assert_eq!(get("PATH").as_deref(), Some("C:\\bin"));
+        assert_eq!(get("TEMP").as_deref(), Some("C:\\tmp"));
+        assert_eq!(get(REPO_ENV).as_deref(), Some("agentos-studio"));
+        assert_eq!(get(UNATTENDED).as_deref(), Some("1"));
+        for secret in ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "OPENROUTER_API_KEY"] {
+            assert!(get(secret).is_none(), "{secret} was passed through");
+        }
+
+        let no_repo = unattended_env(Vec::new(), Some("  "), None);
+        assert!(no_repo.iter().all(|(k, _)| k.to_str() != Some(REPO_ENV)));
+        assert_eq!(no_repo.len(), 1, "only the unattended marker is added");
+    }
+
+    #[test]
+    fn unattended_profile_states_are_known_and_ids_unique() {
+        let p = unattended_profile();
+        assert!(p.env_allowlist.iter().any(|v| v == "PATH"));
+        assert!(!p.env_allowlist.iter().any(|v| v.contains("TOKEN")));
+        assert!(p.guarantees.len() >= 5);
+        let mut ids: Vec<&str> = p.guarantees.iter().map(|g| g.id.as_str()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), p.guarantees.len(), "guarantee ids repeat");
+        for g in &p.guarantees {
+            assert!(
+                ["enforced", "ready", "hermes"].contains(&g.status.as_str()),
+                "{} has unknown status {}",
+                g.id,
+                g.status
+            );
+        }
     }
 }

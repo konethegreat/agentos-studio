@@ -448,6 +448,12 @@ and 2), per `03_Memory/Phase_D_H_Coordination.md`.
   Stored in `kv` under `perm.`, so no schema change, and every change is audited. Safety lists the
   real hub tools, hub agents and projects, and each tool shows whether a scope inherits or sets its
   own policy.
+- **A stricter unattended profile:** a mission worker's environment is rebuilt from an allowlist
+  (PATH, temp and profile folders), with the repo slug, `AGENTOS_UNATTENDED=1` and the vault path
+  added and every other variable, API keys included, dropped. Safety shows one row per guarantee
+  with the side that holds it: enforced now, ready here for the worker switch, or waiting on
+  Hermes (worktree-only starts, egress rules, `hermes secrets`). The worker switch is a REQUEST on
+  the coordination note.
 
 ## v0.13.0: memory that gets better with every mission (shipped)
 
