@@ -345,10 +345,15 @@ Phase B of the 2026-11-08 master brief. The bus was wired to four agents but onl
   `tests/live_hub_identity.rs`, and the phase check `tests/live_phase_b_done.rs` against the
   running release build.
 
-## v0.13.0: memory that gets better with every mission (in progress)
+## v0.13.0: memory that gets better with every mission (shipped)
 
-Phase E of the 2026-11-08 master brief. Memory becomes something that improves from finished work,
-with the owner approving anything that reaches Hermes.
+Phase E of the 2026-11-08 master brief, built by Qoder in parallel with Phase C (PRs #83, #84, #86,
+#87, #89 to #98). Memory becomes something that improves from finished work, with the owner
+approving anything that reaches Hermes. The Brain view (#74) and the learning loop (#80) shipped
+early in 0.12.0.
+
+- **Learning runs on its own:** an approved mission extracts its lessons in the background, and the
+  next mission's bus instructions carry the repository's active conventions (#92).
 
 - **Memory quality (`memory_quality.rs`):** finds notes that point at paths which no longer exist
   and notes that cite a file or symbol `git grep -w` cannot find, then finds pairs of notes on one
@@ -360,7 +365,10 @@ with the owner approving anything that reaches Hermes.
 - **When it runs:** `agentos-studio --memory-quality --vault <vault> [--dry-run]`, a weekly cron job
   with no agent turn for the stale half (behind `hermes.cron.change`), and a Brain Quality panel
   that starts a run and shows what changed.
-- `tests/live_memory_quality.rs` (ignored) proves the supersede path on a sandbox vault.
+- `tests/live_memory_quality.rs` (ignored) creates the weekly job on a throwaway profile, finds it in
+  `hermes cron list`, and runs the dry run against the real vault with every note's hash unchanged.
+  Its first live run found that Hermes only accepts a script file name for `--script`; the weekly
+  job now names its script instead of passing an absolute path (#98).
 - **Skills from success:** three approved missions that share a role and a normalised task class
   produce one `SKILL.md` draft, with steps taken from the memory ledger's tool sequence, pitfalls,
   and the missions as evidence. Approve creates the skill through one Hermes turn behind
@@ -394,6 +402,15 @@ with the owner approving anything that reaches Hermes.
   then the router declines and the shadow log says how many improving replays it has.
 - `tests/live_eval.rs` (ignored) replays one finished sandbox mission and asserts the worktree,
   branch and routing policy are unchanged.
+- Studio's own merge keeps the pull request number in the squash subject and refuses a merge it
+  cannot attach trailers to (#97).
+- Verified live, every done-when item of the brief: Brain view release-build click-through (#74);
+  one convention note from two rejects, carried by the next mission; four lesson notes from one
+  approval with no human step; the weekly job plus a dry run that changed nothing; a skill created
+  from three successes inside a throwaway profile; trailers in a real squash merge that resolve back
+  to the mission; one eval replay (75 against the original 75) with nothing left behind. Hermes
+  turns ran on throwaway profiles only (`tests/live_phase_e_done.rs`, `live_memory_quality`,
+  `live_skill_proposals`, `live_eval`, `live_provenance`).
 
 ## v0.10.2: cua-driver stays on the Hermes pin (shipped)
 
