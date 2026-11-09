@@ -384,6 +384,8 @@ pub fn run_gui() {
             commands::offline_status,
             commands::tool_policies,
             commands::set_tool_policy,
+            commands::tool_policy_model,
+            commands::set_scoped_tool_policy,
             commands::hub_tools,
             commands::studio_update_check,
             commands::studio_update_install,

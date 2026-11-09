@@ -770,6 +770,22 @@ export interface HubSkill {
 /** Scheduler settings. `ide_wait_minutes`: how long an IDE-only agent has to pick up its mission. */
 export type AutomationStatus = { enabled: boolean; max_concurrent: number; ide_wait_minutes: number };
 
+export interface ScopedToolPolicy {
+  scope: "agent" | "repo";
+  key: string;
+  server: string;
+  tool: string;
+  policy: "allow" | "ask" | "deny";
+}
+
+export interface ToolPolicyModel {
+  tools: string[];
+  agents: string[];
+  repos: string[];
+  global: { server: string; tool: string; policy: string }[];
+  scoped: ScopedToolPolicy[];
+}
+
 export const api = {
   getSettings: () => invoke<SettingsView>("get_settings"),
   saveSettings: (vault: string, scanRoots: string[]) => invoke<SettingsView>("save_settings", { vault, scanRoots }),
@@ -904,6 +920,14 @@ export const api = {
   toolPolicies: () => invoke<{ server: string; tool: string; policy: string }[]>("tool_policies"),
   setToolPolicy: (server: string, tool: string, policy: string) =>
     invoke<void>("set_tool_policy", { server, tool, policy }),
+  toolPolicyModel: () => invoke<ToolPolicyModel>("tool_policy_model"),
+  setScopedToolPolicy: (
+    scope: "agent" | "repo",
+    key: string,
+    server: string,
+    tool: string,
+    policy: "allow" | "ask" | "deny" | null,
+  ) => invoke<void>("set_scoped_tool_policy", { scope, key, server, tool, policy }),
   hubTools: () => invoke<string[]>("hub_tools"),
 
   offlineStatus: () =>

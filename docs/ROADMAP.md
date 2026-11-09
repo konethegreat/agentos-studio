@@ -388,6 +388,19 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   under the goal with the failing checks and the end of the failing log, told to push to the pull
   request's own branch. Still failing after that fix escalates.
 
+## v0.16.0: safety for unattended work (in progress)
+
+Phase G of the 2026-11-08 master brief, split between Hermes (items 3 to 5) and Qoder (items 1
+and 2), per `03_Memory/Phase_D_H_Coordination.md`.
+
+- **Tool permissions per agent and per project:** every MCP tool has a policy at three scopes,
+  resolved repo > agent > global inside `mcp_stdio.rs` with the caller already resolved from the
+  hub token. A denied tool is hidden from `tools/list` and refused in `tools/call`, and the refusal
+  names the deciding scope. Repo overrides apply only to sessions that declare `AGENTOS_REPO`, so a
+  session cannot claim a project it was not started for. Stored in `kv` under `perm.`, no schema
+  change, every change audited. Safety lists the real hub tools, hub agents and projects, and each
+  tool shows whether a scope inherits or sets its own policy.
+
 ## v0.13.0: memory that gets better with every mission (shipped)
 
 Phase E of the 2026-11-08 master brief, built by Qoder in parallel with Phase C (PRs #83, #84, #86,

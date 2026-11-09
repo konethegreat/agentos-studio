@@ -114,7 +114,7 @@ the first paint is never competing with a full probe.
 | `updates.rs` (new) | Version detection for Hermes, Claude Code and Studio; changelog extraction; skip and snooze state; OS notifications; backup, update and rollback runners. |
 | `org.rs` (new) | `studio.db`: workspaces, nested folders, chat placement, pins, tags, attachments, archive; links folders to Hermes projects through `hermes project`. |
 | `github.rs` (new) | Typed wrappers over `gh ... --json` for auth, repos, branches, commits, PRs (diff, checks, review, merge, create), issues (create, comment, close) and Actions runs (logs, rerun). |
-| `permissions.rs` (new) | Per-action policy (`allow`, `ask`, `deny`) enforced in Rust before any sensitive command runs, plus the append-only audit log. |
+| `permissions.rs` (new) | Per-action policy (`allow`, `ask`, `deny`) enforced in Rust before any sensitive command runs, the append-only audit log, and scoped MCP tool policies per agent and per project (repo > agent > global, stored in `kv` under `perm.`). |
 | `hermes_engine.rs` | Heartbeat, provider switchboard, model discovery, sessions in `state.db`. |
 | `mcp_manager.rs` | MCP registry across four agents, native MCP client, catalog. |
 | `cli_runner.rs` | One-shot command runner (kept for quick actions with captured output). |
@@ -139,6 +139,29 @@ Sensitive commands take an `approved: bool` argument. `permissions::guard(action
 - `allow`, or `ask` and approved: runs, audited as `ok` or `error` with the error text.
 
 The check lives in Rust, so a UI bug cannot skip it.
+
+### Scoped tool permissions
+
+MCP tools have a policy of `allow`, `ask` or `deny` at three scopes, resolved **repo > agent >
+global** for every hub session:
+
+- **Global** is the `tool_policy` table, changed with `set_tool_policy`.
+- **Agent** is one agent name, for example `qoder` or `claude-code`. Set it in Safety, or via
+  `set_scoped_tool_policy("agent", "qoder", server, tool, policy)`.
+- **Repo** is one project slug. It applies only when the hub session declares it through the
+  `AGENTOS_REPO` environment variable, so a session cannot claim a repo it was not started in.
+
+The checks run inside `mcp_stdio.rs` with the caller already resolved from the hub token, so a
+client cannot route around them. A denied tool is hidden from `tools/list` for that scope as well
+as refused in `tools/call`, with the refusal naming the deciding scope ("blocked by the policy for
+qoder", "requires approval under the policy for agentos-studio"). `ask` cannot prompt in a headless
+session, so it refuses there, exactly like the global ask policy.
+
+Scoped policies live as JSON in `kv` (`perm.tool.agent.<agent>`, `perm.tool.repo.<repo>`, index
+`perm.tool.scopes`), not in the schema: no migration, and removing an override returns the tool to
+the next scope down. Every change is audited as `tool_policy.set` with `<scope>:<key> <server>.<tool>
+= <policy>|inherit`. The Safety view lists the real hub tools, the registered hub agents and the
+unarchived projects, and shows per tool whether the scope inherits, or sets its own policy.
 
 ### Who owns what with Hermes
 
@@ -165,7 +188,7 @@ item_tags   (item_kind 'chat'|'folder', item_id, tag -> tags ON DELETE CASCADE, 
 attachments (id TEXT PK, owner_kind 'chat'|'folder', owner_id, path, label, added_at)
 permissions (action TEXT PK, policy 'allow'|'ask'|'deny')
 audit       (id INTEGER PK, at, action, target, detail, outcome)
-kv          (key TEXT PK, value)          -- update skips, snoozes, notified versions
+kv          (key TEXT PK, value)          -- tool policy scopes (perm.), update skips, snoozes, notified versions
 ```
 
 Placement rules:
