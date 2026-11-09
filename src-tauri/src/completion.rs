@@ -140,11 +140,7 @@ fn remove_worktree(dir: &Path, wt: &Path) {
 }
 
 fn run_command(dir: &Path, command: &str) -> (bool, String) {
-    #[cfg(windows)]
-    let r = crate::procs::run_with_timeout("cmd", &["/C", command], None, Some(dir), COMMAND_LIMIT);
-    #[cfg(not(windows))]
-    let r = crate::procs::run_with_timeout("sh", &["-c", command], None, Some(dir), COMMAND_LIMIT);
-    match r {
+    match crate::procs::run_shell_with_timeout(command, Some(dir), COMMAND_LIMIT) {
         Ok((code, out, err)) => {
             let text = format!("{out}\n{err}");
             (code == Some(0), last_lines(&text, 12))
@@ -554,6 +550,23 @@ mod tests {
         assert!(detail.contains('x'));
         let (bad, _) = run_command(d.path(), bad_cmd);
         assert!(!bad);
+    }
+
+    #[test]
+    fn a_command_with_inner_quotes_reaches_the_shell_verbatim() {
+        // The Phase D done check's own check, which cmd.exe broke when it arrived escaped.
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(
+            d.path().join("lib.js"),
+            "module.exports = { probe: () => ({ ok: true }) };\n",
+        )
+        .unwrap();
+        let check = "node -e \"const l=require('./lib.js'); if (typeof l.probe !== 'function' || l.probe().ok !== true) process.exit(1)\"";
+        let (ok, detail) = run_command(d.path(), check);
+        assert!(ok, "{detail}");
+        std::fs::write(d.path().join("lib.js"), "module.exports = {};\n").unwrap();
+        let (ok, _) = run_command(d.path(), check);
+        assert!(!ok, "a missing probe fails the check");
     }
 
     #[test]

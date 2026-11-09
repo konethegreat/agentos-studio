@@ -126,7 +126,6 @@ pub fn run_with_timeout_env(
     limit: std::time::Duration,
     env: &[(&str, &str)],
 ) -> anyhow::Result<(Option<i32>, String, String)> {
-    use std::io::{Read, Write};
     let exe = find(tool).ok_or_else(|| anyhow::anyhow!("{tool} is not installed"))?;
     let mut cmd = command(&exe);
     cmd.args(args)
@@ -143,6 +142,48 @@ pub fn run_with_timeout_env(
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
+    wait_with_timeout(cmd, tool, stdin_text, limit)
+}
+
+/// Run a shell command line (a done check the owner typed) with a time limit. On Windows the line
+/// reaches `cmd.exe` verbatim (`/D /S /C "<line>"`, cmd's own quote rule): passed as an ordinary
+/// argument, Rust escapes its inner quotes as `\"`, which cmd does not understand, so a command
+/// such as `node -e "..."` broke.
+pub fn run_shell_with_timeout(
+    line: &str,
+    cwd: Option<&Path>,
+    limit: std::time::Duration,
+) -> anyhow::Result<(Option<i32>, String, String)> {
+    #[cfg(windows)]
+    let mut cmd = {
+        use std::os::windows::process::CommandExt;
+        let mut c = command(std::path::Path::new("cmd"));
+        c.raw_arg(format!("/D /S /C \"{line}\""));
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = command(std::path::Path::new("sh"));
+        c.args(["-c", line]);
+        c
+    };
+    cmd.env("NO_COLOR", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    wait_with_timeout(cmd, "the command", None, limit)
+}
+
+fn wait_with_timeout(
+    mut cmd: std::process::Command,
+    tool: &str,
+    stdin_text: Option<&str>,
+    limit: std::time::Duration,
+) -> anyhow::Result<(Option<i32>, String, String)> {
+    use std::io::{Read, Write};
     let mut child = cmd
         .spawn()
         .map_err(|e| anyhow::anyhow!("starting {tool}: {e}"))?;
