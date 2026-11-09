@@ -46,7 +46,7 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 | Safety | Ad-hoc confirms | Permission policies enforced in Rust, approval modal, audit log |
 | Navigation | Sidebar | Command palette (Ctrl+K), Alt+1 to Alt+9, tooltips on every new control |
 
-Design docs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (diagram, components, data model), [docs/ROADMAP.md](docs/ROADMAP.md) (phases, and what each depends on), [docs/PARITY.md](docs/PARITY.md) (capability scorecard against the tools users compare us to), [docs/MODEL-ROUTER.md](docs/MODEL-ROUTER.md) (design for automatic model selection in v0.6.0), [docs/adr/0001-v0.3-stack.md](docs/adr/0001-v0.3-stack.md) (stack changes and what was refused). User guides: [docs/CHAT.md](docs/CHAT.md) (chat over ACP, approvals, plan first, forks), [docs/ROUTING.md](docs/ROUTING.md) (how a mission's model is chosen), [docs/NOTION.md](docs/NOTION.md) (publishing, inbox and the two-way missions board), [docs/COMPUTER-USE.md](docs/COMPUTER-USE.md) (what Hermes did on the desktop) [docs/AGENTS.md](docs/AGENTS.md) (the agent registry, handoffs, asks, council, assignment and the run timeline) and [docs/GOALS.md](docs/GOALS.md) (one sentence in, finished work out: goals, autonomy levels, escalations and the digest).
+Design docs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (diagram, components, data model), [docs/ROADMAP.md](docs/ROADMAP.md) (phases, and what each depends on), [docs/PARITY.md](docs/PARITY.md) (capability scorecard against the tools users compare us to), [docs/MODEL-ROUTER.md](docs/MODEL-ROUTER.md) (design for automatic model selection in v0.6.0), [docs/adr/0001-v0.3-stack.md](docs/adr/0001-v0.3-stack.md) (stack changes and what was refused). User guides: [docs/CHAT.md](docs/CHAT.md) (chat over ACP, approvals, plan first, forks), [docs/ROUTING.md](docs/ROUTING.md) (how a mission's model is chosen), [docs/NOTION.md](docs/NOTION.md) (publishing, inbox and the two-way missions board), [docs/COMPUTER-USE.md](docs/COMPUTER-USE.md) (what Hermes did on the desktop), [docs/AGENTS.md](docs/AGENTS.md) (the agent registry, handoffs, asks, council, assignment and the run timeline) and [docs/GOALS.md](docs/GOALS.md) (one sentence in, finished work out: goals, autonomy levels, escalations and the digest).
 
 ## What is new in v0.2.0
 
@@ -109,6 +109,11 @@ on the first launch: click **More info**, then **Run anyway**. Every release als
 Smart App Control note, and the hash commands for each platform. Every `v*` tag is built for all
 three platforms by [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
+New here? [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) goes from download to a finished piece
+of work in ten minutes. [docs/GLOSSARY.md](docs/GLOSSARY.md) explains the words,
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) covers the logs and common failures, and
+[docs/PRIVACY.md](docs/PRIVACY.md) lists what stays on your machine.
+
 ## Build from source
 
 Prerequisites: [Rust](https://rustup.rs) (stable), Node.js 20+, and the [Tauri v2 system dependencies](https://v2.tauri.app/start/prerequisites/) for your OS (WebView2 is already present on Windows 10 and 11).
@@ -121,7 +126,7 @@ npm run tauri dev        # run the desktop app with hot reload
 npm run tauri build      # produce an installer in src-tauri/target/release/bundle
 ```
 
-On first launch open **Setup and Integrations** and press **Auto-Setup and Repair Everything**. Anything missing gets installed, and sign-in windows open for Claude, GitHub and Notion. When it finishes, the health pill turns green: **All 6 Systems Connected**.
+On first launch open **System, then Setup** and press **Auto-Setup and Repair Everything**. Anything missing gets installed, and sign-in windows open where one is needed (Claude, GitHub and, if you want it, Notion). When it finishes, the health pill turns green: **All 6 Systems Connected**.
 
 ## The six pillars
 
