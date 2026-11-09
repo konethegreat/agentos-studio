@@ -1531,3 +1531,18 @@ pub fn digest_settings() -> serde_json::Value {
 pub async fn set_digest_times(times: String) -> CmdResult<()> {
     blocking(move || crate::digest::set_times(&times)).await
 }
+
+#[tauri::command]
+pub fn fleet_pause_state() -> crate::pause::State {
+    crate::pause::state()
+}
+
+#[tauri::command]
+pub async fn fleet_pause(reason: String) -> CmdResult<crate::pause::State> {
+    blocking(move || crate::pause::pause(&reason)).await
+}
+
+#[tauri::command]
+pub async fn fleet_resume() -> CmdResult<crate::pause::State> {
+    blocking(crate::pause::resume).await
+}
