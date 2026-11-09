@@ -114,7 +114,9 @@ jobs:
                 else
                   h=$(shasum -a 256 "$f" | cut -d' ' -f1)
                 fi
-                printf '%s  %s\n' "$h" "$(basename "$f")" >> "$out"
+                # GitHub stores release assets with dots for spaces; list the names people download.
+                name=$(basename "$f")
+                printf '%s  %s\n' "$h" "${name// /.}" >> "$out"
               done
           cat "$out"
           gh release upload "$RELEASE_TAG" "$out" --clobber
