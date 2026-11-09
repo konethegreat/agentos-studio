@@ -92,13 +92,16 @@ pub fn is_destructive(reason: &str) -> bool {
 }
 
 /// One pass. Never fails as a whole; each step's error is recorded and the rest still run.
+/// While the fleet is paused escalations still expire to their safe answer and over-budget goals
+/// still pause, but answers wait to be applied and nothing merges until it resumes.
 pub fn pass(v: &Vault, automation_on: bool) -> Pass {
     let mut p = Pass::default();
     let now = store::now();
     if let Err(e) = escalation::expire_due(now) {
         p.errors.push(format!("expiring escalations: {e:#}"));
     }
-    match escalation::list(500) {
+    let paused = crate::pause::paused();
+    match escalation::list(500).map(|l| if paused { Vec::new() } else { l }) {
         Ok(all) => {
             for e in all.iter().filter(|e| e.status != "open") {
                 if kv_get(&applied_key(&e.id)).is_some() {
@@ -127,6 +130,9 @@ pub fn pass(v: &Vault, automation_on: bool) -> Pass {
         }
     }
 
+    if paused {
+        return p;
+    }
     let all = missions::list(300).unwrap_or_default();
     for m in &all {
         let goal = goals::goal_of(&m.id).and_then(|gid| goals::get(&gid).ok().flatten());

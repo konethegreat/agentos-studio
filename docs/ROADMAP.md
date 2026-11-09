@@ -405,6 +405,11 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   v0.23.0: the gateway's own approvals already reach a paired platform with `/approve` buttons
   or text. On this machine WhatsApp is enabled but not paired yet, so phone delivery waits for
   the owner (bus TASK-015).
+- **Fleet pause:** Pause fleet in the status bar stops all new work in one click. Studio starts no
+  mission, merges nothing, applies no escalation answer and creates no fix mission (kv
+  `fleet.paused`), and Hermes' own `hermes pause` stops its cron, kanban and new gateway work.
+  Running work finishes and still reaches review; escalations still expire to their safe answer
+  and are applied on resume. Resume reverses both.
 
 ## v0.13.0: memory that gets better with every mission (shipped)
 
