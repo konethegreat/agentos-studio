@@ -141,9 +141,18 @@ On first launch open **System, then Setup** and press **Auto-Setup and Repair Ev
 
 Foundations (Git, GitHub CLI, Node, user `PATH` entries for `~/.local/bin`, npm and Cargo) are checked and repaired the same way. Studio also resolves tools through the persisted user `PATH`, so a freshly installed CLI works without restarting the app.
 
+## Today
+
+Studio opens on **Today**, which leads with **Waiting on you**: open escalations first, then goals whose plan is ready to approve, in the same order as the digest. Answer an escalation from its own buttons, approve a plan, or resume a paused fleet without leaving the screen.
+
+- **Goals in progress** shows each goal's missions done against missions planned, a budget bar, its autonomy level and its spend.
+- **Running agents** lists the missions being worked on now and the worker processes this machine started.
+- **Spend** totals metered spend across goals and says plainly that flat subscriptions are not counted.
+- **Last digest** renders the newest note from `04_Agent_Engine/digests` as written.
+
 ## Hermes Chat Studio
 
-The home screen. Pick a working directory (any of your repositories, or any folder), choose **Hermes** or **Claude Code**, and type.
+Pick a working directory (any of your repositories, or any folder), choose **Hermes** or **Claude Code**, and type.
 
 - Each message runs one `hermes chat --format stream-json` turn inside that folder (or `claude -p --output-format stream-json --include-partial-messages`). Continuing a conversation resumes the same session, so context carries over.
 - The Rust parser turns the stream into `token`, `tool_start`, `tool_result`, `error` and `complete` events. Tool calls render as cards showing the MCP server, the tool, its input, its result and how long it took. MCP calls that Hermes routes through its `tool_call` wrapper are shown under the real server and tool.

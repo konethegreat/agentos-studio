@@ -363,6 +363,7 @@ pub fn run_gui() {
             commands::digest_now,
             commands::digest_settings,
             commands::set_digest_times,
+            commands::digest_latest,
             commands::fleet_pause_state,
             commands::fleet_pause,
             commands::fleet_resume,

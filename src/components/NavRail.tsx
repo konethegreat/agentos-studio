@@ -3,6 +3,7 @@ import { ChevronLeft, Pin, PinOff } from "lucide-react";
 import { api } from "../lib/api";
 
 export type RailView =
+  | "today"
   | "chat"
   | "goals"
   | "projects"

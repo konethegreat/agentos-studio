@@ -908,6 +908,7 @@ export const api = {
   digestNow: () => invoke<string>("digest_now"),
   digestSettings: () => invoke<{ times: string; notify_target: string | null }>("digest_settings"),
   setDigestTimes: (times: string) => invoke<void>("set_digest_times", { times }),
+  digestLatest: () => invoke<string | null>("digest_latest"),
   fleetPauseState: () => invoke<FleetPause>("fleet_pause_state"),
   fleetPause: (reason: string) => invoke<FleetPause>("fleet_pause", { reason }),
   fleetResume: () => invoke<FleetPause>("fleet_resume"),
