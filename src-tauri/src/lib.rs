@@ -14,6 +14,7 @@ pub mod bus;
 pub mod chat_stream;
 pub mod cli_runner;
 pub mod commands;
+pub mod completion;
 pub mod computer_use;
 pub mod connect;
 pub mod constitution;

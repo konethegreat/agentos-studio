@@ -129,6 +129,7 @@ the first paint is never competing with a full probe.
 | `goals.rs` | Goals (schema 10): outcome, repositories, runnable done checks, metered budget, deadline, autonomy level and the per-repository default; the vault note `01_Projects/Goals/<id>.md`. Design in [GOALS.md](GOALS.md). |
 | `planner.rs` | Splits a goal with `hermes kanban decompose --json` against a private `HERMES_KANBAN_DB` (no dispatcher scans it), mirrors the tasks as `auto` missions under the goal with their dependencies, Watch plan approval, and the scheduler's start rule for goal missions. |
 | `goal_loop.rs`, `escalation.rs` | Each scheduler pass: merge approved work the autonomy level allows, raise the escalation list (budget, second reject, stuck or destructive, merge outside the allow list), apply answers once; escalations (schema 10) with a hashed phone code, options, a safe answer and a deadline. |
+| `completion.rs` | Done checks for a goal whose missions are merged, in a detached worktree of the default branch; the report, outcome notes, Notion republish, one fix mission per failure and the `done_check` escalation. |
 
 ### Approval flow
 
