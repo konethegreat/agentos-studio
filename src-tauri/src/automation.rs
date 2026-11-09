@@ -161,6 +161,8 @@ pub struct TickReport {
     pub goals_done: Vec<String>,
     /// Fix missions created for failing done checks.
     pub fix_missions: Vec<String>,
+    /// The fleet pause switch is on: nothing new starts or merges this pass.
+    pub paused: bool,
     pub kept_awake: bool,
     pub error: Option<String>,
 }
@@ -175,6 +177,7 @@ pub fn tick(v: &Vault) -> TickReport {
     let mut report = TickReport {
         enabled: enabled(),
         max_concurrent: max_concurrent(),
+        paused: crate::pause::paused(),
         ..Default::default()
     };
     let all = match missions::list(300) {
@@ -279,11 +282,17 @@ pub fn tick(v: &Vault) -> TickReport {
     // 1c. Answers from the phone first, so this pass applies them.
     let _ = crate::digest::poll_phone_replies();
     // Merge what the autonomy level allows, raise the escalation list, apply answers.
+    // Paused: running work still reaches review (step 1) and escalations still expire, but
+    // nothing merges, no answer or fix mission is applied and nothing starts.
     let gp = crate::goal_loop::pass(v, report.enabled);
     report.merged = gp.merged;
     report.escalated = gp.escalated;
     // 1d. A goal whose missions are all merged runs its done checks and reports.
-    let co = crate::completion::pass(v);
+    let co = if report.paused {
+        crate::completion::Outcome::default()
+    } else {
+        crate::completion::pass(v)
+    };
     report.goals_done = co.done;
     report.fix_missions = co.fix_missions;
     report.escalated.extend(co.escalated);
@@ -311,7 +320,7 @@ pub fn tick(v: &Vault) -> TickReport {
     let running: Vec<&Mission> = all.iter().filter(|m| m.status == "running").collect();
     report.running = running.len();
 
-    // 2. Start what can start. Standalone missions need Automations on. A goal's missions run
+    // 2. Start what can start (never while the fleet is paused). Standalone missions need Automations on. A goal's missions run
     // while their goal runs (creating a goal at Ask on risk or Full is the instruction to run it),
     // never at Watch, and only once the missions they depend on are done.
     {
@@ -340,6 +349,7 @@ pub fn tick(v: &Vault) -> TickReport {
                 }
             })
             .collect();
+        let queued: Vec<&Mission> = if report.paused { Vec::new() } else { queued };
         for id in startable(
             &queued,
             &running,

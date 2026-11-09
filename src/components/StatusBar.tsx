@@ -1,7 +1,7 @@
-import { CircleCheck, Download, Monitor, Moon, RefreshCw, SquareTerminal, Sun, TriangleAlert } from "lucide-react";
+import { CircleCheck, Download, Monitor, Moon, Pause, Play, RefreshCw, SquareTerminal, Sun, TriangleAlert } from "lucide-react";
 import { NEXT_PREF, setThemePref, themePref, type ThemePref } from "../lib/theme";
 import type { ReactNode } from "react";
-import type { HermesStatus, StackStatus } from "../lib/api";
+import type { FleetPause, HermesStatus, StackStatus } from "../lib/api";
 import { useCli } from "./CliDrawer";
 import { api } from "../lib/api";
 import { useEffect, useState } from "react";
@@ -41,6 +41,57 @@ function ThemeButton() {
       className="grid size-8 place-items-center rounded-lg text-slate-400 ring-1 ring-line hover:bg-white/[0.04] hover:text-slate-200"
     >
       <Icon className="size-3.5" />
+    </button>
+  );
+}
+
+/**
+ * The fleet pause switch. Paused, Studio starts and merges nothing and Hermes' own stop is engaged
+ * (cron, kanban and new gateway work); running work finishes. Resume reverses both.
+ */
+function PauseButton() {
+  const [s, setS] = useState<FleetPause | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () => void api.fleetPauseState().then(setS).catch(() => undefined);
+    load();
+    const t = window.setInterval(load, 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+  async function flip() {
+    setBusy(true);
+    setError(null);
+    try {
+      setS(s?.paused ? await api.fleetResume() : await api.fleetPause(""));
+    } catch (e) {
+      setError(String(e));
+      void api.fleetPauseState().then(setS).catch(() => undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!s) return null;
+  const since = s.since ? new Date(s.since * 1000).toLocaleString() : "";
+  const title = error
+    ? `Could not finish: ${error}`
+    : s.paused
+      ? `Fleet paused${since ? ` since ${since}` : ""}${s.hermes_paused ? ", Hermes paused too" : ", Hermes not paused"}. Click to resume.`
+      : "Pause the fleet: nothing new starts or merges, and Hermes stops cron, kanban and new gateway work. Running work finishes.";
+  return (
+    <button
+      onClick={() => void flip()}
+      disabled={busy}
+      title={title}
+      aria-label={s.paused ? "Resume the fleet" : "Pause the fleet"}
+      className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold ring-1 transition-colors disabled:opacity-50 ${
+        s.paused || error
+          ? "bg-amber-500/15 text-amber-200 ring-amber-500/40 hover:bg-amber-500/20"
+          : "text-slate-300 ring-line hover:bg-white/[0.04]"
+      }`}
+    >
+      {s.paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+      {busy ? (s.paused ? "Resuming" : "Pausing") : s.paused ? "Paused: resume" : "Pause fleet"}
     </button>
   );
 }
@@ -140,6 +191,7 @@ export function StatusBar({
         {healthy ? <CircleCheck className="size-4" /> : <TriangleAlert className="size-4" />}
         {healthy ? "Healthy" : stack ? `${needs} need attention` : "Checking"}
       </button>
+      <PauseButton />
       <ThemeButton />
       <button
         onClick={() => cli.setOpen(!cli.open)}
