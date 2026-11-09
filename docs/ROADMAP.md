@@ -387,6 +387,14 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   the timeline and in the digest, with no further retries. Failing again creates one fix mission
   under the goal with the failing checks and the end of the failing log, told to push to the pull
   request's own branch. Still failing after that fix escalates.
+- **Goal completion:** once every mission of a running goal is merged (or its merge was decided
+  by the owner), Studio runs the goal's done checks against the merged default branch in a
+  detached worktree under its own data folder, never in the owner's checkout: commands with a
+  10 minute limit, URLs that must answer 2xx, files that must exist. All passing: the goal is
+  done with a report (missions, who reviewed each, spend, every check), an outcome note in
+  `03_Memory`, an outcome line in `01_Projects/<repo>.md`, the Notion goals page republished
+  (one line per goal; the goals database with a Decision column is Phase F) and the report sent
+  to the messaging target. A failing check gets one fix mission; a second failure escalates.
 
 ## v0.13.0: memory that gets better with every mission (shipped)
 

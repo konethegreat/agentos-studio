@@ -178,6 +178,34 @@ pub fn artifacts(v: &Vault) -> Vec<(String, String)> {
     }
     out.push(("AgentOS fleet".into(), fleet));
 
+    // Goals: one line per goal (Phase D). The Notion goals database with a Decision column is
+    // Phase F.
+    let mut gs = String::from("Goals, their autonomy level and progress.\n\n");
+    let glist = crate::goals::list(50).unwrap_or_default();
+    if glist.is_empty() {
+        gs.push_str("- No goals yet.\n");
+    }
+    for g in glist {
+        let ms = crate::goals::missions_of(&g.id).unwrap_or_default();
+        let done = ms.iter().filter(|m| m.status == "done").count();
+        gs.push_str(&format!(
+            "- {} [{}] {} ({}): {} of {} missions done, ${:.2} metered{}\n",
+            g.id,
+            g.status,
+            g.outcome,
+            g.autonomy,
+            done,
+            ms.len(),
+            crate::goals::spent(&ms),
+            if g.note.is_empty() {
+                String::new()
+            } else {
+                format!(". {}", g.note)
+            }
+        ));
+    }
+    out.push(("AgentOS goals".into(), gs));
+
     out
 }
 

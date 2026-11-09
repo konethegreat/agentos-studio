@@ -157,6 +157,10 @@ pub struct TickReport {
     pub merged: Vec<String>,
     /// Escalations raised this pass (the only questions Studio asks the owner).
     pub escalated: Vec<String>,
+    /// Goals whose done checks all passed this pass.
+    pub goals_done: Vec<String>,
+    /// Fix missions created for failing done checks.
+    pub fix_missions: Vec<String>,
     pub kept_awake: bool,
     pub error: Option<String>,
 }
@@ -276,10 +280,16 @@ pub fn tick(v: &Vault) -> TickReport {
     let gp = crate::goal_loop::pass(v, report.enabled);
     report.merged = gp.merged;
     report.escalated = gp.escalated;
+    // 1d. A goal whose missions are all merged runs its done checks and reports.
+    let co = crate::completion::pass(v);
+    report.goals_done = co.done;
+    report.fix_missions = co.fix_missions;
+    report.escalated.extend(co.escalated);
     if let Some(e) = gp.errors.first() {
         report.error.get_or_insert_with(|| e.clone());
     }
-    let all = if report.merged.is_empty() && gp.applied.is_empty() {
+    let all = if report.merged.is_empty() && gp.applied.is_empty() && report.fix_missions.is_empty()
+    {
         all
     } else {
         missions::list(300).unwrap_or_default()

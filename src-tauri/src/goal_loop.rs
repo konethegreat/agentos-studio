@@ -585,8 +585,12 @@ fn apply(v: &Vault, e: &Escalation) -> Result<()> {
             }
             Ok(())
         }
-        // done_check answers are applied by the completion step.
-        ("done_check", _) => Ok(()),
+        ("done_check", "retry") => {
+            if let Some(gid) = e.goal_id.as_deref() {
+                crate::completion::retry_after_escalation(v, gid)?;
+            }
+            Ok(())
+        }
         (k, a) => anyhow::bail!("no action for answer '{a}' to a {k} escalation"),
     }
 }
