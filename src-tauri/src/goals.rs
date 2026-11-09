@@ -334,6 +334,19 @@ pub fn set_report(id: &str, report: &str) -> Result<()> {
     Ok(())
 }
 
+/// Set the goal's metered budget (an escalation's Raise doubles it).
+pub fn set_budget(id: &str, budget_usd: f64) -> Result<()> {
+    if budget_usd < 0.0 {
+        bail!("budget cannot be negative");
+    }
+    let c = store::open()?;
+    c.execute(
+        "UPDATE goals SET budget_usd = ?1, updated_at = ?2 WHERE id = ?3",
+        params![budget_usd, now(), id],
+    )?;
+    Ok(())
+}
+
 /// Change how much the goal may do alone, while it is still open.
 pub fn set_autonomy(id: &str, level: &str) -> Result<Goal> {
     if !LEVELS.contains(&level) {
@@ -432,6 +445,7 @@ pub fn delete(id: &str) -> Result<()> {
     for m in &ms {
         missions::delete(&m.id)?;
     }
+    crate::escalation::delete_for_goal(id)?;
     let c = store::open()?;
     c.execute("DELETE FROM goals WHERE id = ?1", params![id])?;
     c.execute(

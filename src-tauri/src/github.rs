@@ -577,6 +577,20 @@ pub fn squash_subject(title: &str, number: u64) -> Option<String> {
     Some(format!("{title} (#{number})"))
 }
 
+/// `OPEN`, `MERGED` or `CLOSED`.
+pub fn pr_status(repo: &str, number: u64) -> Result<String> {
+    let r = repo_arg(repo)?;
+    let n = number.to_string();
+    let v = gh_json(
+        &["pr", "view", n.as_str(), "-R", r, "--json", "state"],
+        None,
+    )?;
+    Ok(v.get("state")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_uppercase())
+}
+
 pub fn pr_title_and_body(repo: &str, number: u64) -> Result<(String, String)> {
     let r = repo_arg(repo)?;
     let n = number.to_string();

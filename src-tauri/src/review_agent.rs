@@ -384,6 +384,13 @@ fn kv_set(key: &str, value: &str) {
     }
 }
 
+/// Forget the round's automatic review (a retried mission starts a new round).
+pub fn clear_auto(id: &str) {
+    if let Ok(c) = crate::store::open() {
+        let _ = crate::store::kv_delete(&c, &auto_key(id));
+    }
+}
+
 /// The automatic review state of a mission's current round.
 pub fn auto_state(id: &str) -> Option<String> {
     kv_get(&auto_key(id))

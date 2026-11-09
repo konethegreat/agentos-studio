@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronDown, ChevronRight, Flag, Plus, RefreshCw, Target, Trash2, X } from "lucide-react";
-import { api, errorText, type AutonomyLevel, type GoalCheck, type GoalDetail, type NewGoal, type Project } from "../lib/api";
+import { api, errorText, type AutonomyLevel, type Escalation, type GoalCheck, type GoalDetail, type NewGoal, type Project } from "../lib/api";
 import { Badge, Button, Card, Empty, inputClass } from "../components/ui";
 import { useToast } from "../components/Toasts";
 
@@ -51,10 +51,12 @@ export function Goals() {
   const [deadline, setDeadline] = useState("");
   const [level, setLevel] = useState<AutonomyLevel | "">("");
   const [defaults, setDefaults] = useState<Record<string, AutonomyLevel>>({});
+  const [asks, setAsks] = useState<Escalation[]>([]);
 
   async function load() {
     try {
       setRows(await api.goals());
+      setAsks(await api.escalations(100));
     } catch (e) {
       toast("error", errorText(e));
       setRows([]);
@@ -140,6 +142,19 @@ export function Goals() {
     } catch (e) {
       toast("error", errorText(e));
       await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reply(e: Escalation, answer: string) {
+    setBusy(true);
+    try {
+      await api.answerEscalation(e.id, answer);
+      toast("ok", `${e.id}: ${answer}`);
+      await load();
+    } catch (err) {
+      toast("error", errorText(err));
     } finally {
       setBusy(false);
     }
@@ -282,6 +297,21 @@ export function Goals() {
         </Card>
       )}
 
+      {asks.some((a) => a.status === "open") && (
+        <Card className="mx-5 mt-4 space-y-2 border-amber-500/30 p-4">
+          <div className="flex items-center gap-2">
+            <Flag className="size-4 text-amber-300" />
+            <h2 className="text-small font-semibold text-slate-100">Waiting on you</h2>
+            <span className="text-label text-slate-500">Studio only asks for these; with no answer by the deadline it takes the safe answer.</span>
+          </div>
+          {asks
+            .filter((a) => a.status === "open")
+            .map((a) => (
+              <EscalationRow key={a.id} e={a} busy={busy} onAnswer={(ans) => void reply(a, ans)} />
+            ))}
+        </Card>
+      )}
+
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <div className="space-y-2">
           {rows !== null && rows.length === 0 && <Empty icon={<Target className="size-5" />} title="No goals yet" hint="State an outcome and how Studio will know it is done. Studio plans the missions and runs them." />}
@@ -311,6 +341,7 @@ export function Goals() {
           {detail ? (
             <GoalPanel
               detail={detail}
+              asks={asks.filter((a) => a.goal_id === detail.goal.id)}
               busy={busy}
               onLevel={(l) => void changeLevel(detail.goal.id, l)}
               onPlan={() => void act(detail.goal.id, "plan")}
@@ -328,6 +359,7 @@ export function Goals() {
 
 function GoalPanel({
   detail,
+  asks,
   busy,
   onLevel,
   onPlan,
@@ -335,6 +367,7 @@ function GoalPanel({
   onDelete,
 }: {
   detail: GoalDetail;
+  asks: Escalation[];
   busy: boolean;
   onLevel: (l: AutonomyLevel) => void;
   onPlan: () => void;
@@ -434,6 +467,22 @@ function GoalPanel({
         )}
       </section>
 
+      {asks.length > 0 && (
+        <section>
+          <h3 className="text-label font-semibold uppercase tracking-wide text-slate-500">Escalations</h3>
+          <ul className="mt-1 space-y-1">
+            {asks.map((a) => (
+              <li key={a.id} className="text-small text-slate-300">
+                <span className="font-mono text-label text-slate-500">{a.id}</span> {a.question}{" "}
+                <span className="text-slate-500">
+                  {a.status === "open" ? "open" : `${a.answer} (${a.answered_by === "timeout" ? "no answer, safe default" : `answered from ${a.answered_by}`})`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {goal.report && (
         <section>
           <h3 className="text-label font-semibold uppercase tracking-wide text-slate-500">Report</h3>
@@ -447,5 +496,34 @@ function GoalPanel({
         </Button>
       </div>
     </Card>
+  );
+}
+
+const KIND_LABEL: Record<string, string> = {
+  budget: "Budget passed",
+  second_reject: "Rejected twice",
+  stuck: "Stuck after retry",
+  destructive: "Destructive approval",
+  merge: "Merge outside the allow list",
+  done_check: "Done check failed twice",
+};
+
+function EscalationRow({ e, busy, onAnswer }: { e: Escalation; busy: boolean; onAnswer: (answer: string) => void }) {
+  const left = Math.max(0, e.deadline_at - Math.floor(Date.now() / 1000));
+  const mins = Math.round(left / 60);
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white/[0.02] p-2 ring-1 ring-line">
+      <span className="font-mono text-label text-slate-500">{e.id}</span>
+      <Badge className="bg-amber-500/10 text-amber-300 ring-amber-500/25">{KIND_LABEL[e.kind] ?? e.kind}</Badge>
+      <span className="min-w-0 flex-1 text-small text-slate-200">{e.question}</span>
+      <span className="text-label text-slate-500" title="With no answer by then, Studio takes the safe answer">
+        {mins >= 60 ? `${Math.round(mins / 60)} h` : `${mins} min`} left, then {e.safe_answer}
+      </span>
+      {e.options.map((o) => (
+        <Button key={o} size="sm" variant={o === e.safe_answer ? "secondary" : "primary"} busy={busy} onClick={() => onAnswer(o)}>
+          {o}
+        </Button>
+      ))}
+    </div>
   );
 }
