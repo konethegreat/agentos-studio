@@ -47,6 +47,12 @@ const IN_PROGRESS = ["planning", "running", "verifying", "paused"];
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const at = (unix: number) => relativeTime(new Date(unix * 1000).toISOString());
 
+function digestParts(text: string | null): { title: string; body: string } {
+  if (!text) return { title: "", body: "" };
+  const [first, ...rest] = text.split("\n");
+  return { title: first.replace(/^#\s*/, "").trim(), body: rest.join("\n").trim() };
+}
+
 function go(view: string) {
   window.dispatchEvent(new CustomEvent<string>("agentos:go", { detail: view }));
 }
@@ -149,6 +155,7 @@ export function Today() {
   const spent = useMemo(() => (rows ?? []).reduce((n, r) => n + r.spent_usd, 0), [rows]);
   const budgets = useMemo(() => (rows ?? []).reduce((n, r) => n + r.goal.budget_usd, 0), [rows]);
   const waiting = openAsks.length + awaiting.length;
+  const digestText = digestParts(digest);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -357,7 +364,9 @@ export function Today() {
             <div className="px-4 py-3">
               <div className="text-2xl font-semibold text-slate-100">{usd(spent)}</div>
               <p className="mt-0.5 text-label text-slate-500">
-                Metered spend across the {rows?.length ?? 0} goals in this list. Flat subscriptions are not counted.
+                {rows?.length
+                  ? `Metered spend across the ${rows.length} goal${rows.length === 1 ? "" : "s"} in this list. Flat subscriptions are not counted.`
+                  : "Metered spend across goals. Flat subscriptions are not counted. Nothing has run yet."}
               </p>
               {budgets > 0 && (
                 <p className="mt-1 text-label text-slate-500">
@@ -386,9 +395,14 @@ export function Today() {
               <span className="text-label text-slate-500">Newest note in 04_Agent_Engine/digests.</span>
             </div>
             {digest ? (
-              <div className="max-h-80 overflow-y-auto px-4 py-3 text-small">
-                <Markdown text={digest} workingDir={null} />
-              </div>
+              <>
+                {digestText.title && (
+                  <div className="border-b border-line px-4 py-2 text-label text-slate-400">{digestText.title}</div>
+                )}
+                <div className="max-h-80 overflow-y-auto px-4 py-3 text-small">
+                  <Markdown text={digestText.body} workingDir={null} />
+                </div>
+              </>
             ) : (
               <div className="px-4 py-3 text-small text-slate-500">
                 No digest yet. Hermes writes one each morning and evening; the schedule is on Work: Goals.
