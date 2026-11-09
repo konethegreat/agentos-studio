@@ -564,6 +564,8 @@ pub fn review(id: &str, reviewer: &str, verdict: &str, note: &str) -> Result<Mis
                     review_note = ?2, updated_at = ?3 WHERE id = ?4",
                 params![reviewer.trim(), note.trim(), now(), id],
             )?;
+            // A second reject on the same mission is an escalation for a goal.
+            crate::goal_loop::count_reject(id);
         }
         other => bail!("verdict must be approve or reject, got '{other}'"),
     }

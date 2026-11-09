@@ -402,6 +402,23 @@ export interface GoalDetail {
   spent_usd: number;
 }
 
+/** Phase D: a question Studio asks the owner; the safe answer is taken at the deadline. */
+export interface Escalation {
+  id: string;
+  goal_id: string | null;
+  mission_id: string | null;
+  kind: "budget" | "second_reject" | "stuck" | "destructive" | "merge" | "done_check";
+  question: string;
+  options: string[];
+  safe_answer: string;
+  status: "open" | "answered" | "expired";
+  answer: string | null;
+  answered_by: string | null;
+  created_at: number;
+  deadline_at: number;
+  answered_at: number | null;
+}
+
 export interface NewGoal {
   outcome: string;
   repos: string[];
@@ -855,6 +872,10 @@ export const api = {
   deleteGoal: (id: string) => invoke<void>("goal_delete", { id }),
   planGoal: (id: string) => invoke<Goal>("goal_plan", { id }),
   approveGoalPlan: (id: string) => invoke<Goal>("goal_approve_plan", { id }),
+  escalations: (limit = 100) => invoke<Escalation[]>("escalations_list", { limit }),
+  answerEscalation: (id: string, answer: string) => invoke<Escalation>("escalation_answer", { id, answer }),
+  escalationSettings: () => invoke<{ timeout_minutes: number; notify_target: string | null }>("escalation_settings"),
+  setEscalationTimeout: (minutes: number) => invoke<void>("set_escalation_timeout", { minutes }),
   autonomyDefaults: (repos: string[]) => invoke<Record<string, AutonomyLevel>>("autonomy_defaults", { repos }),
   setRepoAutonomy: (repo: string, level: AutonomyLevel) => invoke<void>("set_repo_autonomy", { repo, level }),
   studioUpdateCheck: () => invoke<string | null>("studio_update_check"),

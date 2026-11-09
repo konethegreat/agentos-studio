@@ -371,6 +371,17 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   blocked with the reason. Goal missions always; standalone missions when Automations are on. The
   minute pass also runs while a goal is active. Verified live: `tests/live_auto_review.rs`
   (Antigravity judged Claude Code's pull request in 43 s).
+- **Automatic merge:** approved work merges without a click when the level allows it (Full
+  always, Ask on risk on the repository's merge allow list, Watch never) and every other gate
+  condition holds: another agent approved, CI green with checks present, budget intact, `hermes
+  verify` clean. Pending CI waits; a pull request merged or closed by someone else is recorded and
+  left alone. Standalone missions only merge on their own while Automations are on.
+- **Escalations, and only these:** a goal over its metered budget (the goal pauses), a second
+  reject (the mission is held), a goal mission blocked after its retry (a destructive approval
+  when the reason says so), a merge outside the allow list at Ask on risk. Each has a question,
+  answers, a safe answer and a deadline (60 minutes by default, kv
+  `escalation.timeout_minutes`); with no answer by the deadline the safe answer is taken. Answered
+  in Work: Goals, under Waiting on you.
 
 ## v0.13.0: memory that gets better with every mission (shipped)
 

@@ -153,6 +153,10 @@ pub struct TickReport {
     pub stuck: Vec<String>,
     /// Missions in review whose automatic reviewer was started this pass.
     pub reviewing: Vec<String>,
+    /// Approved pull requests merged this pass without a click.
+    pub merged: Vec<String>,
+    /// Escalations raised this pass (the only questions Studio asks the owner).
+    pub escalated: Vec<String>,
     pub kept_awake: bool,
     pub error: Option<String>,
 }
@@ -268,6 +272,19 @@ pub fn tick(v: &Vault) -> TickReport {
         }
     }
 
+    // 1c. Merge what the autonomy level allows, raise the escalation list, apply answers.
+    let gp = crate::goal_loop::pass(v, report.enabled);
+    report.merged = gp.merged;
+    report.escalated = gp.escalated;
+    if let Some(e) = gp.errors.first() {
+        report.error.get_or_insert_with(|| e.clone());
+    }
+    let all = if report.merged.is_empty() && gp.applied.is_empty() {
+        all
+    } else {
+        missions::list(300).unwrap_or_default()
+    };
+
     // A finished mission no longer needs its worktree; its branch stays, it is the pull request.
     for m in all
         .iter()
@@ -294,6 +311,7 @@ pub fn tick(v: &Vault) -> TickReport {
             .iter()
             .filter(|m| m.status == "queued")
             .filter(|m| crate::assign::deferred_until(&m.id).map_or(true, |t| t <= now))
+            .filter(|m| !crate::goal_loop::held(&m.id))
             .filter(|m| match crate::goals::goal_of(&m.id) {
                 None => report.enabled,
                 Some(gid) => {

@@ -18,10 +18,12 @@ pub mod computer_use;
 pub mod connect;
 pub mod constitution;
 pub mod council;
+pub mod escalation;
 pub mod eval;
 pub mod fleet;
 pub mod fork;
 pub mod github;
+pub mod goal_loop;
 pub mod goals;
 pub mod handoff;
 pub mod help;
@@ -351,6 +353,10 @@ pub fn run_gui() {
             commands::set_repo_autonomy,
             commands::goal_plan,
             commands::goal_approve_plan,
+            commands::escalations_list,
+            commands::escalation_answer,
+            commands::escalation_settings,
+            commands::set_escalation_timeout,
             commands::dispatch_mission,
             commands::submit_mission,
             commands::review_mission,

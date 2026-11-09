@@ -128,6 +128,7 @@ the first paint is never competing with a full probe.
 | `timeline.rs` | Read-only run timeline per mission from the exchange log, bus, worker logs, kanban, `state.db` and the memory ledger. |
 | `goals.rs` | Goals (schema 10): outcome, repositories, runnable done checks, metered budget, deadline, autonomy level and the per-repository default; the vault note `01_Projects/Goals/<id>.md`. Design in [GOALS.md](GOALS.md). |
 | `planner.rs` | Splits a goal with `hermes kanban decompose --json` against a private `HERMES_KANBAN_DB` (no dispatcher scans it), mirrors the tasks as `auto` missions under the goal with their dependencies, Watch plan approval, and the scheduler's start rule for goal missions. |
+| `goal_loop.rs`, `escalation.rs` | Each scheduler pass: merge approved work the autonomy level allows, raise the escalation list (budget, second reject, stuck or destructive, merge outside the allow list), apply answers once; escalations (schema 10) with a hashed phone code, options, a safe answer and a deadline. |
 
 ### Approval flow
 

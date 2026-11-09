@@ -1469,3 +1469,41 @@ pub async fn goal_approve_plan(
     })
     .await
 }
+
+/// Open escalations first: the questions waiting on the owner.
+#[tauri::command]
+pub async fn escalations_list(
+    limit: Option<usize>,
+) -> CmdResult<Vec<crate::escalation::Escalation>> {
+    blocking(move || crate::escalation::list(limit.unwrap_or(100))).await
+}
+
+/// Answer an escalation from Studio. The scheduler applies it on its next pass; this runs one
+/// pass now so the answer takes effect at once.
+#[tauri::command]
+pub async fn escalation_answer(
+    state: State<'_, AppState>,
+    id: String,
+    answer: String,
+) -> CmdResult<crate::escalation::Escalation> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let e = crate::escalation::answer(&id, &answer, "studio")?;
+        let _ = crate::automation::tick(&v);
+        Ok(crate::escalation::get(&id)?.unwrap_or(e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn escalation_settings() -> serde_json::Value {
+    serde_json::json!({
+        "timeout_minutes": crate::escalation::timeout_minutes(),
+        "notify_target": crate::hermes_surfaces::notify_target(),
+    })
+}
+
+#[tauri::command]
+pub async fn set_escalation_timeout(minutes: i64) -> CmdResult<()> {
+    blocking(move || crate::escalation::set_timeout_minutes(minutes)).await
+}
