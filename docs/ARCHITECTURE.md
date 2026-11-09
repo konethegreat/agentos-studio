@@ -148,8 +148,10 @@ global** for every hub session:
 - **Global** is the `tool_policy` table, changed with `set_tool_policy`.
 - **Agent** is one agent name, for example `qoder` or `claude-code`. Set it in Safety, or via
   `set_scoped_tool_policy("agent", "qoder", server, tool, policy)`.
-- **Repo** is one project slug. It applies only when the hub session declares it through the
-  `AGENTOS_REPO` environment variable, so a session cannot claim a repo it was not started in.
+- **Repo** is one project slug. It applies only to hub sessions that declare the project through
+  the `AGENTOS_REPO` environment variable, which the launcher sets per mission, so unrelated
+  sessions keep the agent and global policies. `AGENTOS_REPO` is trusted the same way the hub
+  token is: both come from the environment the launcher hands the session.
 
 The checks run inside `mcp_stdio.rs` with the caller already resolved from the hub token, so a
 client cannot route around them. A denied tool is hidden from `tools/list` for that scope as well
