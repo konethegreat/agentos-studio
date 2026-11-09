@@ -239,13 +239,14 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         })?;
     // Every attempt gets its own worktree and branch, so a mission never shares a checkout.
     let wt = crate::worktree::create(&dir, &m)?;
+    let conventions = crate::learning::conventions_for(v, &m.repo);
     let args = crate::vault::DelegateArgs {
         title: m.goal.chars().take(90).collect(),
         assigned_to: m.agent.clone(),
         creator: "agentos-studio".into(),
         project: m.repo.clone(),
         context_files: context_files(&dir),
-        instructions: bus_instructions(&m, &dir, Some(&wt)),
+        instructions: bus_instructions(&m, &dir, Some(&wt), &conventions),
         priority: "high".into(),
     };
     let task = v.delegate_task(args)?;
@@ -279,11 +280,13 @@ pub fn context_files(dir: &std::path::Path) -> Vec<String> {
 }
 
 /// The bus task body for a mission. Carries the `Repository:` line every worker resolves its
-/// working folder from, the acceptance criteria and, on rework, the reviewer's note. Pure.
+/// working folder from, the acceptance criteria, on rework the reviewer's note, and the
+/// repository's active conventions. Pure.
 pub fn bus_instructions(
     m: &Mission,
     dir: &std::path::Path,
     worktree: Option<&std::path::Path>,
+    conventions: &str,
 ) -> String {
     let mut b = format!(
         "{}\n\nAcceptance criteria:\n{}\n\nMission: {}. Role: {}. Provider: {}.\n\nWork in a branch, open a pull request with gh, and put the pull request URL in your complete_task summary. Do not merge: AgentOS Studio reviews and merges.",
@@ -300,6 +303,12 @@ pub fn bus_instructions(
                 note.trim()
             ));
         }
+    }
+    if !conventions.is_empty() {
+        b.push_str(&format!(
+            "\n\nConventions from earlier reviews in this repository:\n{}",
+            conventions
+        ));
     }
     b.push_str(&format!("\n\nRepository: {}", dir.display()));
     if let Some(wt) = worktree {
@@ -556,7 +565,20 @@ pub fn review(id: &str, reviewer: &str, verdict: &str, note: &str) -> Result<Mis
         }
         other => bail!("verdict must be approve or reject, got '{other}'"),
     }
-    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+    let judged = get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
+    // A finished mission teaches the vault without a human step. The turn takes minutes, so it
+    // runs in the background; the `learning.done` key keeps a retry from writing twice. Skipped
+    // under unit tests, where a thread would escape the thread-local store and index overrides.
+    if verdict == "approve" && !cfg!(test) {
+        let done = id.to_string();
+        std::thread::spawn(move || {
+            let v = crate::vault::Vault::new(crate::settings::vault_path());
+            if let Err(e) = crate::learning::on_mission_reviewed(&v, &done) {
+                eprintln!("learning: lessons for {done} failed: {e:#}");
+            }
+        });
+    }
+    Ok(judged)
 }
 
 /// A person in Studio releases a blocked mission back to the queue (an untrusted Notion proposal,
@@ -714,9 +736,13 @@ Opened PR https://github.com/o/sandbox/pull/7 (the only PR for this branch). Not
             let d = tempfile::tempdir().unwrap();
             std::fs::write(d.path().join("README.md"), "# r").unwrap();
             let mut m = make();
-            let body = bus_instructions(&m, d.path(), None);
+            let body = bus_instructions(&m, d.path(), None, "");
             assert!(body.contains("Acceptance criteria:"));
             assert!(body.contains(&m.id));
+            assert!(
+                !body.contains("Conventions from earlier reviews"),
+                "no conventions, no section"
+            );
             // The worker resolves its folder from exactly this line.
             assert_eq!(crate::bus::repo_from_body(&body).unwrap(), d.path());
             assert_eq!(crate::bus::workdir_from_body(&body).unwrap(), d.path());
@@ -724,7 +750,12 @@ Opened PR https://github.com/o/sandbox/pull/7 (the only PR for this branch). Not
             let wt = d.path().join("wt");
             std::fs::create_dir_all(&wt).unwrap();
             m.model = "claude-opus-5-5".into();
-            let body = bus_instructions(&m, d.path(), Some(&wt));
+            let body = bus_instructions(
+                &m,
+                d.path(),
+                Some(&wt),
+                "- Use the retry helper: call it before any request.",
+            );
             assert_eq!(crate::bus::workdir_from_body(&body).unwrap(), wt);
             assert_eq!(crate::bus::repo_from_body(&body).unwrap(), d.path());
             assert_eq!(
@@ -732,6 +763,11 @@ Opened PR https://github.com/o/sandbox/pull/7 (the only PR for this branch). Not
                 Some("claude-opus-5-5")
             );
             assert!(body.contains(&format!("Branch: {}", crate::worktree::branch_for(&m))));
+            assert!(
+                body.contains("Conventions from earlier reviews in this repository:")
+                    && body.contains("Use the retry helper"),
+                "the repository conventions reach the worker: {body}"
+            );
             let ctx = context_files(d.path());
             assert_eq!(ctx[0], "03_Memory/SYSTEM_CONTEXT.md");
             assert!(ctx.iter().any(|c| c.ends_with("README.md")));
@@ -742,7 +778,7 @@ Opened PR https://github.com/o/sandbox/pull/7 (the only PR for this branch). Not
 
             m.review_verdict = Some("reject".into());
             m.review_note = Some("cover the empty case".into());
-            assert!(bus_instructions(&m, d.path(), None).contains("cover the empty case"));
+            assert!(bus_instructions(&m, d.path(), None, "").contains("cover the empty case"));
         });
     }
 

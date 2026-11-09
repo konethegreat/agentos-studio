@@ -207,11 +207,12 @@ implementer, and the merge gate reports every reason a merge is not allowed.
 
 The design, including the cost model and the status machine, is in [`docs/AUTOMATIONS.md`](docs/AUTOMATIONS.md).
 
-Finished missions feed the learning loop. From Memory, "Extract lessons" runs one headless turn
-that writes the decisions, conventions and gotchas into `03_Memory`, tagged with the repository and
-the session that produced them. A repository whose reviews keep rejecting work for the same
-blockers gets one convention note that names the missions. Both paths are additive and idempotent:
-rerunning a mission or the reject check writes nothing.
+Finished missions feed the learning loop. When a reviewer approves a mission, one headless turn in
+the background writes the decisions, conventions and gotchas into `03_Memory`, tagged with the
+repository and the session that produced them; "Extract lessons" in Memory runs the same turn by
+hand. A repository whose reviews keep rejecting work for the same blockers gets one convention note
+that names the missions, and the next mission started there carries that note in its instructions.
+Both paths are additive and idempotent: rerunning a mission or the reject check writes nothing.
 
 Memory also audits itself. A note that names a repository and points at a backticked path or
 function that the repository no longer has is stale; two active notes with the same topic and type
