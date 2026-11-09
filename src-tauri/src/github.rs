@@ -462,6 +462,16 @@ fn merge_args(
 }
 
 /// The pull request title and description, for a merge that keeps them and appends to the body.
+/// GitHub's squash subject is the pull request title followed by " (#n)". Passing only the title
+/// would drop the number that the rest of main's history carries, so the subject is built here.
+pub fn squash_subject(title: &str, number: u64) -> Option<String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return None;
+    }
+    Some(format!("{title} (#{number})"))
+}
+
 pub fn pr_title_and_body(repo: &str, number: u64) -> Result<(String, String)> {
     let r = repo_arg(repo)?;
     let n = number.to_string();
@@ -711,6 +721,20 @@ mod tests {
         assert!(!mission.iter().any(|a| a == "--delete-branch"));
         let blank = merge_args("o/r", 7, "--squash", false, Some("  "), Some(""));
         assert!(!blank.iter().any(|a| a == "--subject" || a == "--body"));
+    }
+
+    #[test]
+    fn a_squash_subject_keeps_the_pull_request_number() {
+        assert_eq!(
+            squash_subject("Add retryOnce", 25).as_deref(),
+            Some("Add retryOnce (#25)")
+        );
+        assert_eq!(
+            squash_subject("  Add retryOnce  ", 25).as_deref(),
+            Some("Add retryOnce (#25)")
+        );
+        // Without a title, gh keeps its own default subject.
+        assert_eq!(squash_subject("   ", 25), None);
     }
 
     #[test]
