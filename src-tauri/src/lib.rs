@@ -44,6 +44,7 @@ pub mod model_layer;
 pub mod model_watch;
 pub mod models;
 pub mod notion;
+pub mod notion_goals;
 pub mod notion_sync;
 pub mod offline;
 pub mod ops;
@@ -412,6 +413,8 @@ pub fn run_gui() {
             commands::mission_notion_authors,
             commands::notion_trusted_authors,
             commands::set_notion_trusted_authors,
+            commands::notion_sync_goals,
+            commands::notion_archive_goals_board,
             commands::notion_status,
             commands::automation_status,
             commands::set_automation,

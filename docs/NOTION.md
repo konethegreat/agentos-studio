@@ -42,3 +42,35 @@ use, then keeps it in step:
 
 While Automations are on, the board syncs every 5 minutes, before the scheduler dispatches, so a
 mission proposed in Notion can start in the same pass.
+
+## Goals board (both ways)
+
+**Goals board** in Memory creates a database named "AgentOS goals board" under the parent page on
+first use (kv `notion.goals_db`), then keeps it in step:
+
+- **Out:** every goal is a row: ID, the outcome, Repos, Done checks (one `kind: target` per line),
+  Autonomy, Budget USD, Deadline, Status, Progress ("2 of 3 missions done"), Spent USD, Status note,
+  the open question (Escalation and Question) and the Report once the goal ends. A row is updated
+  only when its goal changed (ledger key `notion-goal:<id>`), and the row of a goal deleted in
+  Studio is archived.
+- **Propose a goal from Notion:** add a row with a Goal, Repos and Done checks and leave ID empty.
+  Done checks are one per line: `command: npm test`, `url: https://example.com/health` or
+  `file: docs/PROBE.md`, optionally ending in `@repo`. Autonomy, Budget USD and Deadline are
+  optional. On the next sync Studio creates the goal through the same path as the Goals form, writes
+  the goal ID back and starts the planner. A row missing Repos or Done checks, or with a check
+  Studio cannot run, gets a note saying what is wrong.
+- **Trust:** the same list as the missions board (`notion.trusted_authors`). A trusted author's
+  goal runs at the autonomy it asked for (the repository default when empty). Anyone else's goal is
+  created at **Watch**, whatever the row asked for: the plan and every mission wait for a click in
+  Goals.
+- **Answer an escalation from Notion:** the row shows the goal's oldest open question, its allowed
+  answers and the deadline. Set **Decision** to one of the allowed answers. On the next sync Studio
+  answers that escalation (answered by `notion`) and the goal loop applies it on its next pass,
+  exactly like an answer from Goals or from the phone. The Decision is refused, with a note on the
+  row, when the last editor of the row is not a trusted author, the question was already answered
+  or expired, or the answer is not one of the allowed answers. A handled Decision is cleared.
+- **Nothing else comes back.** Status, checks, missions, merges and spend are Studio's; an edit to
+  those columns in Notion is overwritten on the next sync.
+
+Once the board exists it syncs every 5 minutes while Studio is open, with Automations on or off:
+a goal is the owner's instruction, the same rule the goal loop follows.
