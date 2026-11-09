@@ -386,6 +386,111 @@ pub fn pr_checks_green(repo: &str, number: u64) -> Result<bool> {
     }))
 }
 
+/// One check on a pull request, as `gh pr checks --json name,state,link` reports it.
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct CheckRun {
+    pub name: String,
+    pub state: String,
+    pub link: String,
+}
+
+/// Where a pull request's CI stands. Pending wins over failed so a fix or rerun only starts once
+/// the run has finished; no checks at all is `Missing`, which is never green.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ci {
+    Green,
+    Pending,
+    Failed(Vec<CheckRun>),
+    Missing,
+}
+
+const CHECK_OK: [&str; 3] = ["SUCCESS", "SKIPPED", "NEUTRAL"];
+const CHECK_PENDING: [&str; 6] = [
+    "PENDING",
+    "QUEUED",
+    "IN_PROGRESS",
+    "WAITING",
+    "REQUESTED",
+    "EXPECTED",
+];
+
+/// `gh pr checks --json` output as check runs. Anything that is not a JSON array is no checks. Pure.
+pub fn parse_check_runs(json: &str) -> Vec<CheckRun> {
+    let Ok(Value::Array(a)) = serde_json::from_str::<Value>(json.trim()) else {
+        return Vec::new();
+    };
+    a.iter()
+        .map(|c| {
+            let s = |k: &str| c.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+            CheckRun {
+                name: s("name"),
+                state: s("state").to_uppercase(),
+                link: s("link"),
+            }
+        })
+        .collect()
+}
+
+/// Pure.
+pub fn ci_state(runs: &[CheckRun]) -> Ci {
+    if runs.is_empty() {
+        return Ci::Missing;
+    }
+    if runs
+        .iter()
+        .any(|r| CHECK_PENDING.contains(&r.state.as_str()))
+    {
+        return Ci::Pending;
+    }
+    let failed: Vec<CheckRun> = runs
+        .iter()
+        .filter(|r| !CHECK_OK.contains(&r.state.as_str()))
+        .cloned()
+        .collect();
+    if failed.is_empty() {
+        Ci::Green
+    } else {
+        Ci::Failed(failed)
+    }
+}
+
+/// One line per check, for the reviewer's prompt and the digest. Pure.
+pub fn checks_summary(runs: &[CheckRun]) -> String {
+    if runs.is_empty() {
+        return "No CI checks reported on this pull request.".into();
+    }
+    runs.iter()
+        .map(|r| format!("- {}: {}", r.name, r.state))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The checks on a pull request. `gh pr checks` exits non-zero while checks are pending or have
+/// failed, with the JSON still on stdout, so the exit code is not treated as an error here.
+pub fn pr_check_runs(repo: &str, number: u64) -> Result<Vec<CheckRun>> {
+    let r = repo_arg(repo)?;
+    if procs::find("gh").is_none() {
+        bail!("The GitHub CLI (gh) is not installed. Install it from Setup and Integrations.");
+    }
+    let n = number.to_string();
+    let (_, out, err) = procs::run_with_timeout(
+        "gh",
+        &["pr", "checks", &n, "-R", r, "--json", "name,state,link"],
+        None,
+        None,
+        LIMIT,
+    )?;
+    if !out.trim_start().starts_with('[') {
+        let msg = err.trim();
+        // No checks yet is an answer, not a failure.
+        if msg.contains("no checks reported") {
+            return Ok(Vec::new());
+        }
+        bail!("gh pr checks failed: {msg}");
+    }
+    Ok(parse_check_runs(&out))
+}
+
 pub fn pr_merge(
     repo: &str,
     number: u64,
@@ -658,6 +763,32 @@ pub fn run_rerun(repo: &str, id: u64, failed_only: bool, approved: bool) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ci_waits_for_pending_checks_and_names_the_failed_ones() {
+        // Shape of `gh pr checks --json name,state,link`.
+        let runs = parse_check_runs(
+            r#"[{"name":"build-and-test","state":"FAILURE","link":"https://x/1"},
+                {"name":"GitGuardian Security Checks","state":"SUCCESS","link":"https://x/2"}]"#,
+        );
+        assert_eq!(runs.len(), 2);
+        match ci_state(&runs) {
+            Ci::Failed(f) => assert_eq!(f[0].name, "build-and-test"),
+            other => panic!("expected failed, got {other:?}"),
+        }
+        let mut pending = runs.clone();
+        pending[1].state = "IN_PROGRESS".into();
+        assert_eq!(ci_state(&pending), Ci::Pending);
+        let green = parse_check_runs(
+            r#"[{"name":"a","state":"success","link":""},{"name":"b","state":"SKIPPED","link":""}]"#,
+        );
+        assert_eq!(ci_state(&green), Ci::Green);
+        assert_eq!(ci_state(&parse_check_runs("no checks")), Ci::Missing);
+        assert_eq!(
+            checks_summary(&runs),
+            "- build-and-test: FAILURE\n- GitGuardian Security Checks: SUCCESS"
+        );
+    }
 
     #[test]
     fn validates_inputs() {

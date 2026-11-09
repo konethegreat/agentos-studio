@@ -151,6 +151,8 @@ pub struct TickReport {
     pub reassigned: Vec<String>,
     /// Running missions that went quiet: retried once, or blocked after the retry.
     pub stuck: Vec<String>,
+    /// Missions in review whose automatic reviewer was started this pass.
+    pub reviewing: Vec<String>,
     pub kept_awake: bool,
     pub error: Option<String>,
 }
@@ -252,6 +254,19 @@ pub fn tick(v: &Vault) -> TickReport {
 
     // Re-read: statuses changed in step 1.
     let all = missions::list(300).unwrap_or_default();
+
+    // 1b. Work in review gets its reviewer without a click: a different agent on another
+    // provider, with the diff, CI, the verify result and the repository's conventions. Goal
+    // missions always; standalone missions when Automations are on.
+    let now = chrono::Utc::now().timestamp();
+    for m in all.iter().filter(|m| m.status == "review") {
+        let eligible = report.enabled || crate::goals::goal_of(&m.id).is_some();
+        let state = crate::review_agent::auto_state(&m.id);
+        if crate::review_agent::auto_review_due(m, state.as_deref(), now, eligible) {
+            crate::review_agent::auto_in_background(v.root.clone(), m.id.clone());
+            report.reviewing.push(m.id.clone());
+        }
+    }
 
     // A finished mission no longer needs its worktree; its branch stays, it is the pull request.
     for m in all
@@ -410,13 +425,17 @@ pub fn start_scheduler(vault_root: std::path::PathBuf) {
         let mut pass: u64 = 0;
         loop {
             std::thread::sleep(std::time::Duration::from_secs(60));
-            if !enabled() {
+            // An active goal is the owner's instruction to run its missions, so the pass runs
+            // for it even with Automations off; the tick itself starts no standalone mission then.
+            let goals_active = crate::goals::any_active();
+            if !enabled() && !goals_active {
                 keep_awake(false);
                 continue;
             }
             // Every 5 minutes, once the user has created a Notion missions board: pull proposals
             // and cancels before dispatching, so a mission proposed in Notion starts this pass.
-            if pass % 5 == 0
+            if enabled()
+                && pass % 5 == 0
                 && crate::notion::setting(crate::notion_sync::KV_DB).is_some()
                 && crate::notion::token().is_some()
             {

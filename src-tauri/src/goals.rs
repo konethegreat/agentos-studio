@@ -392,6 +392,24 @@ pub fn missions_of(goal_id: &str) -> Result<Vec<Mission>> {
     Ok(out)
 }
 
+/// Is any goal running or verifying? The scheduler's minute pass runs for those even with
+/// Automations off.
+pub fn any_active() -> bool {
+    store::open()
+        .ok()
+        .and_then(|c| {
+            c.query_row(
+                "SELECT 1 FROM goals WHERE status IN ('running', 'verifying') LIMIT 1",
+                [],
+                |_| Ok(()),
+            )
+            .optional()
+            .ok()
+            .flatten()
+        })
+        .is_some()
+}
+
 /// Metered spend across a goal's missions. Pure.
 pub fn spent(missions: &[Mission]) -> f64 {
     missions.iter().map(|m| m.spent_usd).sum()
@@ -665,6 +683,11 @@ mod tests {
             let on_disk = std::fs::read_to_string(d.path().join(note_rel(&g.id))).unwrap();
             assert!(on_disk.contains("# G-001: Add a probe endpoint"));
 
+            assert!(!any_active(), "a planning goal is not active yet");
+            set_status(&g.id, &["planning"], "running", "").unwrap();
+            assert!(any_active());
+            set_status(&g.id, &["running"], "failed", "test").unwrap();
+            assert!(!any_active());
             delete(&g.id).unwrap();
             assert!(get(&g.id).unwrap().is_none());
             assert!(
