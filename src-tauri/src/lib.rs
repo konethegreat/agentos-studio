@@ -19,6 +19,7 @@ pub mod computer_use;
 pub mod connect;
 pub mod constitution;
 pub mod council;
+pub mod digest;
 pub mod escalation;
 pub mod eval;
 pub mod fleet;
@@ -358,6 +359,9 @@ pub fn run_gui() {
             commands::escalation_answer,
             commands::escalation_settings,
             commands::set_escalation_timeout,
+            commands::digest_now,
+            commands::digest_settings,
+            commands::set_digest_times,
             commands::dispatch_mission,
             commands::submit_mission,
             commands::review_mission,

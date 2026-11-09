@@ -206,6 +206,11 @@ pub fn artifacts(v: &Vault) -> Vec<(String, String)> {
     }
     out.push(("AgentOS goals".into(), gs));
 
+    // The latest morning or evening digest.
+    if let Some(d) = crate::digest::latest(v) {
+        out.push(("AgentOS digest".into(), d));
+    }
+
     out
 }
 
