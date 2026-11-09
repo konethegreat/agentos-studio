@@ -187,6 +187,14 @@ pub const ACTIONS: &[ActionDef] = &[
         "ask",
         false,
     ),
+    def(
+        "eval.run",
+        "Missions",
+        "Replay a finished mission on another agent or model (spends agent time)",
+        "medium",
+        "ask",
+        true,
+    ),
 ];
 
 pub fn action(id: &str) -> Option<&'static ActionDef> {

@@ -196,8 +196,13 @@ fn scan_files(root: &Path) -> Vec<PathBuf> {
         if !base.exists() {
             continue;
         }
+        let evals = base.join("evals");
         for entry in walkdir::WalkDir::new(&base).into_iter().flatten() {
             let p = entry.path();
+            // Eval notes are run records, not memory: the Brain view lists them on their own.
+            if p.starts_with(&evals) {
+                continue;
+            }
             if entry.file_type().is_file() && p.extension().and_then(|e| e.to_str()) == Some("md") {
                 out.push(p.to_path_buf());
             }

@@ -378,6 +378,21 @@ with the owner approving anything that reaches Hermes.
   hover `why` action against the local clone. A lookup that cannot run (no `gh`, no GitHub remote)
   is reported as a note, not an error.
 - Verified live: `tests/live_provenance.rs`.
+- **Evaluation harness (`eval.rs`):** takes a finished mission, reads its pull request's base
+  commit, and replays the same goal and acceptance criteria on another agent or model in a detached
+  worktree under `.worktrees/`. The replay never pushes and never opens a pull request.
+- **Score:** half the repository's own test command (detected from package.json, Cargo.toml,
+  go.mod or pytest), a quarter when no test command exists, and half the reviewer's verdict on the
+  replay's local diff, using the same prompt and verdict parser as the review gate. The verdict is
+  never written back to the mission.
+- **Notes and comparison:** one note per replay under `03_Memory/evals/` with the base commit,
+  duration, cost, tests and reviewer note, plus the original run's score on the same rubric. The
+  Brain view has an Evaluations panel that lists them and starts a replay behind the new
+  `eval.run` permission.
+- **Not in this release:** the router rule that changes a default only after three replays show an
+  improvement. It edits the Phase C router, so it lands after v0.12.0.
+- `tests/live_eval.rs` (ignored) replays one finished sandbox mission and asserts the worktree,
+  branch and routing policy are unchanged.
 
 ## v0.10.2: cua-driver stays on the Hermes pin (shipped)
 
