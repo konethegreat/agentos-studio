@@ -48,6 +48,7 @@ pub mod notion_sync;
 pub mod offline;
 pub mod ops;
 pub mod org;
+pub mod pause;
 pub mod permissions;
 pub mod planner;
 pub mod plans;
@@ -362,6 +363,9 @@ pub fn run_gui() {
             commands::digest_now,
             commands::digest_settings,
             commands::set_digest_times,
+            commands::fleet_pause_state,
+            commands::fleet_pause,
+            commands::fleet_resume,
             commands::dispatch_mission,
             commands::submit_mission,
             commands::review_mission,

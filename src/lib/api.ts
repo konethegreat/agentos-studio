@@ -879,6 +879,9 @@ export const api = {
   digestNow: () => invoke<string>("digest_now"),
   digestSettings: () => invoke<{ times: string; notify_target: string | null }>("digest_settings"),
   setDigestTimes: (times: string) => invoke<void>("set_digest_times", { times }),
+  fleetPauseState: () => invoke<FleetPause>("fleet_pause_state"),
+  fleetPause: (reason: string) => invoke<FleetPause>("fleet_pause", { reason }),
+  fleetResume: () => invoke<FleetPause>("fleet_resume"),
   autonomyDefaults: (repos: string[]) => invoke<Record<string, AutonomyLevel>>("autonomy_defaults", { repos }),
   setRepoAutonomy: (repo: string, level: AutonomyLevel) => invoke<void>("set_repo_autonomy", { repo, level }),
   studioUpdateCheck: () => invoke<string | null>("studio_update_check"),
@@ -1030,4 +1033,13 @@ export function errorText(e: unknown): string {
   if (typeof e === "string") return e;
   if (e instanceof Error) return e.message;
   return JSON.stringify(e);
+}
+
+/** The fleet pause switch: nothing new starts or merges while it is on. */
+export interface FleetPause {
+  paused: boolean;
+  since: number | null;
+  reason: string;
+  /** Hermes' own stop (`hermes pause`) is engaged. */
+  hermes_paused: boolean;
 }
