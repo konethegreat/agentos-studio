@@ -442,9 +442,11 @@ Also in this release, built by Qoder in parallel (Phase H preparation and Phase 
 - The two-job build cap for this 11.4 GB machine (#108): `.cargo/config.toml` `jobs = 2`, line
   tables only for dev and test builds.
 
-## v0.15.0: Notion and Obsidian as real control surfaces (in progress)
+## v0.15.0: Notion and Obsidian as real control surfaces (shipped)
 
-Phase F of the 2026-11-08 master brief, by Hermes.
+Phase F of the 2026-11-08 master brief, by Hermes (#125, #126, #127). The owner can propose a goal,
+follow it and answer its questions from Notion, and every goal has an Obsidian folder and mission
+graph that work without Studio.
 
 - **Goals board in Notion (F1).** `notion_goals.rs`: a database "AgentOS goals board" next to the
   missions board. Out, one row per goal (outcome, repos, done checks, autonomy, budget, status,
@@ -468,6 +470,27 @@ Phase F of the 2026-11-08 master brief, by Hermes.
   graph in JSON Canvas (goal, missions by dependency column, decisions), coloured by status. The
   goal note gains Decisions, Pull requests and Mission graph sections. Regenerated whenever the
   goal note is written; only stale generated files are removed.
+- Evidence: `tests/live_notion_goals.rs` passed twice against the real workspace with a temporary
+  studio.db and vault (board created; unchanged sync free; the open question on the row; an
+  untrusted Decision refused and cleared; an untrusted proposal created at Watch with the ID
+  written back; a lost write-back repaired without a second goal; a disallowed answer refused; a
+  trusted Decision answered E-1 from Notion; a deleted goal's row archived; the board archived and
+  its ledger forgotten). The Obsidian views are covered by unit tests; the real studio.db had no
+  goals at release time, so they are first written to the real vault by the next goal.
+- Known issue: `hermes verify` falls back to the owner's checkout when a mission's worktree is gone
+  (#117, since 0.10).
+
+Also in this release, merged since 0.14.0:
+
+- Qoder, Phase G item 2: the unattended worker profile and the Safety card (#120), described under
+  v0.16.0 below.
+- Hermes, Phase G item 2: the worker switch to that profile, with worktree-only unattended starts
+  (#121), described under v0.16.0 below.
+- Qoder, Phase H item 3: the Today home screen (#122), described under v0.17.0 below.
+- Hermes: a reused escalation id never inherits an applied marker (#123), found by the 0.14.0
+  phone check.
+- Help now bundles NOTION.md and COMPUTER-USE.md; installed builds had been missing both user
+  guides because bundled docs are an explicit list.
 
 ## v0.16.0: safety for unattended work (in progress)
 
