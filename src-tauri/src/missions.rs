@@ -521,6 +521,8 @@ pub fn pr_number(m: &Mission) -> Option<u64> {
 pub fn submit_for_review(id: &str, spent_usd: f64) -> Result<Mission> {
     let c = store::open()?;
     set_status(&c, id, &["running"], "review")?;
+    // A new round of work gets a new automatic review.
+    let _ = store::kv_delete(&c, &crate::review_agent::auto_key(id));
     c.execute(
         "UPDATE missions SET spent_usd = spent_usd + ?1, updated_at = ?2 WHERE id = ?3",
         params![spent_usd.max(0.0), now(), id],

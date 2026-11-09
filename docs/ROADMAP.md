@@ -363,6 +363,14 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   plan; otherwise the goal runs at once, and the scheduler starts a goal's missions once their
   dependencies are done (Watch: each waits for Start). Verified live: `tests/live_planner.rs`
   (2 missions in 39 s, no Hermes board touched).
+- **Automatic review:** a mission entering review gets its reviewer without a click: the first
+  installed agent on a different provider family from the implementer (Antigravity for Claude
+  Code and Hermes on the Claude subscription, Claude Code for Antigravity), never the implementer.
+  The reviewer now also sees the CI checks, the `hermes verify` result and the repository's
+  conventions from memory. One review per round, one retry after a failure, then the mission is
+  blocked with the reason. Goal missions always; standalone missions when Automations are on. The
+  minute pass also runs while a goal is active. Verified live: `tests/live_auto_review.rs`
+  (Antigravity judged Claude Code's pull request in 43 s).
 
 ## v0.13.0: memory that gets better with every mission (shipped)
 
