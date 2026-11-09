@@ -463,6 +463,22 @@ and 2), per `03_Memory/Phase_D_H_Coordination.md`.
   secrets` pulls keys from Bitwarden or 1Password at startup; neither is an OS keychain, so those
   two guarantees stay open with that finding recorded.
 
+## v0.17.0: today at a glance (in progress)
+
+Phase H wave 3 of the 2026-11-08 master brief. Today is the screen Studio opens on.
+
+- **Waiting on you first:** open escalations, then goals whose plan is ready, in the same order as
+  the digest. Each escalation is answered from its own options in place, with the safe answer kept
+  as the quieter button, and an awaiting goal is approved from Today without opening Goals.
+- **What runs and what it costs:** goals in progress with missions done over missions planned, a
+  budget bar, the autonomy level and the spend; running missions and the worker processes this
+  machine started, with agent and spend; metered spend across goals, with the note that flat
+  subscriptions are not counted.
+- **Last digest:** the newest note in `04_Agent_Engine/digests`, rendered as written through a
+  read-only `digest_latest` command. Today polls every 15 seconds and has a manual Refresh.
+- Today is read-mostly. It answers escalations, approves plans and resumes a paused fleet; every
+  other action links to the screen that owns it.
+
 ## v0.13.0: memory that gets better with every mission (shipped)
 
 Phase E of the 2026-11-08 master brief, built by Qoder in parallel with Phase C (PRs #83, #84, #86,

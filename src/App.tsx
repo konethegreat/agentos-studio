@@ -9,6 +9,7 @@ import {
   RefreshCw,
   SlidersHorizontal,
   SquareTerminal,
+  Sunrise,
   TerminalSquare,
 } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, } from "react";
@@ -56,16 +57,24 @@ import { Projects } from "./views/Projects";
 import { SafetyCenter } from "./views/SafetyCenter";
 import { SetupWizard } from "./views/SetupWizard";
 import { Skills } from "./views/Skills";
+import { Today } from "./views/Today";
 import { UpdateCenter } from "./views/UpdateCenter";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 const ComputerUse = lazy(() => import("./views/ComputerUse").then((m) => ({ default: m.ComputerUse })));
 
-const VIEWS = ["chat", "goals", "projects", "skills", "memory", "help", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
+const VIEWS = ["today", "chat", "goals", "projects", "skills", "memory", "help", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
 type View = (typeof VIEWS)[number];
 const isView = (v: string): v is View => (VIEWS as readonly string[]).includes(v);
 
 const GROUPS: RailGroup[] = [
+  {
+    id: "today",
+    label: "Today",
+    icon: <Sunrise className="size-4" />,
+    defaultView: "today",
+    tabs: [{ id: "today", label: "Today", hint: "What waits on you, goals in progress, spend, running agents and the last digest" }],
+  },
   {
     id: "chat",
     label: "Chat",
@@ -139,7 +148,7 @@ export default function App() {
 function Studio() {
   const toast = useToast();
   const updates = useUpdates();
-  const [view, setView] = useState<View>("chat");
+  const [view, setView] = useState<View>("today");
   const [controlTab, setControlTab] = useState<"providers" | "mcp" | "hermes">("providers");
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [status, setStatus] = useState<StackStatus | null>(null);
@@ -154,7 +163,7 @@ function Studio() {
   const [setupLog, setSetupLog] = useState<SetupEvent[]>([]);
   const [activeJob, setActiveJob] = useState<string | null>(null);
   const [memoryTick, setMemoryTick] = useState(0);
-  const [visited, setVisited] = useState<Set<View>>(() => new Set<View>(["chat"]));
+  const [visited, setVisited] = useState<Set<View>>(() => new Set<View>(["today"]));
   const [incoming, setIncoming] = useState<{ text: string; cwd?: string; nonce: number } | null>(null);
   const [chatIntent, setChatIntent] = useState<ChatIntent | null>(null);
   const [palette, setPalette] = useState(false);
@@ -345,14 +354,14 @@ function Studio() {
     };
   }, [loadBoard, loadHermes, loadStatus, toast]);
 
-  // Keyboard: Ctrl+K palette, Alt+1..9 views.
+  // Keyboard: Ctrl+K palette, Alt+1..6 groups.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPalette((p) => !p);
       }
-      if (e.altKey && !e.ctrlKey && /^[1-5]$/.test(e.key)) {
+      if (e.altKey && !e.ctrlKey && /^[1-6]$/.test(e.key)) {
         const g = GROUPS[Number(e.key) - 1];
         if (g) {
           e.preventDefault();
@@ -428,6 +437,7 @@ function Studio() {
           <StatusBar hermes={hermes} stack={status} onOpenDiagnostics={() => go("diagnostics")} onRefresh={() => void loadHermes(true)} />
           <UpdateBanner onOpen={() => go("updates")} />
           <div className="relative min-h-0 flex-1">
+            {view === "today" && <Today />}
             {visited.has("chat") && (
               <div className={view === "chat" ? "h-full" : "hidden"}>
                 <ChatStudio repos={repos} hermes={hermes} home={home} intent={chatIntent} onStatusChanged={() => void loadHermes()} onOpenControl={openControl} incoming={incoming} active={view === "chat"} />

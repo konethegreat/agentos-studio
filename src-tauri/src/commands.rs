@@ -1584,3 +1584,10 @@ pub async fn fleet_pause(reason: String) -> CmdResult<crate::pause::State> {
 pub async fn fleet_resume() -> CmdResult<crate::pause::State> {
     blocking(crate::pause::resume).await
 }
+
+/// The newest digest note exactly as written, so Today can show the last one. Read only.
+#[tauri::command]
+pub async fn digest_latest(state: State<'_, AppState>) -> CmdResult<Option<String>> {
+    let v = current_vault(&state);
+    blocking(move || Ok(crate::digest::latest(&v))).await
+}
