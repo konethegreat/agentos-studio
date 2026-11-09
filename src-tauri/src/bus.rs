@@ -166,8 +166,9 @@ pub fn on_bus_change(root: PathBuf) {
 fn bus_pass(v: &Vault) {
     if let Ok(tasks) = v.fetch_pending_tasks("all") {
         let failed = BUS_FAILED.lock().map(|f| f.clone()).unwrap_or_default();
+        // Nobody watches a worker the watcher starts, so only work with its own worktree starts.
         for (id, agent) in auto_start_candidates(&tasks, headless_available, |b| {
-            workdir_from_body(b).is_some()
+            worktree_from_body(b).is_some()
         }) {
             if worker_running(&id) || failed.contains(&id) {
                 continue;
@@ -293,6 +294,62 @@ pub fn workdir_from_body(body: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
         .filter(|p| p.is_dir())
         .or_else(|| repo_from_body(body))
+}
+
+/// The mission's own worktree, when the task names one that exists.
+pub fn worktree_from_body(body: &str) -> Option<PathBuf> {
+    line_value(body, "Worktree")
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir())
+}
+
+/// Why a worker nobody watches may not start for this task, if it may not: without a worktree of
+/// its own it would edit a checkout the owner or another agent is using. Pure.
+pub fn unattended_refusal(task_id: &str, body: &str) -> Option<String> {
+    if worktree_from_body(body).is_some() {
+        return None;
+    }
+    Some(match line_value(body, "Worktree") {
+        Some(w) => format!(
+            "{task_id} names the worktree {w}, which does not exist, so no unattended worker was started. Start the mission again to get a new worktree."
+        ),
+        None => format!(
+            "{task_id} has no Worktree line, and an unattended worker never runs in a shared checkout. Queue it as a mission, or use Run now while you watch it."
+        ),
+    })
+}
+
+/// The project slug a worker declares to the hub as `AGENTOS_REPO`. Pure.
+pub fn repo_slug(project: &str) -> Option<&str> {
+    let p = project.trim();
+    (!p.is_empty() && p != "general").then_some(p)
+}
+
+/// The whole environment of a headless worker. Nothing is inherited: it is rebuilt from the
+/// allowlist in `permissions::unattended_env`, so keys and tokens the app holds never reach an
+/// agent, and PATH is the search path Studio found the CLI on. A worker somebody started by hand
+/// and is watching gets the same environment without the unattended marker. Pure.
+pub fn worker_env<I>(
+    base: I,
+    project: &str,
+    vault_root: &Path,
+    search_path: std::ffi::OsString,
+    unattended: bool,
+) -> Vec<(std::ffi::OsString, std::ffi::OsString)>
+where
+    I: IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+{
+    let is = |k: &std::ffi::OsString, name: &str| {
+        k.to_str().is_some_and(|k| k.eq_ignore_ascii_case(name))
+    };
+    let mut env: Vec<_> =
+        crate::permissions::unattended_env(base, repo_slug(project), Some(vault_root))
+            .into_iter()
+            .filter(|(k, _)| !is(k, "PATH"))
+            .filter(|(k, _)| unattended || !is(k, crate::permissions::UNATTENDED))
+            .collect();
+    env.push(("PATH".into(), search_path));
+    env
 }
 
 /// A model pinned on the mission (`Model: <id>`), if any.
@@ -477,16 +534,19 @@ pub fn launch(vault: &Vault, task_id: &str, agent: &str) -> Result<WorkerInfo> {
     }
     // tokio::process needs a runtime context; the scheduler is a plain thread.
     let _rt = tauri::async_runtime::handle().inner().enter();
-    spawn_worker(app, workers, vault.clone(), task_id, agent)
+    spawn_worker(app, workers, vault.clone(), task_id, agent, true)
 }
 
-/// Spawn a headless Hermes or Claude Code worker for a claimed task.
+/// Spawn a headless worker for a claimed task. `unattended` is true for every start nobody
+/// watches (the scheduler, the bus watcher, a stuck retry) and false only for a start the owner
+/// made by hand in the Bus view. Either way the child inherits nothing from the app.
 pub fn spawn_worker(
     app: AppHandle,
     workers: Arc<Mutex<HashMap<String, WorkerInfo>>>,
     vault: Vault,
     task_id: &str,
     agent: &str,
+    unattended: bool,
 ) -> Result<WorkerInfo> {
     if workers
         .lock()
@@ -496,6 +556,11 @@ pub fn spawn_worker(
         bail!("{task_id} already has a running worker");
     }
     let (task, _) = vault.get_task(task_id)?;
+    if unattended {
+        if let Some(why) = unattended_refusal(task_id, &task.body) {
+            bail!(why);
+        }
+    }
     // Agent work never falls back to the home folder: no repository, no worker.
     let cwd = workdir_from_body(&task.body).ok_or_else(|| {
         anyhow!(
@@ -560,8 +625,14 @@ pub fn spawn_worker(
     let mut cmd = tokio::process::Command::new(&exe);
     cmd.args(&args)
         .current_dir(&cwd)
-        .env("PATH", procs::search_path())
-        .env("AGENTOS_VAULT", &vault.root)
+        .env_clear()
+        .envs(worker_env(
+            std::env::vars_os(),
+            &task.project,
+            &vault.root,
+            procs::search_path(),
+            unattended,
+        ))
         .stdin(if stdin_text.is_some() {
             std::process::Stdio::piped()
         } else {
@@ -786,7 +857,7 @@ pub fn quick_mission_dispatch(
     let id = task["id"].as_str().unwrap_or_default().to_string();
     let worker = if !queue_only && headless {
         vault.claim_task(&id, &agent)?;
-        Some(spawn_worker(app, workers, vault, &id, &agent)?)
+        Some(spawn_worker(app, workers, vault, &id, &agent, false)?)
     } else {
         None
     };
@@ -813,7 +884,7 @@ pub fn run_task_now(
         }
         State::InProgress => {}
     }
-    spawn_worker(app, workers, vault, &task.id, &agent)
+    spawn_worker(app, workers, vault, &task.id, &agent, false)
 }
 
 #[cfg(test)]
@@ -873,6 +944,144 @@ mod tests {
             auto_start_candidates(&tasks, |_| false, |_| true).is_empty(),
             "nothing starts for an agent whose CLI is missing"
         );
+    }
+
+    #[test]
+    fn the_watcher_skips_work_without_its_own_worktree() {
+        let d = tempfile::tempdir().unwrap();
+        let v = Vault::new(d.path().join("vault"));
+        v.scaffold().unwrap();
+        let repo = d.path().join("repo");
+        let wt = repo.join(".worktrees").join("M-001-1");
+        fs::create_dir_all(&wt).unwrap();
+        let mk = |title: &str, extra: String| {
+            v.delegate_task(DelegateArgs {
+                title: title.into(),
+                assigned_to: "claude-code".into(),
+                creator: "test".into(),
+                project: "repo".into(),
+                context_files: Vec::new(),
+                instructions: format!("do it\n\nRepository: {}{extra}", repo.display()),
+                priority: "high".into(),
+            })
+            .unwrap()["id"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let mission = mk("mission", format!("\nWorktree: {}", wt.display()));
+        let _shared = mk("shared checkout", String::new());
+        let _gone = mk(
+            "worktree gone",
+            format!("\nWorktree: {}", repo.join("missing").display()),
+        );
+        let tasks = v.fetch_pending_tasks("all").unwrap();
+        let got = auto_start_candidates(&tasks, |_| true, |b| worktree_from_body(b).is_some());
+        assert_eq!(got, vec![(mission, "claude-code".to_string())]);
+    }
+
+    #[test]
+    fn an_unattended_worker_is_refused_without_a_worktree() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        let wt = repo.join(".worktrees").join("M-001-1");
+        fs::create_dir_all(&wt).unwrap();
+        let shared = format!("do it\n\nRepository: {}", repo.display());
+        let why = unattended_refusal("TASK-001", &shared).expect("a shared checkout is refused");
+        assert!(why.contains("TASK-001") && why.contains("no Worktree line"));
+        // The folder still resolves, so a start the owner watches keeps working.
+        assert_eq!(workdir_from_body(&shared).unwrap(), repo);
+
+        let gone = format!("{shared}\nWorktree: {}", repo.join("missing").display());
+        let why = unattended_refusal("TASK-002", &gone).expect("a missing worktree is refused");
+        assert!(why.contains("does not exist"));
+
+        let ok = format!(
+            "{shared}\nWorktree: {}\nBranch: agentos/M-001-1",
+            wt.display()
+        );
+        assert_eq!(unattended_refusal("TASK-003", &ok), None);
+        assert_eq!(worktree_from_body(&ok).unwrap(), wt);
+    }
+
+    fn env_of(pairs: &[(&str, &str)]) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).into(), (*v).into()))
+            .collect()
+    }
+
+    fn env_get(env: &[(std::ffi::OsString, std::ffi::OsString)], key: &str) -> Vec<String> {
+        env.iter()
+            .filter(|(k, _)| k.to_str().is_some_and(|k| k.eq_ignore_ascii_case(key)))
+            .map(|(_, v)| v.to_string_lossy().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn a_worker_inherits_nothing_but_the_allowlist() {
+        let base = env_of(&[
+            ("Path", "C:\\inherited"),
+            ("USERPROFILE", "C:\\Users\\x"),
+            ("ANTHROPIC_API_KEY", "sk-secret"),
+            ("GH_TOKEN", "ghp-secret"),
+            ("NOTION_API_KEY", "ntn-secret"),
+            ("OPENROUTER_API_KEY", "sk-or-secret"),
+            ("AGENTOS_HUB_TOKEN", "someone-elses-identity"),
+            ("AGENTOS_REPO", "inherited-repo"),
+            ("AGENTOS_UNATTENDED", "0"),
+        ]);
+        let vault = Path::new("C:\\vault");
+        let env = worker_env(base, "agentos-sandbox-1", vault, "C:\\found".into(), true);
+        for secret in [
+            "ANTHROPIC_API_KEY",
+            "GH_TOKEN",
+            "NOTION_API_KEY",
+            "OPENROUTER_API_KEY",
+            "AGENTOS_HUB_TOKEN",
+        ] {
+            assert!(env_get(&env, secret).is_empty(), "{secret} was passed on");
+        }
+        assert_eq!(env_get(&env, "USERPROFILE"), ["C:\\Users\\x"]);
+        assert_eq!(
+            env_get(&env, "PATH"),
+            ["C:\\found"],
+            "one PATH: the search path, not the inherited one"
+        );
+        assert_eq!(env_get(&env, "AGENTOS_VAULT"), ["C:\\vault"]);
+    }
+
+    #[test]
+    fn a_worker_declares_its_repo_and_that_nobody_watches() {
+        let vault = Path::new("C:\\vault");
+        let inherited = env_of(&[("AGENTOS_REPO", "other"), ("AGENTOS_UNATTENDED", "0")]);
+        let env = worker_env(
+            inherited.clone(),
+            "agentos-sandbox-1",
+            vault,
+            "p".into(),
+            true,
+        );
+        assert_eq!(env_get(&env, "AGENTOS_REPO"), ["agentos-sandbox-1"]);
+        assert_eq!(env_get(&env, "AGENTOS_UNATTENDED"), ["1"]);
+
+        // A start the owner made by hand and watches: same clean environment, no marker.
+        let env = worker_env(
+            inherited.clone(),
+            "agentos-sandbox-1",
+            vault,
+            "p".into(),
+            false,
+        );
+        assert_eq!(env_get(&env, "AGENTOS_REPO"), ["agentos-sandbox-1"]);
+        assert!(env_get(&env, "AGENTOS_UNATTENDED").is_empty());
+
+        // A task outside any project declares none, and never keeps an inherited one.
+        for project in ["general", "", "  "] {
+            let env = worker_env(inherited.clone(), project, vault, "p".into(), true);
+            assert!(env_get(&env, "AGENTOS_REPO").is_empty(), "{project:?}");
+        }
+        assert_eq!(repo_slug(" agentos-studio "), Some("agentos-studio"));
     }
 
     #[test]

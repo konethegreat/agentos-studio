@@ -454,6 +454,14 @@ and 2), per `03_Memory/Phase_D_H_Coordination.md`.
   with the side that holds it: enforced now, ready here for the worker switch, or waiting on
   Hermes (worktree-only starts, egress rules, `hermes secrets`). The worker switch is a REQUEST on
   the coordination note.
+- **The worker switch:** `bus::spawn_worker` now clears the child environment and rebuilds it with
+  `unattended_env` for every headless worker, sets `AGENTOS_REPO` from the task's project, marks
+  starts nobody watches with `AGENTOS_UNATTENDED=1`, and refuses those without an existing
+  worktree. The bus watcher starts only tasks that carry a `Worktree:` line. Checked against
+  Hermes v0.23 before designing the rest: `hermes egress` is iron-proxy (a TLS-intercepting
+  credential-swapping proxy for sandboxes, off by default, not installed here) and `hermes
+  secrets` pulls keys from Bitwarden or 1Password at startup; neither is an OS keychain, so those
+  two guarantees stay open with that finding recorded.
 
 ## v0.17.0: today at a glance (in progress)
 
