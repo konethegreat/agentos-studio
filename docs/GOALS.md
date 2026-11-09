@@ -99,6 +99,26 @@ row shows its oldest open question, and a Decision set by a trusted Notion autho
 (answered by `notion`) through the same `escalation::answer` path. A goal proposed on that board by
 anyone else is created at Watch.
 
+## Obsidian views
+
+Every time the goal note is written, Studio also writes the goal's folder next to it,
+`01_Projects/Goals/G-001/`:
+
+- `M-004.md` per mission: frontmatter (`type: mission`, status, repo, agent, reviewer, PR, spend)
+  and links back to the goal, to the missions it waits for, to its pull request and to the
+  decisions taken on it.
+- `E-1.md` per decision: the escalation's question, allowed and safe answers, deadline and how it
+  ended (answered from Studio, the phone or Notion, or the safe answer at the deadline).
+- `G-001.canvas`: the mission graph in the open JSON Canvas format that Obsidian opens natively.
+  The goal sits on the left, missions in columns by dependency, decisions in the last column,
+  coloured by status.
+
+The goal note links to all of them (Missions, Decisions, Pull requests, Mission graph). Links use
+full vault paths, so two goals' `M-004` notes never resolve to each other. Everything is plain
+Markdown and JSON that works without Studio. Files Studio wrote carry
+`generated_by: agentos-studio`; when an id is handed out again after a cleanup, generated notes
+that no longer belong to the goal are removed and any other file in the folder is left alone.
+
 ## Digest and fleet pause
 
 - **Digest**, morning and evening (kv `digest.times`, default `07:30,18:00`): what finished, what

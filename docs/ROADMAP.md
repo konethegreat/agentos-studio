@@ -462,6 +462,12 @@ Phase F of the 2026-11-08 master brief, by Hermes.
   second goal or mission. Publish adds the latest morning or evening digest page; the digest and a
   finished goal refresh the goals board. Archiving a board forgets its ledger, so a later board no
   longer patches the archived rows. `notion_status` reports the ledger counts per direction.
+- **Obsidian views (F3).** `goal_views.rs`: next to each goal note, `01_Projects/Goals/<id>/`
+  holds a note per mission and per decision (escalation) with path wikilinks back to the goal,
+  the missions it waits for, its pull request and its decisions, plus `<id>.canvas`, the mission
+  graph in JSON Canvas (goal, missions by dependency column, decisions), coloured by status. The
+  goal note gains Decisions, Pull requests and Mission graph sections. Regenerated whenever the
+  goal note is written; only stale generated files are removed.
 
 ## v0.16.0: safety for unattended work (in progress)
 
