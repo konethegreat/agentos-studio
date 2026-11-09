@@ -235,6 +235,7 @@ src/
     WorkspaceTree.tsx        workspaces > folders > chats, drag and drop
   views/
     ChatStudio.tsx           chat (now with the workspace tree and terminal handoff)
+    Today.tsx                home screen: what waits on you, goals, spend, agents and the digest
     UpdateCenter.tsx         versions, changelogs, backups, rollback
     GitHubView.tsx           repos, PRs, issues, Actions, branches, commits
     SafetyCenter.tsx         permission policies and audit log
@@ -250,10 +251,11 @@ docs/
 ## Navigation shell (v0.4.1)
 
 The twelve-item sidebar is gone. Navigation is a 56 px icon rail that expands to 208 px on hover or
-when pinned, with the pin stored in `studio.db` (`kv.nav.pinned`). Five groups:
+when pinned, with the pin stored in `studio.db` (`kv.nav.pinned`). Six groups:
 
 | Group | Tabs |
 |---|---|
+| Today | Today (the screen Studio opens on) |
 | Chat | Chat Studio |
 | Work | Projects, Mission Control, Fleet |
 | Brain | Memory, Skills, Constitution |
@@ -262,10 +264,22 @@ when pinned, with the pin stored in `studio.db` (`kv.nav.pinned`). Five groups:
 
 Badges are counts, not decoration: open bus tasks on Work, pending updates on System, failing
 workflow runs on Code (from `gh run list` for the repository bound to the current folder, refreshed
-every three minutes). `Alt+1..5` select a group, `Ctrl+K` still reaches every tab by name.
+every three minutes). `Alt+1..6` select a group, `Ctrl+K` still reaches every tab by name.
 
 The top bar no longer repeats provider and model, which belong to the per-chat switcher. It carries
 the Hermes version and a single health chip that opens Diagnostics.
+
+### Today (home)
+
+Studio opens on Today, the screen that answers "what needs me now". It reads only existing
+commands: `goals_list` and `escalations_list` for the waiting section and goals in progress,
+`list_missions` and `list_workers` for running agents, `fleet_pause_state` for the pause banner, and
+`digest_latest`, a read-only addition that returns the newest note under `04_Agent_Engine/digests`
+so the UI never writes a digest. Waiting on you comes first, in the digest's order (open
+escalations, then goals in `awaiting`), so the screen and the morning message agree. From Today the
+owner answers an escalation from its own options, approves a plan and resumes a paused fleet; every
+other action links to Goals, Mission Control or Safety. The view polls every 15 seconds and has a
+manual Refresh.
 
 ## Working directory resolution
 
