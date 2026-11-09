@@ -22,6 +22,7 @@ pub mod eval;
 pub mod fleet;
 pub mod fork;
 pub mod github;
+pub mod goals;
 pub mod handoff;
 pub mod help;
 pub mod hermes_engine;
@@ -340,6 +341,13 @@ pub fn run_gui() {
             commands::memory_quality_schedule,
             commands::create_mission,
             commands::list_missions,
+            commands::goal_create,
+            commands::goals_list,
+            commands::goal_detail,
+            commands::goal_set_autonomy,
+            commands::goal_delete,
+            commands::autonomy_defaults,
+            commands::set_repo_autonomy,
             commands::dispatch_mission,
             commands::submit_mission,
             commands::review_mission,

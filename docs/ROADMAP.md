@@ -345,6 +345,18 @@ Phase B of the 2026-11-08 master brief. The bus was wired to four agents but onl
   `tests/live_hub_identity.rs`, and the phase check `tests/live_phase_b_done.rs` against the
   running release build.
 
+## v0.14.0: goal in, finished work out (in progress)
+
+Phase D of the 2026-11-08 master brief, built by Hermes while Qoder prepares Phase H and Phase G
+items 1 and 2 (`03_Memory/Phase_D_H_Coordination.md`). The owner states an outcome; Studio plans,
+executes, reviews, merges, verifies and reports, asking only when a rule says it must. Design:
+[GOALS.md](GOALS.md).
+
+- **Goals and autonomy levels:** a goal is an outcome, its repositories, runnable done checks
+  (command, URL, file), a metered budget, a deadline and an autonomy level (Watch, Ask on risk,
+  Full; per repository default). Stored in `studio.db` schema 10 with a vault note per goal, shown
+  in Work: Goals.
+
 ## v0.13.0: memory that gets better with every mission (shipped)
 
 Phase E of the 2026-11-08 master brief, built by Qoder in parallel with Phase C (PRs #83, #84, #86,

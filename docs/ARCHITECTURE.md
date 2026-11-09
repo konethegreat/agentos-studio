@@ -126,6 +126,7 @@ the first paint is never competing with a full probe.
 | `handoff.rs`, `ask.rs` | The `handoff` packet builder (receiver starts in the same worktree) and `ask_agent` (one headless turn on another agent, loop guard in kv). |
 | `council.rs`, `assign.rs` | Design-decision councils on different providers with an ADR pull request, and quota-aware assignment of `auto` missions. |
 | `timeline.rs` | Read-only run timeline per mission from the exchange log, bus, worker logs, kanban, `state.db` and the memory ledger. |
+| `goals.rs` | Goals (schema 10): outcome, repositories, runnable done checks, metered budget, deadline, autonomy level and the per-repository default; the vault note `01_Projects/Goals/<id>.md`. Design in [GOALS.md](GOALS.md). |
 
 ### Approval flow
 

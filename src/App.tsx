@@ -39,6 +39,7 @@ import { Onboarding } from "./components/Onboarding";
 import { Help } from "./views/Help";
 import { GuideProvider } from "./components/Guides";
 import { Missions } from "./views/Missions";
+import { Goals } from "./views/Goals";
 import { NavRail, type RailGroup, type RailView } from "./components/NavRail";
 import { ToastProvider, useToast } from "./components/Toasts";
 import { UpdateBanner, UpdatesProvider, useUpdates } from "./components/Updates";
@@ -60,7 +61,7 @@ import { UpdateCenter } from "./views/UpdateCenter";
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 const ComputerUse = lazy(() => import("./views/ComputerUse").then((m) => ({ default: m.ComputerUse })));
 
-const VIEWS = ["chat", "projects", "skills", "memory", "help", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
+const VIEWS = ["chat", "goals", "projects", "skills", "memory", "help", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
 type View = (typeof VIEWS)[number];
 const isView = (v: string): v is View => (VIEWS as readonly string[]).includes(v);
 
@@ -78,6 +79,7 @@ const GROUPS: RailGroup[] = [
     icon: <LayoutDashboard className="size-4" />,
     defaultView: "projects",
     tabs: [
+      { id: "goals", label: "Goals", hint: "One sentence in, finished work out: outcomes, done checks, autonomy and the missions each goal created" },
       { id: "projects", label: "Projects", hint: "Hermes projects, their folders, and the chats that ran inside them" },
       { id: "mission", label: "Mission Control", hint: "The Agent Bus board: dispatch and track tasks" },
       { id: "fleet", label: "Fleet", hint: "Every local repository and its rule-file sync state" },
@@ -457,6 +459,7 @@ function Studio() {
             {view === "setup" && <SetupWizard status={status} settings={settings} setupLog={setupLog} activeJob={activeJob} onRefresh={loadStatus} onSettings={setSettings} />}
             {view === "fleet" && <FleetManager repos={repos} scanning={scanning} onRescan={scan} />}
             {view === "agents" && <Agents />}
+            {view === "goals" && <Goals />}
             {view === "timeline" && <Timeline />}
             {view === "constitution" && <ConstitutionStudio memoryTick={memoryTick} />}
             {view === "updates" && <UpdateCenter />}
