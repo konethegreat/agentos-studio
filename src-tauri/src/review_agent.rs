@@ -180,6 +180,25 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
     if diff.trim().is_empty() {
         bail!("could not read the diff of {}#{number}", m.repo);
     }
+    // The constitution gate runs before any reviewer turn: a pull request that breaks a law goes
+    // back to its implementer with the findings, through the same reject path as a reviewer.
+    let findings = crate::constitution_gate::check_diff(&diff);
+    if !findings.is_empty() {
+        let note = crate::constitution_gate::note(&findings);
+        let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+            mission_id: Some(id),
+            kind: "note",
+            from_agent: "agentos-studio",
+            summary: &format!(
+                "constitution gate: {} finding(s) on {}#{number}; sent back to {}",
+                findings.len(),
+                m.repo,
+                m.agent
+            ),
+            ..Default::default()
+        });
+        return missions::review(id, crate::constitution_gate::REVIEWER, "reject", &note);
+    }
     let diff: String = diff.chars().take(MAX_DIFF).collect();
     // The evidence the reviewer judges with, besides the diff. Each part is best effort: a missing
     // part is left out of the prompt, never invented.
@@ -277,7 +296,16 @@ pub fn merge(id: &str, allowlisted: bool) -> Result<String> {
     // Missions store the project slug; gh needs owner/name.
     let repo = crate::github::name_with_owner(&m.repo)?;
     let green = crate::github::pr_checks_green(&repo, number).unwrap_or(false);
-    let blockers = missions::merge_blockers(&m, green, allowlisted);
+    let mut blockers = missions::merge_blockers(&m, green, allowlisted);
+    // The gate again, on the diff as it is now: commits pushed after the review are judged too.
+    match crate::constitution_gate::check_pr(&repo, number) {
+        Ok(f) if f.is_empty() => {}
+        Ok(f) => blockers.push(format!(
+            "constitution gate: {}",
+            crate::constitution_gate::note(&f).trim()
+        )),
+        Err(e) => blockers.push(format!("constitution gate could not read the diff: {e}")),
+    }
     if !blockers.is_empty() {
         bail!("not merging: {}", blockers.join("; "));
     }

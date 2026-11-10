@@ -105,6 +105,7 @@ pub fn task_body(m: &Mission) -> String {
         m.goal.trim(),
         m.acceptance.trim()
     );
+    b.push_str(crate::constitution_gate::WORKER_RULES);
     if m.review_verdict.as_deref() == Some("reject") {
         if let Some(note) = m.review_note.as_deref().filter(|n| !n.trim().is_empty()) {
             b.push_str(&format!(

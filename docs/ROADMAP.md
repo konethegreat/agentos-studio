@@ -522,6 +522,41 @@ and 2), per `03_Memory/Phase_D_H_Coordination.md`.
   credential-swapping proxy for sandboxes, off by default, not installed here) and `hermes
   secrets` pulls keys from Bitwarden or 1Password at startup; neither is an OS keychain, so those
   two guarantees stay open with that finding recorded.
+- **The constitution gate (G4).** `constitution_gate.rs` judges the lines a pull request adds:
+  no em or en dashes, no placeholder tags or stubbed macros, no hidden Unicode (tag characters,
+  zero-width characters, bidirectional controls), nothing that looks like a credential (the
+  finding never repeats the value), and a Markdown change whenever code under `src/` or
+  `src-tauri/src/` changed. It runs before every reviewer turn, so a pull request that breaks a law
+  goes back to its implementer with the findings through the normal reject path (recorded as
+  reviewer `constitution-gate`, so a second reject still escalates), and again in the gatekeeper
+  before any merge, on the diff as it is then. A diff too large to read in full does not pass.
+  The line scanner is the core of the capability quarantine below.
+
+Phase G grows into the capability platform (owner decision of 2026-11-10, bus TASK-018), built in
+this order, one pull request each:
+
+- **G3, budgets with a hard stop:** a global and per-goal metered budget that stops new work when
+  passed, with spend against budget in the digest.
+- **G5, one merge policy:** agents open pull requests and Studio merges; the constitution template's
+  self-merge law is replaced and broadcast to every repository.
+- **G6, capability fabric:** a read-only index of every skill, plugin, agent and MCP server on the
+  machine (Hermes, Qoder, Claude Code), with provenance, duplicate groups with a stated precedence
+  (Hermes native, then the bridge, then Qoder, then Claude), a compatibility report per skill and
+  a Capabilities view. Nothing in a source store is written.
+- **G8, marketplace core and trust pipeline:** Studio's own `capability.json` manifest with a
+  closed capability vocabulary, a content-addressed store with atomic install and rollback, a
+  lockfile, trust tiers, a quarantine scan before activation and a permission sheet intersected
+  with the tool policy. Lands before any install from a remote source.
+- **G7, skill bridge:** a curated folder of junctions that Hermes reads through
+  `skills.external_dirs`, so Qoder and Claude skills reach Hermes with provenance and rollback.
+- **G9, agent packs:** persona, capability ceiling and model policy, enforced by the host;
+  planner, code reviewer, security auditor, docs writer and researcher first.
+- **G10, context ledger:** Hermes and Claude Code keep doing their own compaction. Studio records
+  each compaction, writes a fixed-schema summary through Hermes' pre-compress checkpoint contract,
+  keeps `.agentos/context/<mission>.md` in each worktree and measures recall with four probes over
+  real sessions.
+- **G11, extension runtime:** hooks, command packs and MCP bundles, run only in the scoped
+  unattended environment and only within their declared capabilities.
 
 ## v0.17.0: today at a glance (in progress)
 

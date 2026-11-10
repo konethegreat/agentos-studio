@@ -64,9 +64,13 @@ all missions done -> definition-of-done checks -> report
 3. **Automatic review.** A mission entering review is judged by a reviewer on a different provider
    family from the implementer (Claude Code and Hermes on the Claude subscription are one family;
    Antigravity is another). The reviewer gets the diff, the CI checks and the `hermes verify`
-   result, the acceptance criteria and the repository's conventions from memory.
-4. **Automatic merge.** When `merge_blockers` is empty and the level allows it, Studio squash
-   merges and deletes the branch, with the provenance trailers from Phase E.
+   result, the acceptance criteria and the repository's conventions from memory. Before the
+   reviewer runs, the constitution gate judges the lines the pull request adds (dashes,
+   placeholder tags, hidden Unicode, credentials, docs changed with code under `src/`); any
+   finding sends the mission back to its implementer as a reject from `constitution-gate`.
+4. **Automatic merge.** When `merge_blockers` is empty, the constitution gate passes on the diff
+   as it is at merge time, and the level allows it, Studio squash merges and deletes the branch,
+   with the provenance trailers from Phase E.
 5. **Self-healing.** A failing check on a mission's pull request is rerun once. Passing on the
    rerun makes it a flaky test: a gotcha note, a digest line, no retry loop. Failing again creates a
    fix mission on the same branch with the failing log attached.
