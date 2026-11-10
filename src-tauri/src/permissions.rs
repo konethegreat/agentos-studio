@@ -196,6 +196,22 @@ pub const ACTIONS: &[ActionDef] = &[
         "ask",
         true,
     ),
+    def(
+        "hermes.config.skills_external",
+        "Hermes",
+        "Add or remove Studio's skill bridge folder in Hermes' skills.external_dirs (config.yaml is backed up first)",
+        "high",
+        "ask",
+        false,
+    ),
+    def(
+        "capability.run",
+        "Capabilities",
+        "Run a hook, command or bundled MCP server from an installed capability pack, inside its granted capabilities",
+        "high",
+        "ask",
+        true,
+    ),
 ];
 
 pub fn action(id: &str) -> Option<&'static ActionDef> {
@@ -341,6 +357,14 @@ pub fn guard_in(
 pub fn guard(id: &str, target: &str, summary: &str, approved: bool) -> Result<()> {
     let c = store::open()?;
     guard_in(&c, id, target, summary, approved)
+}
+
+/// The effective policy for one action: the stored override or the built-in default. Read only,
+/// no prompt and no audit row. The G11 extension runtime reads this before an unattended
+/// capability run so it can decide whether the run may proceed.
+pub fn action_policy(id: &str) -> Result<String> {
+    let c = store::open()?;
+    policy_in(&c, id)
 }
 
 /// Run a guarded action and audit its outcome.
@@ -862,6 +886,48 @@ mod tests {
         for a in ACTIONS {
             assert!(valid_policy(a.default_policy), "{}", a.id);
         }
+    }
+
+    #[test]
+    fn phase_g_actions_are_guarded_with_high_risk_ask() {
+        for id in ["hermes.config.skills_external", "capability.run"] {
+            let a = action(id).unwrap_or_else(|| panic!("{id} is missing"));
+            assert_eq!(a.risk, "high", "{id}");
+            assert_eq!(a.default_policy, "ask", "{id}");
+        }
+        let bridge = action("hermes.config.skills_external").unwrap();
+        assert_eq!(bridge.group, "Hermes");
+        assert!(
+            bridge.label.contains("skills.external_dirs"),
+            "the label names the config key: {}",
+            bridge.label
+        );
+        assert!(!bridge.reversible, "the config write is not reversible");
+        let run = action("capability.run").unwrap();
+        assert_eq!(run.group, "Capabilities");
+        assert!(
+            run.label.contains("capability pack"),
+            "the label names the pack: {}",
+            run.label
+        );
+        assert!(run.reversible, "a capability run does not destroy state");
+    }
+
+    #[test]
+    fn action_policy_reads_the_effective_policy_without_a_connection() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+
+        assert_eq!(action_policy("capability.run").unwrap(), "ask");
+        {
+            let c = crate::store::open().unwrap();
+            set_policy_in(&c, "capability.run", "deny").unwrap();
+        }
+        assert_eq!(action_policy("capability.run").unwrap(), "deny");
+        assert!(action_policy("no.such.action").is_err());
+
+        crate::store::set_test_db(None);
     }
 
     #[test]

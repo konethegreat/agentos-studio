@@ -183,6 +183,13 @@ github, tool create_pull_request`, `agent qoder, server github, tool create_pull
 `decide_scoped`, so the accessor reports what enforcement will do; it only reads the stored policy
 and never writes or prompts.
 
+Phase G adds two guarded actions to the same table: `hermes.config.skills_external` (high risk,
+ask, not reversible) for the skill bridge config write, and `capability.run` (high risk, ask,
+reversible) for running a hook, command or bundled MCP server from an installed capability pack.
+`permissions::action_policy(id)` returns one action's effective policy (stored override or
+default) without a prompt or an audit row, so the extension runtime can read `capability.run`
+before an unattended run.
+
 ### Unattended profile
 
 A mission worker runs with nobody watching, so it gets less than a session a person started.
