@@ -68,6 +68,7 @@ pub mod router;
 pub mod routing;
 pub mod settings;
 pub mod single;
+pub mod skill_bridge;
 pub mod skill_proposals;
 pub mod skills;
 pub mod store;
@@ -435,6 +436,12 @@ pub fn run_gui() {
             commands::capability_export_lock,
             commands::capability_trusted_keys,
             commands::capability_set_trusted_keys,
+            commands::bridge_status,
+            commands::bridge_check,
+            commands::bridge_add,
+            commands::bridge_remove,
+            commands::bridge_config,
+            commands::bridge_set_config,
             commands::set_budget,
             commands::skill_proposals,
             commands::skill_proposal_approve,

@@ -160,7 +160,7 @@ not because code exists.
 | Hermes | `skills/<category>/<skill>/SKILL.md`; plugins from `plugins/.install-metadata.json` (name, revision, catalog tier and repo) | open the ACL-denied plugin folders, write to the skills tree |
 | Qoder | `.qoder/skills/*/SKILL.md`; `.qoder/plugins/cache/<marketplace>/<plugin>/<version>` with `.qoder-plugin/plugin.json`, nested skills, agents and commands | change enablement in `settings.json` or `installed_plugins_v2.json` |
 | Claude Code | `.claude/skills`; installed plugins under `.claude/plugins/synced` (installed) and marketplace clones under `.claude/plugins/marketplaces` (listed, not installed); `.claude/agents` | read app-managed enablement buckets, write any file |
-| Studio bridge | `hermes/skills-external` (G7), ranked after Hermes native skills | |
+| Studio bridge | `hermes/skills-external` (G7): junctions to Qoder, Claude Code or other skill folders, ranked after Hermes native skills; Hermes lists them as `external` | write into a bridged skill, hide a broken junction, bridge a name Hermes already has |
 | Duplicates | one group per normalized skill name, precedence Hermes, bridge, Qoder, Claude, local; a copy whose hash differs from the preferred one is marked | merge or hide a copy |
 
 ## Capability packs (Phase G)
