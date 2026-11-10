@@ -38,6 +38,7 @@ pub mod hermes_surfaces;
 pub mod hub_identity;
 pub mod kanban;
 pub mod learning;
+pub mod marketplace;
 pub mod mcp_manager;
 pub mod mcp_stdio;
 pub mod memory_index;
@@ -425,6 +426,15 @@ pub fn run_gui() {
             commands::automation_tick,
             commands::budget_status,
             commands::catalog_index,
+            commands::capability_propose,
+            commands::capability_activate,
+            commands::capability_discard,
+            commands::capability_installed,
+            commands::capability_rollback,
+            commands::capability_uninstall,
+            commands::capability_export_lock,
+            commands::capability_trusted_keys,
+            commands::capability_set_trusted_keys,
             commands::set_budget,
             commands::skill_proposals,
             commands::skill_proposal_approve,

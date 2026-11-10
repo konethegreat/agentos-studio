@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "com.example.file-count",
+  "name": "File count",
+  "version": "0.1.0",
+  "kind": "skill",
+  "description": "Counts files per extension in the current folder with a bundled shell script.",
+  "license": "MIT",
+  "publisher": {
+    "name": "Example Publisher",
+    "key_id": "example-1",
+    "homepage": "https://example.com"
+  },
+  "entrypoints": [
+    "SKILL.md",
+    "scripts/count.sh"
+  ],
+  "capabilities": [
+    "fs.read",
+    "shell.exec"
+  ],
+  "requires": {
+    "app_version": ">=0.15.0",
+    "os": [
+      "linux",
+      "macos"
+    ],
+    "runtimes": [
+      "hermes"
+    ]
+  }
+}

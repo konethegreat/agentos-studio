@@ -319,6 +319,13 @@ replayed, so approval history alone does not move a default.
   writes, network, shell, MCP tools, secrets, hooks, models) and compatibility notes. A skill that
   exists in several stores is one duplicate group, listed in the order a runtime should prefer:
   Hermes, Studio's bridge, Qoder, Claude Code. Studio never writes to any of these stores.
+- **Capability packs and the trust model.** Packs (skills, agent packs, MCP bundles, hook packs,
+  command packs) install from a folder or a git URL only after Studio checks them: a strict
+  manifest, a signature that decides the trust tier (official, verified, community), a quarantine
+  scan for hidden text, payloads, undeclared scripts and path tricks, and a permission sheet that
+  shows what the pack asks for against what your policy allows. Community packs never get shell,
+  network, secrets or hooks. Every install is pinned by hash in a lockfile, can be rolled back, and
+  a changed copy is refused. See docs/CAPABILITIES.md.
 
 ## GitHub
 

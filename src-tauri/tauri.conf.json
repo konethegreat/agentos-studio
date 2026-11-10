@@ -53,7 +53,8 @@
       "../docs/AUTOMATIONS.md": "docs/AUTOMATIONS.md",
       "../docs/ROUTING.md": "docs/ROUTING.md",
       "../docs/NOTION.md": "docs/NOTION.md",
-      "../docs/COMPUTER-USE.md": "docs/COMPUTER-USE.md"
+      "../docs/COMPUTER-USE.md": "docs/COMPUTER-USE.md",
+      "../docs/CAPABILITIES.md": "docs/CAPABILITIES.md"
     }
   },
   "plugins": {

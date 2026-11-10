@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "solutions.k-one.release-notes",
+  "name": "Release notes from merged pull requests",
+  "version": "1.0.0",
+  "kind": "skill",
+  "description": "Drafts release notes for a version from the pull requests merged since the previous tag, grouped by area, in the house style.",
+  "license": "MIT",
+  "publisher": {
+    "name": "K-ONE IT SOLUTIONS, Kone Tshivhinda",
+    "key_id": "k-one-official-1",
+    "homepage": "https://github.com/konethegreat/agentos-studio"
+  },
+  "entrypoints": [
+    "SKILL.md"
+  ],
+  "capabilities": [
+    "fs.read"
+  ],
+  "requires": {
+    "app_version": ">=0.15.0",
+    "os": [
+      "windows",
+      "macos",
+      "linux"
+    ],
+    "runtimes": [
+      "hermes",
+      "claude-code",
+      "qoder"
+    ]
+  },
+  "signature": "d7568380fbdf6b048717c7801e0588cbb1af33474449b3c578005983e057707da83b61e135d908148e14b0149439fc65bc03a16843e885b5d1e69d97f4673009"
+}

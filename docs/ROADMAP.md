@@ -580,10 +580,21 @@ this order, one pull request each:
   absolute paths, hooks). Claude marketplace clones are listed as not installed. The MCP side
   reads Studio's own MCP catalog until Qoder's registry reader lands (TASK-019). On this machine:
   947 records, 70 duplicate skill groups.
-- **G8, marketplace core and trust pipeline:** Studio's own `capability.json` manifest with a
+- **G8, marketplace core and trust pipeline (done):** Studio's own `capability.json` manifest with a
   closed capability vocabulary, a content-addressed store with atomic install and rollback, a
   lockfile, trust tiers, a quarantine scan before activation and a permission sheet intersected
-  with the tool policy. Lands before any install from a remote source.
+  with the tool policy. Lands before any install from a remote source. `marketplace.rs`: strict
+  parsing (unknown fields and free-text capabilities rejected), Ed25519 signatures over the
+  canonical manifest plus the content hash (official key `k-one-official-1`, verified publisher
+  keys in kv, everything else community), staging with no symlinks and no `.git`, git installs
+  from https or file URLs with no stored credentials, the quarantine scan, the permission sheet in
+  Brain, Capabilities (community packs can never get shell, network, secrets or hooks; `mcp.tools`
+  is checked tool by tool with `permissions::decide_scoped`), atomic activation under
+  `%APPDATA%\agentos-studio\capabilities`, `capabilities.lock.json` with history, rollback,
+  verify, remove, lockfile export per project, and an audit line per grant. Updates that add a
+  capability need explicit consent; a hash mismatch is a refusal. Installing never runs pack
+  content; hooks and bundled MCP servers run only through the extension runtime (G11). Two
+  example packs in `examples/capabilities`. Full description in docs/CAPABILITIES.md.
 - **G7, skill bridge:** a curated folder of junctions that Hermes reads through
   `skills.external_dirs`, so Qoder and Claude skills reach Hermes with provenance and rollback.
 - **G9, agent packs:** persona, capability ceiling and model policy, enforced by the host;
