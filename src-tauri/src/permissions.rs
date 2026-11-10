@@ -629,6 +629,35 @@ pub fn decide_scoped(
     }
 }
 
+fn rule_text(decision: &ToolDecision, server: &str, tool: &str) -> String {
+    match decision.source.split_once(':') {
+        Some(("repo", r)) => format!("repo {r}, server {server}, tool {tool}"),
+        Some(("agent", a)) => format!("agent {a}, server {server}, tool {tool}"),
+        _ => format!("agent default, server {server}, tool {tool}"),
+    }
+}
+
+/// The policy that applies to a hub call, with a readable name for the rule that decided it.
+/// Pure over the stored policy: it reads the store and never writes or prompts. The hub enforces
+/// calls through `check_scoped`, and both resolve through `decide_scoped`, so the accessor and
+/// the gate cannot disagree. Used by callers that must intersect a requested capability with the
+/// policy before they act, such as the capability trust pipeline and agent packs.
+pub fn effective_tool_policy(
+    agent: &str,
+    repo: Option<&str>,
+    server: &str,
+    tool: &str,
+) -> (String, String) {
+    let decision = decide_scoped(
+        Some(agent).filter(|a| !a.trim().is_empty()),
+        repo,
+        server,
+        tool,
+    );
+    let source = rule_text(&decision, server, tool);
+    (decision.policy, source)
+}
+
 fn source_text(decision: &ToolDecision) -> String {
     match decision.source.split_once(':') {
         Some(("repo", r)) => format!("the policy for {r}"),
@@ -762,20 +791,20 @@ pub fn unattended_profile() -> UnattendedProfile {
             g(
                 "worktree",
                 "One worktree per mission",
-                "A mission that runs without a person watching works on its own branch in its own worktree. The worker must refuse a shared checkout when no worktree exists.",
-                "hermes",
+                "An unattended mission starts only when its Worktree exists: bus::unattended_refusal refuses the start and bus::worktree_from_body reads the task's Worktree line.",
+                "enforced",
             ),
             g(
                 "environ",
                 "No inherited secrets",
-                "The worker environment is rebuilt from an allowlist: PATH, temp folders and profile folders, plus the repo slug. API keys and tokens the desktop app holds are not passed on.",
-                "ready",
+                "bus::worker_env calls permissions::unattended_env, so the worker environment is rebuilt from an allowlist: PATH, temp and profile folders, the repo slug and the vault path. API keys and tokens the desktop app holds are not passed on.",
+                "enforced",
             ),
             g(
                 "inside",
                 "Stays inside the worktree",
-                "The worker starts in the worktree and the agent's tool allowlist and the hub tool policy are the fences. This is a rule enforced by the tools, not yet an OS sandbox.",
-                "ready",
+                "bus::worker_env starts the worker in its own worktree with AGENTOS_UNATTENDED=1. The agent's tool allowlist and the hub tool policy are the fences. This is a rule enforced by the tools, not yet an OS sandbox.",
+                "enforced",
             ),
             g(
                 "egress",
@@ -1067,5 +1096,123 @@ mod tests {
                 g.status
             );
         }
+    }
+
+    #[test]
+    fn effective_tool_policy_matches_the_scoped_gate() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+
+        set_scoped(
+            "repo",
+            "agentos-studio",
+            "github",
+            "create_pull_request",
+            Some("allow"),
+        )
+        .unwrap();
+        set_scoped(
+            "agent",
+            "qoder",
+            "github",
+            "create_pull_request",
+            Some("deny"),
+        )
+        .unwrap();
+
+        let (policy, source) = effective_tool_policy(
+            "qoder",
+            Some("agentos-studio"),
+            "github",
+            "create_pull_request",
+        );
+        assert_eq!(policy, "allow");
+        assert_eq!(
+            source,
+            "repo agentos-studio, server github, tool create_pull_request"
+        );
+        assert!(
+            check_scoped(
+                Some("qoder"),
+                Some("agentos-studio"),
+                "github",
+                "create_pull_request"
+            )
+            .is_ok(),
+            "the gate allows what the accessor reports"
+        );
+
+        let (policy, source) =
+            effective_tool_policy("qoder", None, "github", "create_pull_request");
+        assert_eq!(policy, "deny");
+        assert_eq!(
+            source,
+            "agent qoder, server github, tool create_pull_request"
+        );
+        let denied =
+            check_scoped(Some("qoder"), None, "github", "create_pull_request").unwrap_err();
+        assert!(denied.contains("blocked"), "got {denied}");
+
+        let (policy, source) = effective_tool_policy(
+            "qoder",
+            Some("agentos-studio"),
+            "agentos-hub",
+            "no_such_tool",
+        );
+        assert_eq!(
+            policy,
+            crate::policy::decide("agentos-hub", "no_such_tool"),
+            "an unknown tool falls back to the same default the gate uses"
+        );
+        assert_eq!(
+            source,
+            "agent default, server agentos-hub, tool no_such_tool"
+        );
+        let gate = check_scoped(
+            Some("qoder"),
+            Some("agentos-studio"),
+            "agentos-hub",
+            "no_such_tool",
+        );
+        assert_eq!(
+            gate.is_ok(),
+            policy == "allow",
+            "the gate agrees on the default"
+        );
+
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn unattended_profile_marks_the_worker_rules_enforced() {
+        let p = unattended_profile();
+        let of = |id: &str| {
+            p.guarantees
+                .iter()
+                .find(|g| g.id == id)
+                .unwrap_or_else(|| panic!("{id} guarantee missing"))
+        };
+        for id in ["worktree", "environ", "inside"] {
+            assert_eq!(
+                of(id).status,
+                "enforced",
+                "{id} still waits on another side"
+            );
+        }
+        assert!(
+            of("worktree").detail.contains("unattended_refusal"),
+            "the worktree row names the refusing function"
+        );
+        assert!(
+            of("environ").detail.contains("unattended_env"),
+            "the environment row names the rebuild function"
+        );
+        assert!(
+            of("inside").detail.contains("worker_env"),
+            "the inside row names the worker start"
+        );
+        assert_eq!(of("egress").status, "hermes");
+        assert_eq!(of("secrets").status, "hermes");
     }
 }
