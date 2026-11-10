@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -197,6 +197,30 @@ ALTER TABLE missions ADD COLUMN kind TEXT NOT NULL DEFAULT 'work';
 /// Phase D: goals (an outcome with runnable done checks and an autonomy level), the escalations
 /// that are the only questions Studio asks the owner, and the goal a mission belongs to. Additive:
 /// a 0.13 build still opens the database.
+/// Phase G 10: one immutable row per context compaction an agent recorded. Additive.
+const MIGRATION_11: &str = "
+CREATE TABLE IF NOT EXISTS context_events (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    at             INTEGER NOT NULL,
+    agent          TEXT NOT NULL,
+    session_id     TEXT NOT NULL,
+    source         TEXT NOT NULL,
+    first_msg      INTEGER NOT NULL,
+    last_msg       INTEGER NOT NULL,
+    dropped_msgs   INTEGER NOT NULL DEFAULT 0,
+    tokens_before  INTEGER NOT NULL DEFAULT 0,
+    tokens_after   INTEGER NOT NULL DEFAULT 0,
+    model          TEXT NOT NULL DEFAULT '',
+    prompt_version TEXT NOT NULL DEFAULT '',
+    commit_sha     TEXT NOT NULL DEFAULT '',
+    note           TEXT NOT NULL DEFAULT '',
+    hash           TEXT NOT NULL DEFAULT '',
+    recorded_at    INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    UNIQUE (agent, session_id, first_msg, last_msg)
+);
+CREATE INDEX IF NOT EXISTS context_events_at ON context_events (at);
+";
+
 const MIGRATION_10: &str = "
 CREATE TABLE IF NOT EXISTS goals (
     id          TEXT PRIMARY KEY,
@@ -319,6 +343,9 @@ fn migrate(c: &Connection) -> Result<()> {
     if v < 10 {
         c.execute_batch(MIGRATION_10)?;
         let _ = c.execute_batch(MIGRATION_10_GOAL);
+    }
+    if v < 11 {
+        c.execute_batch(MIGRATION_11)?;
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;

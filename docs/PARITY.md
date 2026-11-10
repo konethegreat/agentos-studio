@@ -182,3 +182,13 @@ not because code exists.
 | Keep the replay out of production | the agent works in a real branch and can open a PR | detached worktree, no shell allowlist on Claude Code, `--ignore-rules` on Hermes, worktree removed on every path out |
 | Leave a record | a chat session | one Markdown note per replay in `03_Memory/evals`, listed in the Brain view |
 | Change a routing default from evidence | not offered | `router.rs` moves a default only after three of the model's own replays score higher than the original run (`with_eval_evidence`) |
+
+## Context ledger and compaction contract (Phase G 10)
+
+| Capability | Hermes / Claude Code alone | Studio |
+|---|---|---|
+| Compaction event log | implicit in `state.db` or `.jsonl` `compact_boundary` | append-only `context_events` table (migration 11): agent, session, message range, dropped count, token reduction, model, prompt hash, git commit, note path and SHA-256 |
+| Anchored compaction summary | free-form summary text | immutable 13-section note in `03_Memory/context/` with extracted file paths, Rust/TS symbols, decisions, masked tool outputs (keeping exit codes, paths and errors) and git commit |
+| Re-summarize with a focus | overwrites or not available | writes a sibling `-focus-<stamp>.md` note without touching the original note or transcript |
+| Pinned mission worktree context | none | `.agentos/context/<mission>.md` written on mission start and excluded via `.git/info/exclude` |
+| Compaction quality measurement | none | four-probe harness (facts, artifacts, continuation, decisions) over real compactions and 60% session cuts (37/38 rows >= 0.80 across 25 real sessions) |

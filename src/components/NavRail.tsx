@@ -13,6 +13,7 @@ export type RailView =
   | "timeline"
   | "computer"
   | "memory"
+  | "context"
   | "skills"
   | "capabilities"
   | "constitution"

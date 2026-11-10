@@ -1188,6 +1188,13 @@ export const api = {
     invoke<EvalResult>("eval_run", { mission, agent, model: model ?? null, approved: approved ?? null }),
   evalList: () => invoke<EvalSummary[]>("eval_list"),
 
+  contextEvents: (limit = 200) => invoke<ContextEvent[]>("context_events", { limit }),
+  contextScan: () => invoke<ContextScanReport>("context_scan"),
+  contextRerun: (id: number, focus: string) => invoke<string>("context_rerun", { id, focus }),
+  contextSearch: (query: string, limit = 20) => invoke<ContextHit[]>("context_search", { query, limit }),
+  contextEval: (minMessages = 12, bar = 0.8) =>
+    invoke<ContextEvalReport>("context_eval", { minMessages, bar }),
+
   runCli: (command: string, cwd: string) => invoke<string>("execute_cli_command", { command, cwd }),
   killCli: (runId: string) => invoke<void>("kill_cli_command", { runId }),
 };
@@ -1219,4 +1226,62 @@ export interface FleetPause {
   reason: string;
   /** Hermes' own stop (`hermes pause`) is engaged. */
   hermes_paused: boolean;
+}
+
+export interface ContextEvent {
+  id: number;
+  at: number;
+  agent: string;
+  session_id: string;
+  source: string;
+  first_msg: number;
+  last_msg: number;
+  dropped_msgs: number;
+  tokens_before: number;
+  tokens_after: number;
+  model: string;
+  prompt_version: string;
+  commit: string;
+  note: string;
+  hash: string;
+}
+
+export interface ContextScanReport {
+  found: number;
+  recorded: number;
+  notes_written: number;
+  errors: string[];
+}
+
+export interface ContextHit {
+  kind: string;
+  reference: string;
+  text: string;
+}
+
+export interface ContextProbeScore {
+  facts: number;
+  artifacts: number;
+  continuation: number;
+  decisions: number;
+}
+
+export interface ContextEvalRow {
+  agent: string;
+  session: string;
+  kind: string;
+  dropped: number;
+  baseline: ContextProbeScore;
+  studio: ContextProbeScore;
+  tokens: number;
+}
+
+export interface ContextEvalReport {
+  rows: ContextEvalRow[];
+  sessions: number;
+  baseline_mean: ContextProbeScore;
+  studio_mean: ContextProbeScore;
+  pass_bar: number;
+  studio_passing: number;
+  tokens_per_session: number;
 }

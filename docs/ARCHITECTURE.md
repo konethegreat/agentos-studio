@@ -492,3 +492,25 @@ three of its own eval notes scored better than the mission they replayed. Level 
 not count, and the shadow log records the decline when the evidence is short. The live check
 (`tests/live_eval.rs`) is ignored by default: it replays one finished sandbox mission, asserts one
 note was written, and asserts no worktree, no local branch and no routing change remain.
+
+## Context ledger (`context_ledger.rs`)
+
+`context_ledger.rs` records what each agent session kept and dropped when its context was compacted,
+without replacing Hermes' or Claude Code's own compaction. Migration 11 adds the append-only
+`context_events` table to `studio.db`. `scan` reads Hermes' `state.db` (`_compressed_summary = 1`
+and preceding `compacted = 1` rows) in read-only URI mode and walks `~/.claude/projects/*/*.jsonl`
+for `compact_boundary` markers, writes an immutable 13-section Markdown note under
+`03_Memory/context/<date>-<agent>-<session>-<first>-<last>.md` when absent, and records the row once.
+
+Each note maps the runtime's summary into the fixed 13-section schema (`Goal`, `Constraints`,
+`Key knowledge`, `Artifact trail`, `File state`, `Recent actions`, `Task state`, `Open tasks`,
+`Next step`, `Decisions`, `Running jobs`, `User preferences`, `Security constraints`) and anchors
+the dropped range with deterministically extracted file paths, modified files, symbols, decision
+lines, and masked tool outputs (`mask_tool_output` preserves the first line, exit codes, file paths
+and error lines). `rerun` writes a sibling `-focus-<timestamp>.md` note from the original message
+range with a user focus hint while leaving the original note and transcript untouched. `search`
+combines vault FTS5 recall with read-only queries against Hermes' `messages_fts`. When a mission
+starts in a worktree, `write_worktree_context` writes `.agentos/context/<mission>.md` and adds
+`.agentos/` to the worktree's git exclude file so the worker's scratchpad is never committed.
+`evaluate` scores four probes (facts, artifacts, continuation, decisions) comparing each runtime's
+baseline against Studio's anchored summary across real compactions and 60-percent session replays.
