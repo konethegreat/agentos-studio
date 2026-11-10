@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "solutions.k-one.agent.researcher",
+  "name": "Researcher",
+  "version": "1.0.0",
+  "kind": "agent-pack",
+  "description": "Answers a question from the repository, the vault and the web, with every claim tied to a source.",
+  "license": "MIT",
+  "publisher": {
+    "name": "K-ONE IT SOLUTIONS, Kone Tshivhinda",
+    "key_id": "k-one-official-1",
+    "homepage": "https://github.com/konethegreat/agentos-studio"
+  },
+  "entrypoints": [
+    "agent.json",
+    "PERSONA.md"
+  ],
+  "capabilities": [
+    "fs.read",
+    "net.hosts"
+  ],
+  "requires": {
+    "app_version": ">=0.15.0",
+    "os": [
+      "windows",
+      "macos",
+      "linux"
+    ],
+    "runtimes": [
+      "claude-code",
+      "hermes"
+    ]
+  },
+  "signature": "22133784b55ea429c2ce8f8674e5115b29a3115ee19ff7dc16f31ac23fe36904ba269642ad5b5d8509ccf5baa3b4435459c8b9789bccacfc1f778b7ed68f3b03"
+}

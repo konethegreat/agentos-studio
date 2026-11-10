@@ -322,6 +322,9 @@ replayed, so approval history alone does not move a default.
 - **Skill bridge.** "Bridge to Hermes" on a Qoder or Claude Code skill links it into one folder
   Hermes reads (`skills.external_dirs`), with its source, license and author kept, Hermes' own
   skills winning on a name clash, and nothing written to the source. A broken link is reported.
+- **Agent packs.** Tailored agents (planner, code reviewer, security auditor, docs writer,
+  researcher) with a persona, a model policy and a tool ceiling Studio enforces when the worker
+  starts. Pick one when you create a mission; Agents shows what each pack gets and why.
 - **Capability packs and the trust model.** Packs (skills, agent packs, MCP bundles, hook packs,
   command packs) install from a folder or a git URL only after Studio checks them: a strict
   manifest, a signature that decides the trust tier (official, verified, community), a quarantine

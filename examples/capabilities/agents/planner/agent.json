@@ -1,0 +1,31 @@
+{
+  "persona": "PERSONA.md",
+  "tools": [
+    "read",
+    "todo",
+    "memory",
+    "skills"
+  ],
+  "disallowed_tools": [
+    "edit",
+    "shell",
+    "web",
+    "browser"
+  ],
+  "model_policy": [
+    "repo-routing",
+    "router",
+    "agent-default"
+  ],
+  "permission_mode": "plan",
+  "guardrails": [
+    "Never edit, create or delete a file.",
+    "Every mission in the plan has acceptance criteria a reviewer can check."
+  ],
+  "skills": [],
+  "agents": [
+    "claude-code",
+    "hermes"
+  ],
+  "unattended": true
+}

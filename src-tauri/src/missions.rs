@@ -322,6 +322,9 @@ pub fn bus_instructions(
     if !m.model.trim().is_empty() {
         b.push_str(&format!("\nModel: {}", m.model.trim()));
     }
+    if let Some(pack) = crate::agent_packs::for_mission(&m.id) {
+        b.push_str(&format!("\nAgent pack: {pack}"));
+    }
     b
 }
 

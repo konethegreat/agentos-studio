@@ -608,8 +608,21 @@ this order, one pull request each:
   `hermes skills list` and a `hermes chat -s <skill>` turn quotes their first heading. The
   catalog now reads MCP entries through Qoder's `mcp_manager::catalog_entries` and skips Claude
   Code's `.trash`.
-- **G9, agent packs:** persona, capability ceiling and model policy, enforced by the host;
-  planner, code reviewer, security auditor, docs writer and researcher first.
+- **G9, agent packs (done):** persona, capability ceiling and model policy, enforced by the host;
+  planner, code reviewer, security auditor, docs writer and researcher first. An agent pack is a
+  capability pack of kind `agent-pack` with an `agent.json` (persona file, tools in Studio's
+  agent-neutral vocabulary, disallowed tools, a model policy of `repo-routing`, `router` and
+  `agent-default` with no model ids, a permission mode, guardrails, skills, the agents it is
+  written for and whether it may run unattended). `agent_packs.rs` computes the ceiling: the
+  pack's tools minus its disallowed ones, minus any whose capability was not granted at install,
+  minus MCP tools the scoped policy denies (`permissions::effective_tool_policy` for that agent and
+  repository); on Claude Code only the repository allowlist entries of the kept families remain
+  and every dropped family goes to `--disallowedTools`, on Hermes the kept tools become `-t`
+  toolsets. A pack runs unattended only when it opts in and the worktree, environment and inside
+  guarantees are enforced. Choose a pack under "Agent pack" in the New mission form; the brief
+  carries `Agent pack: <id>`, `bus::spawn_worker` applies the ceiling and puts the persona first.
+  The Agents view lists installed packs with each ceiling and what was dropped and why. The five
+  packs are in `examples/capabilities/agents`, signed with the official key.
 - **G10, context ledger:** Hermes and Claude Code keep doing their own compaction. Studio records
   each compaction, writes a fixed-schema summary through Hermes' pre-compress checkpoint contract,
   keeps `.agentos/context/<mission>.md` in each worktree and measures recall with four probes over

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "solutions.k-one.agent.docs-writer",
+  "name": "Docs writer",
+  "version": "1.0.0",
+  "kind": "agent-pack",
+  "description": "Writes and updates Markdown documentation from the code as it is, in plain language, without touching source code.",
+  "license": "MIT",
+  "publisher": {
+    "name": "K-ONE IT SOLUTIONS, Kone Tshivhinda",
+    "key_id": "k-one-official-1",
+    "homepage": "https://github.com/konethegreat/agentos-studio"
+  },
+  "entrypoints": [
+    "agent.json",
+    "PERSONA.md"
+  ],
+  "capabilities": [
+    "fs.read",
+    "fs.write"
+  ],
+  "requires": {
+    "app_version": ">=0.15.0",
+    "os": [
+      "windows",
+      "macos",
+      "linux"
+    ],
+    "runtimes": [
+      "claude-code",
+      "hermes"
+    ]
+  },
+  "signature": "2ce5e895408a928424b6ae5d5be952ad2907ccf483d1f1ad329b3e5f92639e970e0e6cf3b64fd8eed48cb2ba7836ebc97a60ebc15b457def4a5d83eb22f20200"
+}

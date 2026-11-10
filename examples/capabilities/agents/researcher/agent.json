@@ -1,0 +1,31 @@
+{
+  "persona": "PERSONA.md",
+  "tools": [
+    "read",
+    "web",
+    "memory",
+    "todo"
+  ],
+  "disallowed_tools": [
+    "edit",
+    "shell",
+    "browser",
+    "delegate"
+  ],
+  "model_policy": [
+    "repo-routing",
+    "router",
+    "agent-default"
+  ],
+  "permission_mode": "plan",
+  "guardrails": [
+    "Every claim cites a file path or a web address you actually read.",
+    "Never edit files, run commands or submit forms."
+  ],
+  "skills": [],
+  "agents": [
+    "claude-code",
+    "hermes"
+  ],
+  "unattended": false
+}

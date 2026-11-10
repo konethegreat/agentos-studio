@@ -702,10 +702,32 @@ pub async fn create_mission(
     provider: String,
     model: String,
     budget_usd: f64,
+    agent_pack: Option<String>,
 ) -> CmdResult<crate::missions::Mission> {
     blocking(move || {
+        let pack = agent_pack.filter(|p| !p.trim().is_empty());
+        let (mut provider, mut model) = (provider, model);
+        if let Some(id) = &pack {
+            let (_, spec, _) = crate::agent_packs::load(id)?;
+            if !spec.agents.iter().any(|a| a == &agent) {
+                anyhow::bail!(
+                    "agent pack {id} is written for {}, not {agent}",
+                    spec.agents.join(" and ")
+                );
+            }
+            // The pack's model policy decides when no model is pinned by hand; `agent-default`
+            // keeps the chosen provider and its active model.
+            if model.trim().is_empty() {
+                let (_, p, m) =
+                    crate::agent_packs::resolve_for_mission(&spec, &repo, &role, &agent);
+                if !p.trim().is_empty() {
+                    provider = p;
+                    model = m;
+                }
+            }
+        }
         // Explicit choice, then the repository's routing.json, then the router if it may pick.
-        crate::router::create_mission(
+        let m = crate::router::create_mission(
             &repo,
             &goal,
             &acceptance,
@@ -714,9 +736,19 @@ pub async fn create_mission(
             &provider,
             &model,
             budget_usd,
-        )
+        )?;
+        if let Some(id) = &pack {
+            crate::agent_packs::set_for_mission(&m.id, id)?;
+        }
+        Ok(m)
     })
     .await
+}
+
+/// Installed agent packs with their ceilings on each agent they support.
+#[tauri::command]
+pub async fn agent_packs_installed() -> CmdResult<Vec<crate::agent_packs::InstalledAgent>> {
+    blocking(crate::agent_packs::installed).await
 }
 
 #[tauri::command]

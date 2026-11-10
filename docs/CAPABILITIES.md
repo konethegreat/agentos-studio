@@ -181,6 +181,57 @@ audited). Studio's own packs are signed on the owner's machine with
 `PACK_DIR=<folder> cargo test --lib marketplace::tests::sign_official_pack -- --ignored`. The
 private key never leaves that machine.
 
+## Agent packs
+
+An agent pack is a tailored agent: a pack of kind `agent-pack` with an `agent.json` next to its
+`capability.json`:
+
+```json
+{
+  "persona": "PERSONA.md",
+  "tools": ["read", "shell", "todo"],
+  "disallowed_tools": ["edit", "web"],
+  "model_policy": ["repo-routing", "router", "agent-default"],
+  "permission_mode": "plan",
+  "guardrails": ["Never push, merge or edit files."],
+  "skills": [],
+  "agents": ["claude-code", "hermes"],
+  "unattended": true
+}
+```
+
+- **Tools** use Studio's words, so one pack works on several agents: `read`, `edit`, `shell`,
+  `web`, `browser`, `memory`, `skills`, `todo`, `delegate`, and `mcp:<server>:<tool>`.
+- **Model policy** is a preference list, never a model id: `repo-routing` (the repository's
+  `.agentos/routing.json` for the mission's role), `router` (Studio's model router, Hermes
+  missions only, when it is allowed and confident) and `agent-default` (the provider you chose and
+  its active model). The first entry that resolves wins.
+- **Permission mode**: `plan` (read and propose), `ask` (no edit is auto-accepted) or `edit`.
+
+### The ceiling, enforced by Studio
+
+The tools a worker gets are the pack's tools, minus:
+
+1. its own `disallowed_tools`;
+2. any tool whose capability you did not grant when you installed the pack (`edit` needs
+   `fs.write`, `shell` needs `shell.exec`, `web` and `browser` need `net.hosts`, MCP tools need
+   `mcp.tools`);
+3. any MCP tool your scoped tool policy denies for that agent and repository.
+
+On Claude Code the worker keeps only the repository's allowlist entries for the tools that remain,
+and every dropped family (Edit and Write, Bash, WebFetch and so on) is passed to
+`--disallowedTools`. On Hermes the remaining tools become `-t` toolsets. Hermes' `file` toolset
+both reads and writes, so a pack with `read` but not `edit` gets no file toolset on Hermes. A pack
+can never widen what a worker could already do, and it runs unattended only when it says
+`"unattended": true` and the unattended profile is enforced (Safety).
+
+### Using one
+
+Install the pack in Brain, Capabilities, then pick it under **Agent pack** in the New mission
+form. The Agents view lists every installed pack with its ceiling on each agent, including what
+was dropped and why. `examples/capabilities/agents` has five official packs: planner, code
+reviewer, security auditor, docs writer and researcher.
+
 ## What is not here
 
 There is no hosted marketplace: no accounts, ratings or install telemetry. Packs install from a
