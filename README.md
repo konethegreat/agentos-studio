@@ -319,6 +319,9 @@ replayed, so approval history alone does not move a default.
   writes, network, shell, MCP tools, secrets, hooks, models) and compatibility notes. A skill that
   exists in several stores is one duplicate group, listed in the order a runtime should prefer:
   Hermes, Studio's bridge, Qoder, Claude Code. Studio never writes to any of these stores.
+- **Skill bridge.** "Bridge to Hermes" on a Qoder or Claude Code skill links it into one folder
+  Hermes reads (`skills.external_dirs`), with its source, license and author kept, Hermes' own
+  skills winning on a name clash, and nothing written to the source. A broken link is reported.
 - **Capability packs and the trust model.** Packs (skills, agent packs, MCP bundles, hook packs,
   command packs) install from a folder or a git URL only after Studio checks them: a strict
   manifest, a signature that decides the trust tier (official, verified, community), a quarantine

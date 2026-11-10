@@ -1,6 +1,7 @@
-import { Copy, Download, Layers, Loader2, RefreshCw, RotateCcw, Search, ShieldAlert, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
+import { Copy, Download, Layers, Link2, Unlink, Loader2, RefreshCw, RotateCcw, Search, ShieldAlert, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, errorText, type CatalogIndex, type CatalogRecord, type InstalledPack, type PackProposal } from "../lib/api";
+import { api, errorText, type BridgeConfig, type BridgeStatus, type CatalogIndex, type CatalogRecord, type InstalledPack, type PackProposal } from "../lib/api";
+import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card, Empty, inputClass } from "../components/ui";
 
@@ -34,6 +35,7 @@ function SourceBadge({ r }: { r: CatalogRecord }) {
  */
 export function Capabilities() {
   const toast = useToast();
+  const guarded = useGuarded();
   const [idx, setIdx] = useState<CatalogIndex | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
@@ -75,6 +77,21 @@ export function Capabilities() {
 
   const current = selected ? byId.get(selected) : undefined;
   const group = current ? groupOf.get(current.id) : undefined;
+
+  const [bridging, setBridging] = useState(false);
+  async function bridge(r: CatalogRecord) {
+    const dir = r.source_path.replace(/[\\/]SKILL\.md$/i, "");
+    setBridging(true);
+    try {
+      const e = await guarded((a) => api.bridgeAdd(dir, r.source, a.approved));
+      toast("ok", `${e.name} is bridged as ${e.folder} (${e.mode})`);
+      await load();
+    } catch (e) {
+      if (!(e instanceof ApprovalDeclined)) toast("error", errorText(e));
+    } finally {
+      setBridging(false);
+    }
+  }
 
   function copy(text: string, what: string) {
     void navigator.clipboard.writeText(text).then(
@@ -157,6 +174,7 @@ export function Capabilities() {
                 </div>
               </div>
               <Packs />
+              <SkillBridge onChange={() => void load()} />
               <Card className="p-4">
                 <div className="mb-2 text-xs font-semibold text-slate-300">Per store</div>
                 <table className="w-full text-label">
@@ -215,6 +233,11 @@ export function Capabilities() {
                   </div>
                   <div className="mt-1 text-body-sm leading-relaxed text-slate-400">{current.description || "No description."}</div>
                 </div>
+                {current.kind === "skill" && current.installed && ["qoder", "claude", "local"].includes(current.source) && (
+                  <Button size="sm" busy={bridging} onClick={() => void bridge(current)} icon={<Link2 className="size-3.5" />} title="Make this skill readable to Hermes through Studio's bridge folder. The source is not changed.">
+                    Bridge to Hermes
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>
                   Overview
                 </Button>
@@ -528,6 +551,120 @@ function Packs() {
           ))}
         </ul>
       </div>
+    </Card>
+  );
+}
+
+/**
+ * The skill bridge: skills from Qoder, Claude Code or other folders made readable to Hermes
+ * through one folder Studio manages, with provenance kept by Studio and the sources untouched.
+ */
+function SkillBridge({ onChange }: { onChange: () => void }) {
+  const toast = useToast();
+  const guarded = useGuarded();
+  const [rows, setRows] = useState<BridgeStatus[] | null>(null);
+  const [cfg, setCfg] = useState<BridgeConfig | null>(null);
+  const [cfgError, setCfgError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setRows(await api.bridgeStatus());
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+    try {
+      setCfg(await api.bridgeConfig());
+      setCfgError(null);
+    } catch (e) {
+      setCfgError(errorText(e));
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function setConfig(enable: boolean) {
+    setBusy("config");
+    try {
+      const c = await guarded((a) => api.bridgeSetConfig(enable, a.approved));
+      setCfg(c);
+      toast("ok", enable ? "Hermes now reads the bridge folder (config.yaml was backed up first)" : "Hermes no longer reads the bridge folder");
+    } catch (e) {
+      if (!(e instanceof ApprovalDeclined)) toast("error", errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function unbridge(folder: string) {
+    setBusy(folder);
+    try {
+      await guarded((a) => api.bridgeRemove(folder, a.approved));
+      toast("ok", `${folder} removed from the bridge; its source is unchanged`);
+      await load();
+      onChange();
+    } catch (e) {
+      if (!(e instanceof ApprovalDeclined)) toast("error", errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card className="space-y-3 p-4">
+      <div>
+        <div className="text-xs font-semibold text-slate-300">Skill bridge to Hermes</div>
+        <div className="text-label text-slate-500">
+          Open a Qoder or Claude Code skill and press Bridge to Hermes. Studio links it into one folder that Hermes reads, never copies it into Hermes' own skills and never changes the source. Hermes' own skills win when names collide.
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-label">
+        {cfgError ? (
+          <span className="text-rose-300">Could not read Hermes' config: {cfgError}</span>
+        ) : cfg ? (
+          cfg.applied ? (
+            <>
+              <Badge className="bg-emerald-500/10 text-emerald-300 ring-emerald-500/25">Hermes reads it</Badge>
+              <Button size="sm" variant="ghost" busy={busy === "config"} onClick={() => void setConfig(false)}>
+                Stop Hermes reading it
+              </Button>
+            </>
+          ) : (
+            <>
+              <Badge className="bg-amber-500/10 text-amber-300 ring-amber-500/25">needs Hermes apply</Badge>
+              <Button size="sm" busy={busy === "config"} onClick={() => void setConfig(true)}>
+                Add to Hermes config
+              </Button>
+              <button className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-200" onClick={() => void navigator.clipboard.writeText(cfg.snippet).then(() => toast("ok", "Config block copied"))}>
+                <Copy className="size-3" /> Copy the config block instead
+              </button>
+            </>
+          )
+        ) : (
+          <Loader2 className="size-3.5 animate-spin text-slate-500" />
+        )}
+      </div>
+      <ul className="space-y-1">
+        {rows?.length === 0 && <li className="text-label text-slate-600">Nothing bridged yet.</li>}
+        {rows?.map((r) => (
+          <li key={r.entry.folder} className="flex items-center gap-2 rounded-md bg-canvas/60 px-2.5 py-1.5 text-label">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-slate-200">{r.entry.name}</span>
+                <Badge className={SOURCE_STYLE[r.entry.source] ?? SOURCE_STYLE.local}>{r.entry.source}</Badge>
+                <span className="text-slate-500">{r.entry.mode}</span>
+                <span className={r.state === "ok" ? "text-emerald-300" : "text-rose-300"}>{r.state}</span>
+              </div>
+              <div className="truncate text-slate-500" title={r.entry.source_path}>
+                {r.entry.folder} . {r.entry.license ?? "no license stated"} . {r.entry.author ?? "no author stated"} . {r.entry.source_path}
+              </div>
+            </div>
+            <Button size="sm" variant="ghost" busy={busy === r.entry.folder} onClick={() => void unbridge(r.entry.folder)} title="Remove from the bridge" icon={<Unlink className="size-3.5" />} />
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

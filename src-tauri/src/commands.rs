@@ -1083,6 +1083,91 @@ pub async fn capability_set_trusted_keys(
     .await
 }
 
+/// The skill bridge: what is bridged into Hermes and whether each entry still works.
+#[tauri::command]
+pub async fn bridge_status() -> CmdResult<Vec<crate::skill_bridge::Status>> {
+    blocking(|| crate::skill_bridge::status(&crate::skill_bridge::Bridge::live())).await
+}
+
+#[tauri::command]
+pub async fn bridge_check(path: String) -> CmdResult<crate::skill_bridge::Check> {
+    blocking(move || {
+        crate::skill_bridge::check(
+            std::path::Path::new(&path),
+            &crate::skill_bridge::Bridge::live(),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn bridge_add(
+    path: String,
+    source: String,
+    approved: Option<bool>,
+) -> CmdResult<crate::skill_bridge::Entry> {
+    blocking(move || {
+        let summary = format!("Bridge {source} skill from {path} into Hermes skills-external");
+        let approved =
+            approved.unwrap_or(false) && std::env::var_os(crate::permissions::UNATTENDED).is_none();
+        crate::permissions::run_guarded(
+            crate::skill_bridge::ACTION,
+            &path,
+            &summary,
+            approved,
+            || {
+                crate::skill_bridge::add(
+                    std::path::Path::new(&path),
+                    &source,
+                    &crate::skill_bridge::Bridge::live(),
+                )
+            },
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn bridge_remove(
+    folder: String,
+    approved: Option<bool>,
+) -> CmdResult<crate::skill_bridge::Entry> {
+    blocking(move || {
+        let summary = format!("Remove {folder} from Hermes skills-external bridge");
+        let approved =
+            approved.unwrap_or(false) && std::env::var_os(crate::permissions::UNATTENDED).is_none();
+        crate::permissions::run_guarded(
+            crate::skill_bridge::ACTION,
+            &folder,
+            &summary,
+            approved,
+            || crate::skill_bridge::remove(&folder, &crate::skill_bridge::Bridge::live()),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn bridge_config() -> CmdResult<crate::skill_bridge::ConfigState> {
+    blocking(|| crate::skill_bridge::config_state(&crate::skill_bridge::Bridge::live())).await
+}
+
+/// Add or remove the bridge folder in Hermes' config: guarded, audited, config backed up first.
+#[tauri::command]
+pub async fn bridge_set_config(
+    enable: bool,
+    approved: Option<bool>,
+) -> CmdResult<crate::skill_bridge::ConfigState> {
+    blocking(move || {
+        crate::skill_bridge::set_config(
+            &crate::skill_bridge::Bridge::live(),
+            enable,
+            approved.unwrap_or(false),
+        )
+    })
+    .await
+}
+
 /// The global metered budget: limit, period, spend this period and whether the stop is on.
 #[tauri::command]
 pub async fn budget_status() -> CmdResult<crate::budget::Status> {

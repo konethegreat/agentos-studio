@@ -845,6 +845,20 @@ export type PackProposal = {
   refusal: string | null;
 };
 export type InstalledPack = { entry: PackLockEntry; status: string; path: string };
+export type BridgeEntry = {
+  folder: string;
+  name: string;
+  source: string;
+  source_path: string;
+  license: string | null;
+  author: string | null;
+  hash: string;
+  mode: "junction" | "copy" | "unknown";
+  added_at: number;
+};
+export type BridgeStatus = { entry: BridgeEntry; state: string };
+export type BridgeCheck = { name: string; license: string | null; author: string | null; hash: string; problems: string[] };
+export type BridgeConfig = { dirs: string[]; applied: boolean; snippet: string };
 export type TrustedKey = { key_id: string; name: string; public_key: string };
 export type BudgetStatus = { limit_usd: number; period: "day" | "week" | "month"; since: number; spent_usd: number; exhausted: boolean };
 
@@ -1067,6 +1081,14 @@ export const api = {
   capabilityRollback: (id: string) => invoke<PackLockEntry>("capability_rollback", { id }),
   capabilityUninstall: (id: string) => invoke<void>("capability_uninstall", { id }),
   capabilityExportLock: (project: string) => invoke<string>("capability_export_lock", { project }),
+  bridgeStatus: () => invoke<BridgeStatus[]>("bridge_status"),
+  bridgeCheck: (path: string) => invoke<BridgeCheck>("bridge_check", { path }),
+  bridgeAdd: (path: string, source: string, approved?: boolean) =>
+    invoke<BridgeEntry>("bridge_add", { path, source, approved: approved ?? null }),
+  bridgeRemove: (folder: string, approved?: boolean) =>
+    invoke<BridgeEntry>("bridge_remove", { folder, approved: approved ?? null }),
+  bridgeConfig: () => invoke<BridgeConfig>("bridge_config"),
+  bridgeSetConfig: (enable: boolean, approved?: boolean) => invoke<BridgeConfig>("bridge_set_config", { enable, approved: approved ?? null }),
   capabilityTrustedKeys: () => invoke<TrustedKey[]>("capability_trusted_keys"),
   capabilitySetTrustedKeys: (keys: TrustedKey[]) => invoke<void>("capability_set_trusted_keys", { keys }),
   setBudget: (limitUsd: number, period: string) => invoke<BudgetStatus>("set_budget", { limitUsd, period }),

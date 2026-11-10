@@ -595,8 +595,19 @@ this order, one pull request each:
   capability need explicit consent; a hash mismatch is a refusal. Installing never runs pack
   content; hooks and bundled MCP servers run only through the extension runtime (G11). Two
   example packs in `examples/capabilities`. Full description in docs/CAPABILITIES.md.
-- **G7, skill bridge:** a curated folder of junctions that Hermes reads through
+- **G7, skill bridge (done):** a curated folder of junctions that Hermes reads through
   `skills.external_dirs`, so Qoder and Claude skills reach Hermes with provenance and rollback.
+  `skill_bridge.rs` keeps `hermes/skills-external` with one `<source>--<skill>` junction per
+  bridged skill (a hash-checked copy when a junction is impossible) and its provenance in
+  `.agentos-bridge.json`. It refuses a skill Hermes already has natively (native wins), a second
+  copy of a bridged name, a folder that links outside itself and a skill whose `scripts/` files do
+  not exist; a broken junction is reported, not hidden. "Bridge to Hermes" on a skill in
+  Capabilities; the Hermes config change (`skills.external_dirs`) is guarded, backed up and
+  audited, or copied as a snippet. Verified through the Hermes runtime with one Qoder skill
+  (`minimalist-ui`) and one Claude Code skill (`theme-factory`): both list as `external` in
+  `hermes skills list` and a `hermes chat -s <skill>` turn quotes their first heading. The
+  catalog now reads MCP entries through Qoder's `mcp_manager::catalog_entries` and skips Claude
+  Code's `.trash`.
 - **G9, agent packs:** persona, capability ceiling and model policy, enforced by the host;
   planner, code reviewer, security auditor, docs writer and researcher first.
 - **G10, context ledger:** Hermes and Claude Code keep doing their own compaction. Studio records

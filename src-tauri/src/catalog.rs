@@ -583,9 +583,11 @@ fn hermes_plugins(r: &Root, out: &mut Vec<Record>, skipped: &mut Vec<String>) {
     }
 }
 
-fn walk(dir: &Path, skipped: &mut Vec<String>) -> Vec<walkdir::DirEntry> {
+/// `follow` is set only for Studio's bridge folder, whose entries are links to skill folders by
+/// design; walkdir reports a link loop as an error, which lands in `skipped`.
+fn walk(dir: &Path, follow: bool, skipped: &mut Vec<String>) -> Vec<walkdir::DirEntry> {
     let mut out = Vec::new();
-    for e in WalkDir::new(dir).follow_links(false).max_depth(MAX_DEPTH) {
+    for e in WalkDir::new(dir).follow_links(follow).max_depth(MAX_DEPTH) {
         match e {
             Ok(e) => out.push(e),
             Err(err) => {
@@ -632,7 +634,17 @@ pub fn scan_root(
         skipped.push(format!("{}: not a folder on this machine", r.path));
         return;
     }
-    let entries = walk(&base, skipped);
+    // Deleted items some apps keep beside their skills (Claude Code's `.trash`) are not skills.
+    let entries: Vec<walkdir::DirEntry> = walk(&base, r.source == "bridge", skipped)
+        .into_iter()
+        .filter(|e| {
+            !e.path()
+                .strip_prefix(&base)
+                .unwrap_or(e.path())
+                .components()
+                .any(|c| c.as_os_str() == ".trash" || c.as_os_str() == "node_modules")
+        })
+        .collect();
     let md = |e: &walkdir::DirEntry| {
         e.file_type().is_file() && e.path().extension().is_some_and(|x| x == "md")
     };
@@ -701,34 +713,48 @@ pub fn scan_root(
     }
 }
 
-/// MCP servers Studio knows how to add, from its catalog (parameter names only, never values).
+/// MCP servers Studio knows how to add, from the registry reader (`mcp_manager::catalog_entries`,
+/// metadata only). Secret parameter names come from the install specs: names, never values.
 fn mcp_records(vault: &Path) -> Vec<Record> {
-    crate::mcp_manager::catalog(vault)
+    let secrets: BTreeMap<String, Vec<String>> = crate::mcp_manager::catalog(vault)
+        .into_iter()
+        .map(|c| {
+            (
+                c.id.to_string(),
+                c.params
+                    .iter()
+                    .filter(|p| p.secret)
+                    .map(|p| format!("needs-secret:{}", p.key))
+                    .collect(),
+            )
+        })
+        .collect();
+    crate::mcp_manager::catalog_entries(vault)
         .into_iter()
         .map(|c| {
             let mut h = Sha256::new();
             h.update(c.id.as_bytes());
             h.update(c.transport.as_bytes());
+            h.update(c.package.as_bytes());
+            let nonempty = |s: String| Some(s).filter(|x| !x.trim().is_empty());
             Record {
                 id: format!("mcp:studio:{}", c.id),
                 kind: "mcp".into(),
-                name: c.name.to_string(),
-                description: c.description.to_string(),
+                compat: secrets.get(&c.id).cloned().unwrap_or_default(),
+                name: c.name,
+                description: c.description,
                 version: None,
                 source: "local".into(),
                 installed: false,
-                source_path: "AgentOS Studio MCP catalog".into(),
-                publisher: None,
-                license: None,
-                homepage: None,
+                source_path: format!(
+                    "AgentOS Studio MCP registry ({}, {})",
+                    c.transport, c.trust_tier
+                ),
+                publisher: nonempty(c.publisher),
+                license: nonempty(c.license),
+                homepage: nonempty(c.homepage),
                 hash: h.finalize().iter().map(|b| format!("{b:02x}")).collect(),
                 capabilities: vec!["mcp.tools".into()],
-                compat: c
-                    .params
-                    .iter()
-                    .filter(|p| p.secret)
-                    .map(|p| format!("needs-secret:{}", p.key))
-                    .collect(),
                 plugin: None,
                 group: String::new(),
             }

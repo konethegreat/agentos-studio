@@ -27,6 +27,34 @@ Studio reads these stores and never writes to them. The only file the index writ
 hash cache, `%APPDATA%\agentos-studio\catalog-hashes.json`, so the second scan only rereads
 folders that changed.
 
+## The skill bridge to Hermes
+
+Hermes can read skills from extra folders (`skills.external_dirs` in its config), read-only, with
+its own skills winning when names collide. Studio manages one such folder,
+`%LOCALAPPDATA%\hermes\skills-external`, so a Qoder or Claude Code skill can be used from Hermes
+without copying it into Hermes' own tree:
+
+1. Open the skill in Brain, Capabilities and press **Bridge to Hermes**. Studio adds a directory
+   junction named `<source>--<skill>` that points at the skill's own folder. When a junction is not
+   possible (another drive), it copies the folder and checks the copy's hash against the source.
+2. The first time, press **Add to Hermes config** in the Skill bridge card. Studio backs up
+   `config.yaml` to `%APPDATA%\agentos-studio\backups\hermes-config`, asks for approval (Safety,
+   `hermes.config.skills_external`) and runs `hermes config set skills.external_dirs`, keeping any
+   folders already listed. If you prefer to edit the config yourself, copy the block instead.
+
+Studio refuses to bridge a skill when:
+
+- Hermes already has a skill with that name (Hermes would use its own anyway);
+- another copy with that name is already bridged;
+- something inside the skill folder links outside it;
+- the skill runs a file under `scripts/` that does not exist.
+
+The Skill bridge card lists every bridged skill with its source, license, author and original
+path, and says when one is broken (its source folder is gone), stale (a copy whose source changed)
+or unmanaged (a folder Studio did not add). Removing a bridged skill deletes the junction only;
+the source is never touched. Studio keeps the provenance in `.agentos-bridge.json` in the bridge
+folder, never inside the skill.
+
 ## Capability packs
 
 A pack is a folder with a `capability.json` at its root. Five kinds exist: `skill`, `agent-pack`,
