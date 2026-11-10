@@ -14,6 +14,7 @@ export type RailView =
   | "computer"
   | "memory"
   | "skills"
+  | "capabilities"
   | "constitution"
   | "github"
   | "control"

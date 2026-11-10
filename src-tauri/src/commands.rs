@@ -974,6 +974,21 @@ pub async fn set_automation(
     .await
 }
 
+/// The capability fabric: every skill, plugin, agent, command and MCP server on this machine,
+/// read only, with provenance, hashes, compatibility and duplicate groups.
+#[tauri::command]
+pub async fn catalog_index() -> CmdResult<crate::catalog::Index> {
+    blocking(|| {
+        let vault = crate::settings::vault_path();
+        Ok(crate::catalog::index(
+            &crate::catalog::default_roots(),
+            Some(&vault),
+            Some(&crate::catalog::cache_path()),
+        ))
+    })
+    .await
+}
+
 /// The global metered budget: limit, period, spend this period and whether the stop is on.
 #[tauri::command]
 pub async fn budget_status() -> CmdResult<crate::budget::Status> {

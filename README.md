@@ -313,6 +313,12 @@ replayed, so approval history alone does not move a default.
   body), searches the registries and installs through `hermes skills`, and removes or updates them.
   **Use in a chat** attaches a skill to the conversation, which passes `-s <skill>` to Hermes on
   every turn, so the agent loads it on purpose instead of hoping it notices.
+- **Capabilities.** One read-only index of every skill, plugin, agent, command and MCP server on the
+  machine across Hermes, Qoder and Claude Code (Brain, Capabilities). Each entry shows where it
+  lives, its publisher and license, a copyable content hash, what it asks for (file reads and
+  writes, network, shell, MCP tools, secrets, hooks, models) and compatibility notes. A skill that
+  exists in several stores is one duplicate group, listed in the order a runtime should prefer:
+  Hermes, Studio's bridge, Qoder, Claude Code. Studio never writes to any of these stores.
 
 ## GitHub
 

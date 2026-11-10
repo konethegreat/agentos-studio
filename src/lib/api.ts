@@ -769,6 +769,32 @@ export interface HubSkill {
 
 /** Scheduler settings. `ide_wait_minutes`: how long an IDE-only agent has to pick up its mission. */
 export type AutomationStatus = { enabled: boolean; max_concurrent: number; ide_wait_minutes: number };
+export type CatalogRecord = {
+  id: string;
+  kind: "skill" | "plugin" | "agent" | "command" | "mcp";
+  name: string;
+  description: string;
+  version: string | null;
+  source: "hermes" | "bridge" | "qoder" | "claude" | "local" | "git";
+  installed: boolean;
+  source_path: string;
+  publisher: string | null;
+  license: string | null;
+  homepage: string | null;
+  hash: string;
+  capabilities: string[];
+  compat: string[];
+  plugin: string | null;
+  group: string;
+};
+export type CatalogIndex = {
+  records: CatalogRecord[];
+  counts: Record<string, Record<string, number>>;
+  groups: { name: string; members: string[] }[];
+  skipped: string[];
+  roots: { source: string; layout: string; path: string; installed: boolean }[];
+  scanned_at: number;
+};
 export type BudgetStatus = { limit_usd: number; period: "day" | "week" | "month"; since: number; spent_usd: number; exhausted: boolean };
 
 export interface ScopedToolPolicy {
@@ -982,6 +1008,7 @@ export const api = {
   notionPullInbox: () => invoke<number>("notion_pull_inbox"),
   automationStatus: () => invoke<AutomationStatus>("automation_status"),
   budgetStatus: () => invoke<BudgetStatus>("budget_status"),
+  catalogIndex: () => invoke<CatalogIndex>("catalog_index"),
   setBudget: (limitUsd: number, period: string) => invoke<BudgetStatus>("set_budget", { limitUsd, period }),
   setAutomation: (enabled: boolean, maxConcurrent?: number, ideWaitMinutes?: number) =>
     invoke<AutomationStatus>("set_automation", {

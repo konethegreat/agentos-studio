@@ -12,6 +12,7 @@ pub mod bootstrapper;
 pub mod broadcast;
 pub mod budget;
 pub mod bus;
+pub mod catalog;
 pub mod chat_stream;
 pub mod cli_runner;
 pub mod commands;
@@ -423,6 +424,7 @@ pub fn run_gui() {
             commands::set_automation,
             commands::automation_tick,
             commands::budget_status,
+            commands::catalog_index,
             commands::set_budget,
             commands::skill_proposals,
             commands::skill_proposal_approve,

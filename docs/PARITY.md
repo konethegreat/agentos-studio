@@ -153,6 +153,16 @@ not because code exists.
 | Sessions behind a line | yes | the mission's Hermes sessions from the exchange log, with a link to the run timeline |
 | Trailer block in mission merges | part | `trailers` and `parse_trailers`, and `review_agent::merge` appends the block to the squash body through `github::pr_merge_with` |
 
+## Capability fabric (Phase G)
+
+| Store | What Studio reads | What it never does |
+|---|---|---|
+| Hermes | `skills/<category>/<skill>/SKILL.md`; plugins from `plugins/.install-metadata.json` (name, revision, catalog tier and repo) | open the ACL-denied plugin folders, write to the skills tree |
+| Qoder | `.qoder/skills/*/SKILL.md`; `.qoder/plugins/cache/<marketplace>/<plugin>/<version>` with `.qoder-plugin/plugin.json`, nested skills, agents and commands | change enablement in `settings.json` or `installed_plugins_v2.json` |
+| Claude Code | `.claude/skills`; installed plugins under `.claude/plugins/synced` (installed) and marketplace clones under `.claude/plugins/marketplaces` (listed, not installed); `.claude/agents` | read app-managed enablement buckets, write any file |
+| Studio bridge | `hermes/skills-external` (G7), ranked after Hermes native skills | |
+| Duplicates | one group per normalized skill name, precedence Hermes, bridge, Qoder, Claude, local; a copy whose hash differs from the preferred one is marked | merge or hide a copy |
+
 ## Evaluation and replay (v0.13.0)
 
 | Capability | Hermes CLI | Studio |
