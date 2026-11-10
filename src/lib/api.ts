@@ -795,6 +795,57 @@ export type CatalogIndex = {
   roots: { source: string; layout: string; path: string; installed: boolean }[];
   scanned_at: number;
 };
+export type PackManifest = {
+  schema_version: number;
+  id: string;
+  name: string;
+  version: string;
+  kind: string;
+  description: string;
+  license: string;
+  publisher: { name: string; key_id: string; homepage: string };
+  entrypoints: string[];
+  capabilities: string[];
+  requires: { app_version: string; os: string[]; runtimes: string[] };
+  mcp_tools?: string[];
+  signature?: string;
+  source_url?: string;
+};
+export type QFinding = { rule: string; path: string; line: number | null; detail: string; severity: "block" | "consent" | "warn" };
+export type CapView = { capability: string; grantable: boolean; default_on: boolean; reason: string; denied_tools: string[] };
+export type PackLockEntry = {
+  id: string;
+  kind: string;
+  name: string;
+  version: string;
+  hash: string;
+  publisher: string;
+  publisher_key_id: string;
+  tier: string;
+  source: string;
+  installed_at: number;
+  requested: string[];
+  granted: string[];
+  history: { version: string; hash: string; granted: string[]; installed_at: number }[];
+};
+export type PackProposal = {
+  token: string;
+  source: string;
+  manifest: PackManifest;
+  hash: string;
+  content_sha256: string;
+  tier: "official" | "verified" | "community";
+  findings: QFinding[];
+  blocked: boolean;
+  ceiling: CapView[];
+  outbound: string[];
+  new_capabilities: string[];
+  installed: PackLockEntry | null;
+  untrusted_prose: boolean;
+  refusal: string | null;
+};
+export type InstalledPack = { entry: PackLockEntry; status: string; path: string };
+export type TrustedKey = { key_id: string; name: string; public_key: string };
 export type BudgetStatus = { limit_usd: number; period: "day" | "week" | "month"; since: number; spent_usd: number; exhausted: boolean };
 
 export interface ScopedToolPolicy {
@@ -1009,6 +1060,15 @@ export const api = {
   automationStatus: () => invoke<AutomationStatus>("automation_status"),
   budgetStatus: () => invoke<BudgetStatus>("budget_status"),
   catalogIndex: () => invoke<CatalogIndex>("catalog_index"),
+  capabilityPropose: (source: string, expectedHash?: string) => invoke<PackProposal>("capability_propose", { source, expectedHash: expectedHash || null }),
+  capabilityActivate: (token: string, granted: string[], consentNew: boolean) => invoke<PackLockEntry>("capability_activate", { token, granted, consentNew }),
+  capabilityDiscard: (token: string) => invoke<void>("capability_discard", { token }),
+  capabilityInstalled: () => invoke<InstalledPack[]>("capability_installed"),
+  capabilityRollback: (id: string) => invoke<PackLockEntry>("capability_rollback", { id }),
+  capabilityUninstall: (id: string) => invoke<void>("capability_uninstall", { id }),
+  capabilityExportLock: (project: string) => invoke<string>("capability_export_lock", { project }),
+  capabilityTrustedKeys: () => invoke<TrustedKey[]>("capability_trusted_keys"),
+  capabilitySetTrustedKeys: (keys: TrustedKey[]) => invoke<void>("capability_set_trusted_keys", { keys }),
   setBudget: (limitUsd: number, period: string) => invoke<BudgetStatus>("set_budget", { limitUsd, period }),
   setAutomation: (enabled: boolean, maxConcurrent?: number, ideWaitMinutes?: number) =>
     invoke<AutomationStatus>("set_automation", {

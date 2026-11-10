@@ -1,6 +1,6 @@
-import { Copy, Layers, Loader2, RefreshCw, Search, ShieldAlert } from "lucide-react";
+import { Copy, Download, Layers, Loader2, RefreshCw, RotateCcw, Search, ShieldAlert, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, errorText, type CatalogIndex, type CatalogRecord } from "../lib/api";
+import { api, errorText, type CatalogIndex, type CatalogRecord, type InstalledPack, type PackProposal } from "../lib/api";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card, Empty, inputClass } from "../components/ui";
 
@@ -156,6 +156,7 @@ export function Capabilities() {
                   Read only. Studio reads frontmatter and manifests and never writes to Hermes, Qoder or Claude Code. Duplicates are shown with precedence, never merged.
                 </div>
               </div>
+              <Packs />
               <Card className="p-4">
                 <div className="mb-2 text-xs font-semibold text-slate-300">Per store</div>
                 <table className="w-full text-label">
@@ -284,5 +285,249 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
       <span className="w-20 shrink-0 text-slate-500">{label}</span>
       <span className="min-w-0 flex-1 text-slate-300">{children}</span>
     </div>
+  );
+}
+
+const TIER_STYLE: Record<string, string> = {
+  official: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25",
+  verified: "bg-sky-500/10 text-sky-300 ring-sky-500/25",
+  community: "bg-amber-500/10 text-amber-300 ring-amber-500/25",
+};
+
+const SEVERITY_STYLE: Record<string, string> = {
+  block: "text-rose-300",
+  consent: "text-amber-300",
+  warn: "text-slate-400",
+};
+
+/**
+ * Capability packs: install from a local folder or a git URL through the permission sheet,
+ * then roll back, verify or remove. Studio checks before anything is activated and never runs
+ * pack content while installing.
+ */
+function Packs() {
+  const toast = useToast();
+  const [installed, setInstalled] = useState<InstalledPack[] | null>(null);
+  const [source, setSource] = useState("");
+  const [pin, setPin] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [proposal, setProposal] = useState<PackProposal | null>(null);
+  const [granted, setGranted] = useState<string[]>([]);
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setInstalled(await api.capabilityInstalled());
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function check() {
+    if (!source.trim()) return;
+    setChecking(true);
+    try {
+      if (proposal) await api.capabilityDiscard(proposal.token).catch(() => undefined);
+      const p = await api.capabilityPropose(source.trim(), pin.trim() || undefined);
+      setProposal(p);
+      setGranted(p.ceiling.filter((c) => c.grantable && c.default_on).map((c) => c.capability));
+      setConsent(false);
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function discard() {
+    if (proposal) await api.capabilityDiscard(proposal.token).catch(() => undefined);
+    setProposal(null);
+  }
+
+  async function activate() {
+    if (!proposal) return;
+    setBusy("install");
+    try {
+      const e = await api.capabilityActivate(proposal.token, granted, consent);
+      toast("ok", `Installed ${e.name} ${e.version} with ${e.granted.length ? e.granted.join(", ") : "no capabilities"}`);
+      setProposal(null);
+      setSource("");
+      setPin("");
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function act(id: string, what: "rollback" | "uninstall") {
+    setBusy(`${what}:${id}`);
+    try {
+      if (what === "rollback") {
+        const e = await api.capabilityRollback(id);
+        toast("ok", `${e.name} is back on ${e.version}`);
+      } else {
+        await api.capabilityUninstall(id);
+        toast("ok", `${id} removed`);
+      }
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const added = proposal?.new_capabilities.filter((c) => granted.includes(c)) ?? [];
+
+  return (
+    <Card className="space-y-3 p-4">
+      <div>
+        <div className="text-xs font-semibold text-slate-300">Capability packs</div>
+        <div className="text-label text-slate-500">
+          Install from a folder or a git URL (https or file). Studio copies the pack, checks its manifest, signature and content, and shows what it asks for before anything is activated. Nothing from a pack runs while it installs.
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <input value={source} onChange={(e) => setSource(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void check()} placeholder={"C:\\path\\to\\pack or https://github.com/owner/pack"} className={inputClass} aria-label="Pack folder or git URL" />
+        <div className="w-44 shrink-0">
+          <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="Pin hash (optional)" className={inputClass} aria-label="Expected pack hash" />
+        </div>
+        <Button busy={checking} onClick={() => void check()} icon={<Search className="size-4" />}>
+          Check
+        </Button>
+      </div>
+
+      {proposal && (
+        <div className={`rounded-lg border p-3 ${proposal.blocked ? "border-rose-500/40 bg-rose-500/[0.04]" : "border-line bg-canvas/60"}`} role="dialog" aria-label="Permission sheet">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {proposal.blocked ? <ShieldX className="size-4 text-rose-300" /> : <ShieldCheck className="size-4 text-emerald-300" />}
+            <span className="text-sm font-semibold text-slate-100">{proposal.manifest.name}</span>
+            <span className="text-2xs text-slate-500">
+              {proposal.manifest.id} v{proposal.manifest.version}
+            </span>
+            <Badge className={TIER_STYLE[proposal.tier]}>{proposal.tier}</Badge>
+            <Badge className="bg-white/5 text-slate-400 ring-white/10">{proposal.manifest.kind}</Badge>
+            {proposal.installed && <span className="text-2xs text-slate-500">update from v{proposal.installed.version}</span>}
+          </div>
+          <div className="mt-1 text-body-sm text-slate-400">{proposal.manifest.description}</div>
+          <div className="mt-2 space-y-0.5 text-label">
+            <Row label="Publisher">
+              {proposal.manifest.publisher.name} ({proposal.manifest.publisher.key_id}){proposal.manifest.signature ? "" : ", unsigned"}
+            </Row>
+            <Row label="License">{proposal.manifest.license}</Row>
+            <Row label="Hash">
+              <span className="font-mono">{proposal.hash.slice(0, 24)}</span>
+            </Row>
+          </div>
+          {proposal.refusal && <div className="mt-2 rounded-md bg-rose-500/10 px-2 py-1.5 text-label text-rose-200">Refused: {proposal.refusal}</div>}
+          {proposal.untrusted_prose && <div className="mt-2 text-label text-amber-300">Some text in this pack tries to override system rules. It is read as untrusted and capped.</div>}
+
+          <div className="mt-3 text-xs font-semibold text-slate-300">It asks for</div>
+          {proposal.ceiling.length === 0 && <div className="text-label text-slate-500">Nothing: no files outside the pack, no network, no shell, no secrets.</div>}
+          <ul className="mt-1 space-y-1">
+            {proposal.ceiling.map((c) => (
+              <li key={c.capability} className="flex items-start gap-2 text-label">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  disabled={!c.grantable || proposal.blocked}
+                  checked={granted.includes(c.capability)}
+                  onChange={(e) => setGranted((g) => (e.target.checked ? [...g, c.capability] : g.filter((x) => x !== c.capability)))}
+                  aria-label={`Grant ${c.capability}`}
+                />
+                <div>
+                  <span className={c.grantable ? "font-mono text-slate-200" : "font-mono text-slate-500 line-through"}>{c.capability}</span>
+                  {proposal.new_capabilities.includes(c.capability) && <span className="ml-1.5 text-amber-300">new in this version</span>}
+                  <div className="text-slate-500">{c.reason}</div>
+                  {c.denied_tools.length > 0 && <div className="text-slate-500">Denied by your tool policy: {c.denied_tools.join(", ")}</div>}
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {proposal.outbound.length > 0 && (
+            <>
+              <div className="mt-3 text-xs font-semibold text-slate-300">Addresses it mentions</div>
+              <ul className="text-label text-amber-200">
+                {proposal.outbound.map((u) => (
+                  <li key={u} className="break-all">
+                    {u}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {proposal.findings.filter((f) => f.rule !== "outbound_url").length > 0 && (
+            <>
+              <div className="mt-3 text-xs font-semibold text-slate-300">Quarantine scan</div>
+              <ul className="space-y-0.5 text-label">
+                {proposal.findings
+                  .filter((f) => f.rule !== "outbound_url")
+                  .slice(0, 40)
+                  .map((f, i) => (
+                    <li key={i} className={SEVERITY_STYLE[f.severity]}>
+                      {f.severity} {f.rule}: {f.path || "pack"}
+                      {f.line ? `:${f.line}` : ""} {f.detail}
+                    </li>
+                  ))}
+              </ul>
+            </>
+          )}
+
+          {added.length > 0 && !proposal.blocked && (
+            <label className="mt-3 flex items-center gap-2 text-label text-amber-200">
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+              I agree to grant what this update adds: {added.join(", ")}
+            </label>
+          )}
+          <div className="mt-3 flex gap-2">
+            {!proposal.blocked && (
+              <Button variant="primary" busy={busy === "install"} disabled={added.length > 0 && !consent} onClick={() => void activate()} icon={<Download className="size-4" />}>
+                Install with {granted.length} of {proposal.ceiling.length}
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => void discard()}>
+              {proposal.blocked ? "Close" : "Cancel"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div className="mb-1 text-label font-medium text-slate-400">Installed ({installed?.length ?? 0})</div>
+        {installed?.length === 0 && <div className="text-label text-slate-600">No packs yet.</div>}
+        <ul className="space-y-1">
+          {installed?.map((p) => (
+            <li key={p.entry.id} className="flex items-center gap-2 rounded-md bg-canvas/60 px-2.5 py-1.5 text-label">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-slate-200">{p.entry.name}</span>
+                  <span className="text-slate-500">v{p.entry.version}</span>
+                  <Badge className={TIER_STYLE[p.entry.tier]}>{p.entry.tier}</Badge>
+                  {p.status !== "ok" && <span className="text-rose-300">{p.status}</span>}
+                </div>
+                <div className="truncate text-slate-500">
+                  {p.entry.id} . granted {p.entry.granted.length ? p.entry.granted.join(", ") : "nothing"} . {p.entry.hash.slice(0, 12)}
+                </div>
+              </div>
+              {p.entry.history.length > 0 && (
+                <Button size="sm" variant="ghost" busy={busy === `rollback:${p.entry.id}`} onClick={() => void act(p.entry.id, "rollback")} icon={<RotateCcw className="size-3.5" />}>
+                  Roll back to v{p.entry.history[p.entry.history.length - 1].version}
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" busy={busy === `uninstall:${p.entry.id}`} onClick={() => void act(p.entry.id, "uninstall")} title="Remove" icon={<Trash2 className="size-3.5" />} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Card>
   );
 }

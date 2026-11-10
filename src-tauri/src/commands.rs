@@ -989,6 +989,100 @@ pub async fn catalog_index() -> CmdResult<crate::catalog::Index> {
     .await
 }
 
+/// Stage and check a capability pack (a local folder, or an https or file git URL). Returns the
+/// permission sheet; nothing is activated and nothing from the pack runs.
+#[tauri::command]
+pub async fn capability_propose(
+    source: String,
+    expected_hash: Option<String>,
+) -> CmdResult<crate::marketplace::Proposal> {
+    blocking(move || {
+        let store = crate::marketplace::Store::live();
+        crate::marketplace::with_live_ctx(|ctx| {
+            crate::marketplace::propose(&source, expected_hash.as_deref(), &store, ctx)
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn capability_activate(
+    token: String,
+    granted: Vec<String>,
+    consent_new: bool,
+) -> CmdResult<crate::marketplace::LockEntry> {
+    blocking(move || {
+        let store = crate::marketplace::Store::live();
+        crate::marketplace::with_live_ctx(|ctx| {
+            crate::marketplace::activate(&token, &granted, consent_new, &store, ctx)
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn capability_discard(token: String) -> CmdResult<()> {
+    blocking(move || crate::marketplace::discard(&token, &crate::marketplace::Store::live())).await
+}
+
+#[tauri::command]
+pub async fn capability_installed() -> CmdResult<Vec<crate::marketplace::Installed>> {
+    blocking(|| crate::marketplace::list(&crate::marketplace::Store::live())).await
+}
+
+#[tauri::command]
+pub async fn capability_rollback(id: String) -> CmdResult<crate::marketplace::LockEntry> {
+    blocking(move || {
+        let store = crate::marketplace::Store::live();
+        crate::marketplace::with_live_ctx(|ctx| crate::marketplace::rollback(&id, &store, ctx))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn capability_uninstall(id: String) -> CmdResult<()> {
+    blocking(move || {
+        let store = crate::marketplace::Store::live();
+        crate::marketplace::with_live_ctx(|ctx| crate::marketplace::uninstall(&id, &store, ctx))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn capability_export_lock(project: String) -> CmdResult<String> {
+    blocking(move || {
+        crate::marketplace::export_lock(
+            std::path::Path::new(&project),
+            &crate::marketplace::Store::live(),
+        )
+        .map(|p| p.display().to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn capability_trusted_keys() -> CmdResult<Vec<crate::marketplace::TrustedKey>> {
+    blocking(|| Ok(crate::marketplace::trusted_keys_stored())).await
+}
+
+#[tauri::command]
+pub async fn capability_set_trusted_keys(
+    keys: Vec<crate::marketplace::TrustedKey>,
+) -> CmdResult<()> {
+    blocking(move || {
+        crate::marketplace::set_trusted_keys(&keys)?;
+        let ids: Vec<&str> = keys.iter().map(|k| k.key_id.as_str()).collect();
+        crate::permissions::audit(
+            "capability.trusted_keys",
+            "marketplace",
+            &ids.join(", "),
+            "ok",
+        );
+        Ok(())
+    })
+    .await
+}
+
 /// The global metered budget: limit, period, spend this period and whether the stop is on.
 #[tauri::command]
 pub async fn budget_status() -> CmdResult<crate::budget::Status> {

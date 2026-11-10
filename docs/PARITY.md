@@ -163,6 +163,16 @@ not because code exists.
 | Studio bridge | `hermes/skills-external` (G7), ranked after Hermes native skills | |
 | Duplicates | one group per normalized skill name, precedence Hermes, bridge, Qoder, Claude, local; a copy whose hash differs from the preferred one is marked | merge or hide a copy |
 
+## Capability packs (Phase G)
+
+| Capability | Claude Code plugins | Qoder plugins | Studio |
+|---|---|---|---|
+| Manifest | `.claude-plugin/plugin.json`, unknown fields tolerated | `.qoder-plugin/plugin.json` | `capability.json`, unknown fields rejected, eight-word capability vocabulary |
+| Signature and trust | marketplace trust only | marketplace trust only | Ed25519 over manifest plus content hash; official, verified, community tiers |
+| What a pack may do | whatever its hooks and servers do | same | capped by tier, owner ceiling and the scoped tool policy, granted on a permission sheet and audited |
+| Pinning and rollback | version in the marketplace | version cache | content-addressed store, lockfile with history, one-click rollback, hash mismatch refused |
+| Install from | marketplaces | apphub | a folder or an https or file git URL, offline included |
+
 ## Evaluation and replay (v0.13.0)
 
 | Capability | Hermes CLI | Studio |
