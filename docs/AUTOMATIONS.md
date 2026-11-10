@@ -171,7 +171,8 @@ deliberately boring.
 Per-tool permissions and an audit log already exist per action and per MCP tool. Since Phase G
 the gatekeeper also runs the constitution gate on the pull request's added lines (dashes,
 placeholder tags, hidden Unicode, credentials, docs changed with code) before the reviewer and
-again before the merge, so the laws are checks rather than requests.
+again before the merge, so the laws are checks rather than requests. Law 3 says the same thing
+to the agents: inside a mission they open the pull request and stop, and only Studio merges.
 Secrets move to the OS keychain before any unattended run, because a scheduled job must not read
 API keys from a plain file. Signed builds and an updater matter less for correctness, more for
 trust.
