@@ -555,10 +555,19 @@ this order, one pull request each:
   builds and tests pass. The vault template, this repository's rule files and the generic
   `templates/CONSTITUTION.md` change in one pull request; the global rule files and every other
   fleet repository get the same text from the fleet broadcast afterwards.
-- **G6, capability fabric:** a read-only index of every skill, plugin, agent and MCP server on the
+- **G6, capability fabric (done):** a read-only index of every skill, plugin, agent and MCP server on the
   machine (Hermes, Qoder, Claude Code), with provenance, duplicate groups with a stated precedence
   (Hermes native, then the bridge, then Qoder, then Claude), a compatibility report per skill and
-  a Capabilities view. Nothing in a source store is written.
+  a Capabilities view (Brain group). Nothing in a source store is written. `catalog.rs` reads
+  `SKILL.md` frontmatter, `.qoder-plugin` and `.claude-plugin` manifests, agent and command files
+  inside plugins, and Hermes' plugin install metadata (its plugin folders are not readable, so
+  they are not opened). Every record carries a SHA-256 over its folder, the capabilities it asks
+  for in the closed vocabulary of the trust pipeline (from `allowed-tools`, agent `tools`, bundled
+  scripts, plugin hooks and MCP servers) and compatibility notes (unknown frontmatter fields,
+  referenced `scripts/`, `references/`, `templates/` or `assets/` files that do not exist,
+  absolute paths, hooks). Claude marketplace clones are listed as not installed. The MCP side
+  reads Studio's own MCP catalog until Qoder's registry reader lands (TASK-019). On this machine:
+  947 records, 70 duplicate skill groups.
 - **G8, marketplace core and trust pipeline:** Studio's own `capability.json` manifest with a
   closed capability vocabulary, a content-addressed store with atomic install and rollback, a
   lockfile, trust tiers, a quarantine scan before activation and a permission sheet intersected

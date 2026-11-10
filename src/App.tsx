@@ -57,13 +57,14 @@ import { Projects } from "./views/Projects";
 import { SafetyCenter } from "./views/SafetyCenter";
 import { SetupWizard } from "./views/SetupWizard";
 import { Skills } from "./views/Skills";
+import { Capabilities } from "./views/Capabilities";
 import { Today } from "./views/Today";
 import { UpdateCenter } from "./views/UpdateCenter";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 const ComputerUse = lazy(() => import("./views/ComputerUse").then((m) => ({ default: m.ComputerUse })));
 
-const VIEWS = ["today", "chat", "goals", "projects", "skills", "memory", "help", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
+const VIEWS = ["today", "chat", "goals", "projects", "skills", "capabilities", "memory", "help", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
 type View = (typeof VIEWS)[number];
 const isView = (v: string): v is View => (VIEWS as readonly string[]).includes(v);
 
@@ -105,6 +106,7 @@ const GROUPS: RailGroup[] = [
     tabs: [
       { id: "memory", label: "Memory", hint: "Notes in the vault, how connected they are, and what chats read or wrote" },
       { id: "skills", label: "Skills", hint: "What Hermes can load, plus hub search and install" },
+      { id: "capabilities", label: "Capabilities", hint: "Every skill, plugin, agent and MCP server across Hermes, Qoder and Claude Code, with provenance, duplicates and compatibility (read only)" },
       { id: "constitution", label: "Constitution", hint: "Edit and broadcast the agent constitution, browse shared memory" },
     ],
   },
@@ -478,6 +480,7 @@ function Studio() {
             {view === "computer" && <ComputerUse />}
             {view === "projects" && <Projects onOpenSession={openSessionInChat} onNewSession={newSessionInProject} />}
             {view === "skills" && <Skills onUseSkill={useSkillInChat} />}
+            {view === "capabilities" && <Capabilities />}
             {view === "memory" && <Memory />}
             {view === "help" && <Help doc={helpDoc} />}
           </div>
