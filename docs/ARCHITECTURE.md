@@ -173,6 +173,14 @@ the next scope down. Every change is audited as `tool_policy.set` with the targe
 lists the real hub tools, the registered hub agents and the unarchived projects, and shows per tool
 whether the scope inherits, or sets its own policy.
 
+Callers that must intersect a capability with the policy before acting, such as the capability
+trust pipeline and agent packs, read `permissions::effective_tool_policy(agent, repo, server, tool)`.
+It returns the policy and a readable name for the deciding rule (`repo agentos-studio, server
+github, tool create_pull_request`, `agent qoder, server github, tool create_pull_request`, or
+`agent default, server agentos-hub, tool <tool>`). It and `check_scoped` both resolve through
+`decide_scoped`, so the accessor reports what enforcement will do; it only reads the stored policy
+and never writes or prompts.
+
 ### Unattended profile
 
 A mission worker runs with nobody watching, so it gets less than a session a person started.
@@ -183,10 +191,11 @@ API keys, tokens and any other variable the desktop app inherited never reach a 
 agent authenticates through its own config or the OS keychain.
 
 Safety shows the profile as one row per guarantee with the side that holds it: `enforced` (live in
-this build), `ready` (the helper ships here and takes effect when the Hermes worker calls it, which
-is a REQUEST on the coordination note) and `hermes` (depends on the Hermes runtime, for example
-worktree-only starts, egress rules and `hermes secrets`). The card also lists the allowlist, so the
-rule is visible rather than implied.
+this build) or `hermes` (depends on the Hermes runtime: egress rules and `hermes secrets`). The
+worktree, environment and inside-the-worktree rows are enforced: `bus::unattended_refusal` refuses
+a start without an existing worktree, `bus::worker_env` calls `permissions::unattended_env` to
+rebuild the environment, and it starts the worker in its own worktree. The card also lists the
+allowlist, so the rule is visible rather than implied.
 
 `bus::spawn_worker` is the caller: `env_clear()` plus `bus::worker_env` (the helper above, with
 PATH replaced by `procs::search_path()`), for every headless worker. Starts nobody watches (the

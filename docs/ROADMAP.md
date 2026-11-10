@@ -511,9 +511,8 @@ and 2), per `03_Memory/Phase_D_H_Coordination.md`.
 - **A stricter unattended profile:** a mission worker's environment is rebuilt from an allowlist
   (PATH, temp and profile folders), with the repo slug, `AGENTOS_UNATTENDED=1` and the vault path
   added and every other variable, API keys included, dropped. Safety shows one row per guarantee
-  with the side that holds it: enforced now, ready here for the worker switch, or waiting on
-  Hermes (worktree-only starts, egress rules, `hermes secrets`). The worker switch is a REQUEST on
-  the coordination note.
+  with the side that holds it: enforced here (`bus::worker_env`, `bus::unattended_refusal` and
+  `permissions::unattended_env`) or waiting on Hermes (egress rules, `hermes secrets`).
 - **The worker switch:** `bus::spawn_worker` now clears the child environment and rebuilds it with
   `unattended_env` for every headless worker, sets `AGENTOS_REPO` from the task's project, marks
   starts nobody watches with `AGENTOS_UNATTENDED=1`, and refuses those without an existing
@@ -541,6 +540,13 @@ and 2), per `03_Memory/Phase_D_H_Coordination.md`.
   keeps the stop). Claude Code, Antigravity, Qoder and Hermes on a subscription keep working. The
   digest and its phone line show spend against the global budget and against each active goal's
   budget.
+- **The policy accessor (G8 and G9 dependency):** `permissions::effective_tool_policy(agent, repo,
+  server, tool)` returns the policy that applies to a hub call and a readable name for the rule that
+  decided it. It resolves through `decide_scoped`, the function `check_scoped` enforces with, so a
+  caller that must intersect a requested capability with the policy reads the answer the hub will
+  enforce, without writing or prompting. The unattended rows for worktree, environment and inside
+  the worktree now read `enforced`, because `bus::worker_env` and `bus::unattended_refusal` hold
+  them; egress and secrets still wait on Hermes.
 
 Phase G grows into the capability platform (owner decision of 2026-11-10, bus TASK-018), built in
 this order, one pull request each:
