@@ -121,7 +121,7 @@ the first paint is never competing with a full probe.
 | `github.rs` (new) | Typed wrappers over `gh ... --json` for auth, repos, branches, commits, PRs (diff, checks, review, merge, create), issues (create, comment, close) and Actions runs (logs, rerun). |
 | `permissions.rs` (new) | Per-action policy (`allow`, `ask`, `deny`) enforced in Rust before any sensitive command runs, the append-only audit log, scoped MCP tool policies per agent and per project (repo > agent > global, stored in `kv` under `perm.`), and the unattended worker profile (environment allowlist and the guarantees Safety shows). |
 | `hermes_engine.rs` | Heartbeat, provider switchboard, model discovery, sessions in `state.db`. |
-| `mcp_manager.rs` | MCP registry across four agents, native MCP client, catalog. |
+| `mcp_manager.rs` | MCP registry across four agents, native MCP client, catalog, and `catalog_entries` (metadata-only registry rows for the capability fabric). |
 | `cli_runner.rs` | One-shot command runner (kept for quick actions with captured output). |
 | `vault.rs`, `bus.rs`, `mcp_stdio.rs` | Agent Bus, shared memory and the `agentos-hub` MCP server. `bus.rs` also starts headless workers (Hermes, Claude Code, Antigravity) for the scheduler and the event-driven watcher. |
 | `worktree.rs` | One git worktree and branch per bus mission attempt, excluded locally, removed when the mission ends. |

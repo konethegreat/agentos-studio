@@ -547,6 +547,12 @@ and 2), per `03_Memory/Phase_D_H_Coordination.md`.
   enforce, without writing or prompting. The unattended rows for worktree, environment and inside
   the worktree now read `enforced`, because `bus::worker_env` and `bus::unattended_refusal` hold
   them; egress and secrets still wait on Hermes.
+- **The MCP registry reader (G6 dependency):** `mcp_manager::catalog_entries(vault)` projects the
+  eight catalog entries into `RegistryEntry` rows: id, name, description, transport, package,
+  homepage, license, publisher and trust tier, all `official` for the servers this build ships.
+  Metadata only: no parameter value, environment block or token is copied, so the capability
+  fabric can index servers before any install path exists. `catalog()` keeps returning the rich
+  install spec the MCP and Providers screens use.
 
 Phase G grows into the capability platform (owner decision of 2026-11-10, bus TASK-018), built in
 this order, one pull request each:

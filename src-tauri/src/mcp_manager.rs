@@ -1208,6 +1208,26 @@ pub struct CatalogEntry {
     pub auth: Option<&'static str>,
     pub params: Vec<CatalogParam>,
     pub requires: &'static str,
+    pub package: &'static str,
+    pub homepage: &'static str,
+    pub license: &'static str,
+    pub publisher: &'static str,
+    pub trust_tier: &'static str,
+}
+
+/// A registry row for the capability fabric: metadata only, never a parameter value, an
+/// environment block or a token.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct RegistryEntry {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub transport: String,
+    pub package: String,
+    pub homepage: String,
+    pub license: String,
+    pub publisher: String,
+    pub trust_tier: String,
 }
 
 fn param(
@@ -1251,6 +1271,11 @@ pub fn catalog(vault: &Path) -> Vec<CatalogEntry> {
             auth: None,
             params: vec![],
             requires: "Nothing: it is this app",
+            package: "agentos-studio",
+            homepage: "https://github.com/konethegreat/agentos-studio",
+            license: "MIT",
+            publisher: "AgentOS Studio",
+            trust_tier: "official",
         },
         CatalogEntry {
             id: "notion",
@@ -1262,6 +1287,11 @@ pub fn catalog(vault: &Path) -> Vec<CatalogEntry> {
             auth: Some("oauth"),
             params: vec![],
             requires: "A Notion account (sign-in window opens)",
+            package: "https://mcp.notion.com/mcp",
+            homepage: "https://www.notion.com",
+            license: "Proprietary",
+            publisher: "Notion",
+            trust_tier: "official",
         },
         CatalogEntry {
             id: "github",
@@ -1280,6 +1310,11 @@ pub fn catalog(vault: &Path) -> Vec<CatalogEntry> {
                 true,
             )],
             requires: "Node.js and a GitHub token",
+            package: "@modelcontextprotocol/server-github",
+            homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/github",
+            license: "MIT",
+            publisher: "Model Context Protocol",
+            trust_tier: "official",
         },
         CatalogEntry {
             id: "filesystem",
@@ -1298,6 +1333,11 @@ pub fn catalog(vault: &Path) -> Vec<CatalogEntry> {
                 false,
             )],
             requires: "Node.js",
+            package: "@modelcontextprotocol/server-filesystem",
+            homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+            license: "MIT",
+            publisher: "Model Context Protocol",
+            trust_tier: "official",
         },
         CatalogEntry {
             id: "brave-search",
@@ -1316,6 +1356,11 @@ pub fn catalog(vault: &Path) -> Vec<CatalogEntry> {
                 true,
             )],
             requires: "Node.js and a Brave Search API key",
+            package: "@modelcontextprotocol/server-brave-search",
+            homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/brave-search",
+            license: "MIT",
+            publisher: "Model Context Protocol",
+            trust_tier: "official",
         },
         CatalogEntry {
             id: "postgres",
@@ -1338,6 +1383,11 @@ pub fn catalog(vault: &Path) -> Vec<CatalogEntry> {
                 false,
             )],
             requires: "Node.js and a reachable database",
+            package: "@modelcontextprotocol/server-postgres",
+            homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/postgres",
+            license: "MIT",
+            publisher: "Model Context Protocol",
+            trust_tier: "official",
         },
         CatalogEntry {
             id: "sqlite",
@@ -1356,6 +1406,11 @@ pub fn catalog(vault: &Path) -> Vec<CatalogEntry> {
                 false,
             )],
             requires: "uv (uvx)",
+            package: "mcp-server-sqlite",
+            homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+            license: "MIT",
+            publisher: "Model Context Protocol",
+            trust_tier: "official",
         },
         CatalogEntry {
             id: "playwright",
@@ -1367,8 +1422,33 @@ pub fn catalog(vault: &Path) -> Vec<CatalogEntry> {
             auth: None,
             params: vec![],
             requires: "Node.js",
+            package: "@playwright/mcp",
+            homepage: "https://github.com/microsoft/playwright-mcp",
+            license: "Apache-2.0",
+            publisher: "Microsoft",
+            trust_tier: "official",
         },
     ]
+}
+
+/// Project the catalog into registry rows for the capability fabric. Trust tiers start with
+/// `official` for the servers this build ships; a future source can add `verified` or
+/// `community` rows through the same struct.
+pub fn catalog_entries(vault: &Path) -> Vec<RegistryEntry> {
+    catalog(vault)
+        .into_iter()
+        .map(|e| RegistryEntry {
+            id: e.id.to_string(),
+            name: e.name.to_string(),
+            description: e.description.to_string(),
+            transport: e.transport.to_string(),
+            package: e.package.to_string(),
+            homepage: e.homepage.to_string(),
+            license: e.license.to_string(),
+            publisher: e.publisher.to_string(),
+            trust_tier: e.trust_tier.to_string(),
+        })
+        .collect()
 }
 
 /// Turn a catalog entry plus user-supplied values into a concrete server spec.
@@ -1690,6 +1770,71 @@ mod tests {
         );
         assert!(!bad.ok);
         assert!(bad.error.unwrap().contains("refused"));
+    }
+
+    #[test]
+    fn catalog_entries_are_the_eight_servers_without_secrets() {
+        let entries = catalog_entries(Path::new("C:/vault"));
+        let got: Vec<(&str, &str)> = entries
+            .iter()
+            .map(|e| (e.id.as_str(), e.transport.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("agentos-hub", "stdio"),
+                ("notion", "http"),
+                ("github", "stdio"),
+                ("filesystem", "stdio"),
+                ("brave-search", "stdio"),
+                ("postgres", "stdio"),
+                ("sqlite", "stdio"),
+                ("playwright", "stdio"),
+            ]
+        );
+        for e in &entries {
+            assert_eq!(e.trust_tier, "official", "{}", e.id);
+            for (field, value) in [
+                ("name", &e.name),
+                ("description", &e.description),
+                ("package", &e.package),
+                ("homepage", &e.homepage),
+                ("license", &e.license),
+                ("publisher", &e.publisher),
+            ] {
+                assert!(!value.trim().is_empty(), "{} has an empty {field}", e.id);
+            }
+        }
+
+        let text = serde_json::to_string(&entries).unwrap();
+        for needle in ["ghp_", "BSA", "postgresql://", "Bearer ", "sk-", "TOKEN="] {
+            assert!(!text.contains(needle), "the registry carries {needle}");
+        }
+        let keys: std::collections::BTreeSet<String> = serde_json::to_value(&entries[0])
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        let want: std::collections::BTreeSet<String> = [
+            "id",
+            "name",
+            "description",
+            "transport",
+            "package",
+            "homepage",
+            "license",
+            "publisher",
+            "trust_tier",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        assert_eq!(
+            keys, want,
+            "the registry exposes metadata only, never parameters"
+        );
     }
 
     #[test]
