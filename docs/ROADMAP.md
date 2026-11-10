@@ -547,8 +547,14 @@ this order, one pull request each:
 
 - **G3, budgets with a hard stop:** a global and per-goal metered budget that stops new work when
   passed, with spend against budget in the digest.
-- **G5, one merge policy:** agents open pull requests and Studio merges; the constitution template's
-  self-merge law is replaced and broadcast to every repository.
+- **G5, one merge policy (done):** Law 3 of the constitution is now "Pull requests, one merge
+  policy": agents open pull requests and AgentOS Studio merges them. A mission's agent never
+  merges its own pull request; Studio runs the constitution gate, a different agent reviews, and
+  Studio squash merges when the review approves, CI is green and the autonomy level allows it.
+  Outside a mission an agent merges only when the owner directs that session to, after the
+  builds and tests pass. The vault template, this repository's rule files and the generic
+  `templates/CONSTITUTION.md` change in one pull request; the global rule files and every other
+  fleet repository get the same text from the fleet broadcast afterwards.
 - **G6, capability fabric:** a read-only index of every skill, plugin, agent and MCP server on the
   machine (Hermes, Qoder, Claude Code), with provenance, duplicate groups with a stated precedence
   (Hermes native, then the bridge, then Qoder, then Claude), a compatibility report per skill and
