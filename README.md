@@ -444,7 +444,7 @@ src-tauri/src/
   main.rs                 GUI by default, MCP server with --mcp-stdio, memory quality with --memory-quality
   hermes_engine.rs        Heartbeat, provider switchboard, model discovery, state.db sessions
   chat_stream.rs          Streaming chat turns for Hermes and Claude Code, event parsers, Apply
-  mcp_manager.rs          MCP registry across four agents, native MCP client, catalog
+  mcp_manager.rs          MCP registry across four agents, native MCP client, catalog, catalog_entries
   cli_runner.rs           One-shot command runner
   pty.rs                  Real terminals (portable-pty) with replayable scrollback
   updates.rs              Version checks, changelogs, backups, updates and rollback
