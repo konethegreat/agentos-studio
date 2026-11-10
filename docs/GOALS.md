@@ -123,6 +123,14 @@ Markdown and JSON that works without Studio. Files Studio wrote carry
 `generated_by: agentos-studio`; when an id is handed out again after a cleanup, generated notes
 that no longer belong to the goal are removed and any other file in the folder is left alone.
 
+## Budgets
+
+Three ceilings, each on metered spend only (flat subscriptions never count): a mission's budget
+stops that mission, a goal's budget pauses the goal and asks, and the global budget in Mission
+Control (per day, week or month, read from what Hermes records for every session) stops all
+metered work at once and asks once per period. The digest shows spend against the global budget
+and against each active goal's budget.
+
 ## Digest and fleet pause
 
 - **Digest**, morning and evening (kv `digest.times`, default `07:30,18:00`): what finished, what

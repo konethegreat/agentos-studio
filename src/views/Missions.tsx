@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, ClipboardCheck, GitMerge, Play, Plus, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorText, type AutomationStatus, type Mission } from "../lib/api";
+import { api, errorText, type AutomationStatus, type BudgetStatus, type Mission } from "../lib/api";
 import { useToast } from "../components/Toasts";
 import { Guide, useReportGuides } from "../components/Guides";
 import { missionGuides } from "../lib/guides";
@@ -28,6 +28,8 @@ export function Missions({ repos }: { repos: string[] }) {
   const [busy, setBusy] = useState(false);
   const [auto, setAuto] = useState<AutomationStatus | null>(null);
   const [ideWait, setIdeWait] = useState("");
+  const [budget, setBudgetState] = useState<BudgetStatus | null>(null);
+  const [budgetLimit, setBudgetLimit] = useState("");
   const [allowMerge, setAllowMerge] = useState(false);
   const [router, setRouter] = useState<{ role: string; pick: { provider: string; model: string; score: number; reason: string } | null; decline: string | null }[]>([]);
   const [providers, setProviders] = useState<{ id: string; label: string; models: string[]; active: boolean }[]>([]);
@@ -80,6 +82,13 @@ export function Missions({ repos }: { repos: string[] }) {
         setIdeWait(String(a.ide_wait_minutes));
       })
       .catch(() => undefined);
+    void api
+      .budgetStatus()
+      .then((b) => {
+        setBudgetState(b);
+        setBudgetLimit(b.limit_usd > 0 ? b.limit_usd.toFixed(2) : "");
+      })
+      .catch(() => undefined);
     void api.modelCatalog().then((c) => setProviders(c.providers)).catch(() => undefined);
     void api.routerVerdicts().then(setRouter).catch(() => undefined);
     void invoke<boolean>("router_auto").then(setRouterAuto).catch(() => undefined);
@@ -117,6 +126,31 @@ export function Missions({ repos }: { repos: string[] }) {
       setAuto(next);
       setIdeWait(String(next.ide_wait_minutes));
       toast("ok", `Qoder and other IDE agents now get ${next.ide_wait_minutes} minutes before a mission is reassigned`);
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }
+
+  // Saved on blur or a period change, only when something changed; empty or 0 means no limit.
+  async function saveBudget(period?: string) {
+    if (!budget) return;
+    const n = budgetLimit.trim() === "" ? 0 : Math.round(Number(budgetLimit) * 100) / 100;
+    const p = period ?? budget.period;
+    if (!Number.isFinite(n) || n < 0) {
+      setBudgetLimit(budget.limit_usd > 0 ? budget.limit_usd.toFixed(2) : "");
+      return;
+    }
+    if (n === budget.limit_usd && p === budget.period) return;
+    try {
+      const next = await api.setBudget(n, p);
+      setBudgetState(next);
+      setBudgetLimit(next.limit_usd > 0 ? next.limit_usd.toFixed(2) : "");
+      toast(
+        "ok",
+        next.limit_usd > 0
+          ? `Global metered budget: $${next.limit_usd.toFixed(2)} per ${next.period}`
+          : "No global metered budget: goal and mission budgets still apply",
+      );
     } catch (e) {
       toast("error", errorText(e));
     }
@@ -332,6 +366,39 @@ export function Missions({ repos }: { repos: string[] }) {
           />
           min
         </label>
+        {budget && (
+          <label
+            className="flex items-center gap-1.5 text-slate-400"
+            title="One ceiling on metered spend (OpenRouter and other paid API keys) across every Hermes session, read from Hermes. When it is reached, metered missions stop and do not start; Claude Code, Antigravity and subscriptions keep working. You get one question per period to raise it. Empty means no limit."
+          >
+            Metered budget $
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={budgetLimit}
+              placeholder="none"
+              onChange={(e) => setBudgetLimit(e.target.value)}
+              onBlur={() => void saveBudget()}
+              aria-label="Global metered budget in dollars"
+              className="h-6 w-16 rounded-md border border-line bg-card px-1.5 text-label text-slate-200 outline-none focus:border-emerald-500/50"
+            />
+            per
+            <select
+              value={budget.period}
+              onChange={(e) => void saveBudget(e.target.value)}
+              aria-label="Budget period"
+              className="h-6 rounded-md border border-line bg-card px-1 text-label text-slate-200 outline-none"
+            >
+              <option value="day">day</option>
+              <option value="week">week</option>
+              <option value="month">month</option>
+            </select>
+            <span className={budget.exhausted ? "text-rose-300" : "text-slate-500"}>
+              ${budget.spent_usd.toFixed(2)} spent{budget.exhausted ? ", metered work stopped" : ""}
+            </span>
+          </label>
+        )}
         {router.length > 0 && (
           <span>
             <span className="text-slate-400">{routerAuto ? "Router:" : "Router (shadow, changes nothing):"}</span>{" "}

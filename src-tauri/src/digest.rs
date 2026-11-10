@@ -94,6 +94,33 @@ pub struct Digest {
     pub waiting: Vec<String>,
     pub flaky: Vec<String>,
     pub late: Vec<String>,
+    /// Spend against budget: the global metered budget, then each active goal with a budget.
+    pub budget: Vec<String>,
+}
+
+/// One line per budget: global first, then each goal that is still in flight. Pure.
+pub fn budget_lines(global: &crate::budget::Status, goals: &[(String, f64, f64)]) -> Vec<String> {
+    let mut out = Vec::new();
+    if global.limit_usd > 0.0 {
+        out.push(format!(
+            "${:.2} of the ${:.2} global metered budget this {}{}",
+            global.spent_usd,
+            global.limit_usd,
+            global.period,
+            if global.exhausted {
+                ": spent, metered missions are stopped"
+            } else {
+                ""
+            }
+        ));
+    }
+    for (id, spent, budget) in goals {
+        out.push(format!(
+            "goal {id}: ${spent:.2} of its ${budget:.2} budget{}",
+            if spent > budget { ", over" } else { "" }
+        ));
+    }
+    out
 }
 
 /// What happened since `since`, and what stands now.
@@ -133,7 +160,12 @@ pub fn build(title: &str, since: i64, today: &str) -> Digest {
                 .push(format!("{} {} ({}): {first}", m.id, m.agent, m.repo));
         }
     }
+    let mut goal_budgets = Vec::new();
     for g in crate::goals::list(200).unwrap_or_default() {
+        if g.budget_usd > 0.0 && !matches!(g.status.as_str(), "done" | "failed") {
+            let ms = crate::goals::missions_of(&g.id).unwrap_or_default();
+            goal_budgets.push((g.id.clone(), crate::goals::spent(&ms), g.budget_usd));
+        }
         if g.updated_at >= since && (g.status == "done" || g.status == "failed") {
             d.finished
                 .push(format!("goal {} {}: {}", g.id, g.status, g.outcome));
@@ -157,6 +189,7 @@ pub fn build(title: &str, since: i64, today: &str) -> Digest {
             e.options.join(" or ")
         ));
     }
+    d.budget = budget_lines(&crate::budget::status(), &goal_budgets);
     for e in crate::agent_log::recent(500).unwrap_or_default() {
         if e.at >= since && e.summary.starts_with("flaky test:") {
             d.flaky.push(format!(
@@ -190,9 +223,13 @@ pub fn render(d: &Digest) -> String {
         "Nothing finished since the last digest.",
     );
     s.push_str(&format!(
-        "## Spent\n\n- ${:.2} metered since the last digest (flat subscriptions are not counted).\n\n",
+        "## Spent\n\n- ${:.2} metered since the last digest (flat subscriptions are not counted).\n",
         d.spent_usd
     ));
+    for b in &d.budget {
+        s.push_str(&format!("- {b}\n"));
+    }
+    s.push('\n');
     section(&mut s, "Running", &d.running, "Nothing running.");
     if !d.flaky.is_empty() {
         section(&mut s, "Flaky tests", &d.flaky, "");
@@ -212,6 +249,9 @@ pub fn phone_text(d: &Digest) -> String {
         d.running.len(),
         d.spent_usd
     );
+    if let Some(b) = d.budget.first() {
+        s.push_str(&format!(" Budget: {b}."));
+    }
     if d.waiting.is_empty() {
         s.push_str(" Nothing waits on you.");
     } else {
@@ -389,8 +429,15 @@ mod tests {
             waiting: vec!["E-1: Merge M-002? (merge or skip)".into()],
             flaky: vec![],
             late: vec![],
+            budget: budget_lines(
+                &crate::budget::evaluate(10.0, "month", 0, 12.5),
+                &[("G-001".into(), 1.5, 1.0)],
+            ),
         };
         let r = render(&d);
+        assert!(r.contains("- $12.50 of the $10.00 global metered budget this month: spent, metered missions are stopped"));
+        assert!(r.contains("- goal G-001: $1.50 of its $1.00 budget, over"));
+        assert!(budget_lines(&crate::budget::evaluate(0.0, "month", 0, 3.0), &[]).is_empty());
         assert!(r.find("## Waiting on you").unwrap() < r.find("## Finished").unwrap());
         assert!(r.contains("- E-1: Merge M-002? (merge or skip)"));
         assert!(r.contains("- Nothing running."));

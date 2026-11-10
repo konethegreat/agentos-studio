@@ -769,6 +769,7 @@ export interface HubSkill {
 
 /** Scheduler settings. `ide_wait_minutes`: how long an IDE-only agent has to pick up its mission. */
 export type AutomationStatus = { enabled: boolean; max_concurrent: number; ide_wait_minutes: number };
+export type BudgetStatus = { limit_usd: number; period: "day" | "week" | "month"; since: number; spent_usd: number; exhausted: boolean };
 
 export interface ScopedToolPolicy {
   scope: "agent" | "repo";
@@ -980,6 +981,8 @@ export const api = {
     ),
   notionPullInbox: () => invoke<number>("notion_pull_inbox"),
   automationStatus: () => invoke<AutomationStatus>("automation_status"),
+  budgetStatus: () => invoke<BudgetStatus>("budget_status"),
+  setBudget: (limitUsd: number, period: string) => invoke<BudgetStatus>("set_budget", { limitUsd, period }),
   setAutomation: (enabled: boolean, maxConcurrent?: number, ideWaitMinutes?: number) =>
     invoke<AutomationStatus>("set_automation", {
       enabled,

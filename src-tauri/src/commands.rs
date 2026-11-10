@@ -974,6 +974,17 @@ pub async fn set_automation(
     .await
 }
 
+/// The global metered budget: limit, period, spend this period and whether the stop is on.
+#[tauri::command]
+pub async fn budget_status() -> CmdResult<crate::budget::Status> {
+    blocking(|| Ok(crate::budget::status())).await
+}
+
+#[tauri::command]
+pub async fn set_budget(limit_usd: f64, period: String) -> CmdResult<crate::budget::Status> {
+    blocking(move || crate::budget::set(limit_usd, &period)).await
+}
+
 #[tauri::command]
 pub async fn automation_tick(
     state: State<'_, AppState>,

@@ -531,6 +531,16 @@ and 2), per `03_Memory/Phase_D_H_Coordination.md`.
   reviewer `constitution-gate`, so a second reject still escalates), and again in the gatekeeper
   before any merge, on the diff as it is then. A diff too large to read in full does not pass.
   The line scanner is the core of the capability quarantine below.
+- **A global metered budget with a hard stop (G3).** `budget.rs`: one limit per day, week or month
+  (kv `budget.global_usd`, `budget.period`, set in Mission Control next to the other Automations
+  settings) over the metered spend Hermes records in `state.db` for every session started in the
+  period, chats included, subscriptions excluded. Once spent, the stop is hard for metered work
+  only: no metered mission starts, a running metered Hermes mission is halted (its kanban task
+  blocked and its worker's claim released) and blocked with the reason, and the owner gets one
+  question per period (raise doubles the limit and releases what the stop blocked; the safe answer
+  keeps the stop). Claude Code, Antigravity, Qoder and Hermes on a subscription keep working. The
+  digest and its phone line show spend against the global budget and against each active goal's
+  budget.
 
 Phase G grows into the capability platform (owner decision of 2026-11-10, bus TASK-018), built in
 this order, one pull request each:

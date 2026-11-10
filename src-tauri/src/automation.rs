@@ -163,6 +163,8 @@ pub struct TickReport {
     pub fix_missions: Vec<String>,
     /// The fleet pause switch is on: nothing new starts or merges this pass.
     pub paused: bool,
+    /// The global metered budget is spent: metered missions neither start nor keep running.
+    pub budget_stopped: bool,
     pub kept_awake: bool,
     pub error: Option<String>,
 }
@@ -187,6 +189,16 @@ pub fn tick(v: &Vault) -> TickReport {
             return report;
         }
     };
+    // The global metered budget: once it is spent, metered work stops and subscriptions go on.
+    let budget = crate::budget::status();
+    report.budget_stopped = budget.exhausted;
+    let hermes_provider = if budget.exhausted {
+        crate::agents::hermes_provider()
+    } else {
+        String::new()
+    };
+    let metered_stop =
+        |m: &Mission| budget.exhausted && crate::budget::would_meter(m, &hermes_provider);
 
     // 1. Finished work goes to the reviewer, never straight to done.
     for m in all.iter().filter(|m| m.status == "running") {
@@ -216,7 +228,7 @@ pub fn tick(v: &Vault) -> TickReport {
             continue;
         }
         if crate::kanban::is_kanban(Some(task)) {
-            match advance_kanban(m, task) {
+            match advance_kanban(m, task, metered_stop(m)) {
                 Ok(Advance::Review) => report.moved_to_review.push(m.id.clone()),
                 Ok(Advance::Stuck(note)) => report.stuck.push(note),
                 Ok(Advance::Nothing) => {}
@@ -333,6 +345,7 @@ pub fn tick(v: &Vault) -> TickReport {
             .filter(|m| m.status == "queued")
             .filter(|m| crate::assign::deferred_until(&m.id).map_or(true, |t| t <= now))
             .filter(|m| !crate::goal_loop::held(&m.id))
+            .filter(|m| !metered_stop(m))
             .filter(|m| match crate::goals::goal_of(&m.id) {
                 None => report.enabled,
                 Some(gid) => {
@@ -382,12 +395,20 @@ enum Advance {
 /// A running Hermes mission: read its kanban task. Finished work is measured (metered spend of
 /// every Hermes session it used), checked with `hermes verify`, and sent to Studio's reviewer;
 /// kanban's own review pass is never taken as approval. A quiet worker is retried, then blocked.
-fn advance_kanban(m: &Mission, task: &str) -> anyhow::Result<Advance> {
+fn advance_kanban(m: &Mission, task: &str, global_stop: bool) -> anyhow::Result<Advance> {
     use crate::kanban::{self, Next};
     let view = kanban::show(task)?;
     let spent = crate::usage::metered_cost(&kanban::session_ids(&view));
     match kanban::next(&view) {
         Next::Wait => {
+            if global_stop {
+                // Stop the Hermes worker too, not only Studio's record of it.
+                if let Err(e) = kanban::halt(task, crate::budget::STOP_REASON) {
+                    eprintln!("budget: could not halt {task}: {e:#}");
+                }
+                missions::block(&m.id, crate::budget::STOP_REASON, false)?;
+                return Ok(Advance::Nothing);
+            }
             if over_budget(m, spent) {
                 missions::block(
                     &m.id,
