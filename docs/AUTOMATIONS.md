@@ -168,7 +168,10 @@ deliberately boring.
 
 ## What must exist before a mission can merge anything
 
-Per-tool permissions and an audit log already exist per action; they need to become per MCP tool.
+Per-tool permissions and an audit log already exist per action and per MCP tool. Since Phase G
+the gatekeeper also runs the constitution gate on the pull request's added lines (dashes,
+placeholder tags, hidden Unicode, credentials, docs changed with code) before the reviewer and
+again before the merge, so the laws are checks rather than requests.
 Secrets move to the OS keychain before any unattended run, because a scheduled job must not read
 API keys from a plain file. Signed builds and an updater matter less for correctness, more for
 trust.

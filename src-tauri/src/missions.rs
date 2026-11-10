@@ -296,6 +296,7 @@ pub fn bus_instructions(
         m.role,
         if m.provider.trim().is_empty() { "default" } else { m.provider.trim() }
     );
+    b.push_str(crate::constitution_gate::WORKER_RULES);
     if m.review_verdict.as_deref() == Some("reject") {
         if let Some(note) = m.review_note.as_deref().filter(|n| !n.trim().is_empty()) {
             b.push_str(&format!(
@@ -742,6 +743,10 @@ Opened PR https://github.com/o/sandbox/pull/7 (the only PR for this branch). Not
             let mut m = make();
             let body = bus_instructions(&m, d.path(), None, "");
             assert!(body.contains("Acceptance criteria:"));
+            assert!(
+                body.contains("constitution gate"),
+                "the worker is told the gate's rules"
+            );
             assert!(body.contains(&m.id));
             assert!(
                 !body.contains("Conventions from earlier reviews"),

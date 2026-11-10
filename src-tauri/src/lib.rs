@@ -18,6 +18,7 @@ pub mod completion;
 pub mod computer_use;
 pub mod connect;
 pub mod constitution;
+pub mod constitution_gate;
 pub mod council;
 pub mod digest;
 pub mod escalation;

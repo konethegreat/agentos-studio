@@ -145,6 +145,8 @@ pub fn render(
     if !p.brief.trim().is_empty() {
         b.push_str(&format!("\n## Project brief\n{}\n", p.brief.trim()));
     }
+    b.push_str(crate::constitution_gate::WORKER_RULES.trim_start());
+    b.push('\n');
     b.push_str(&format!(
         "\nMission: {}. Work in the worktree below, on its branch. Open or update the pull request with gh and put its URL in your complete_task summary. Do not merge: AgentOS Studio reviews and merges.\n\nRepository: {}",
         p.mission_id,
