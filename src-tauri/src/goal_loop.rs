@@ -125,6 +125,12 @@ pub fn pass(v: &Vault, automation_on: bool) -> Pass {
             p.errors.push(format!("{}: {e:#}", g.id));
         }
     }
+    // The global metered budget asks once per period, like a goal's.
+    match crate::budget::step(&crate::budget::status()) {
+        Ok(Some(id)) if !p.escalated.contains(&id) => p.escalated.push(id),
+        Ok(_) => {}
+        Err(e) => p.errors.push(format!("global budget: {e:#}")),
+    }
 
     if paused {
         return p;
@@ -561,6 +567,11 @@ fn apply(v: &Vault, e: &Escalation) -> Result<()> {
                 crate::stuck::reset(m);
                 crate::review_agent::clear_auto(m);
             }
+            Ok(())
+        }
+        ("budget", "raise") if e.goal_id.is_none() && e.mission_id.is_none() => {
+            crate::budget::raise()?;
+            crate::budget::release_stopped(&why)?;
             Ok(())
         }
         ("budget", "raise") => {

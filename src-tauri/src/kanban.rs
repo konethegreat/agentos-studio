@@ -290,6 +290,28 @@ pub fn reclaim(task_id: &str, reason: &str) -> Result<()> {
     .map(|_| ())
 }
 
+/// Stop a task for good until a person releases it: block it (a blocked task is never dispatched)
+/// and then release the worker's claim. Used by the global budget's hard stop.
+pub fn halt(task_id: &str, reason: &str) -> Result<()> {
+    let block = || {
+        hermes(&board_args(&[
+            "block",
+            strip(task_id),
+            "--kind",
+            "needs_input",
+            reason,
+        ]))
+    };
+    if block().is_ok() {
+        let _ = reclaim(task_id, reason);
+        return Ok(());
+    }
+    // Some states refuse a block while a worker holds the claim: release it, then block the
+    // task while it is ready, before the dispatcher's next pass.
+    reclaim(task_id, reason)?;
+    block().map(|_| ())
+}
+
 /// One dispatcher pass on the board, for a ready task nobody has picked up.
 /// Close a kanban task Studio no longer follows (its mission was handed to another agent).
 pub fn complete(task_id: &str, summary: &str) -> Result<()> {
