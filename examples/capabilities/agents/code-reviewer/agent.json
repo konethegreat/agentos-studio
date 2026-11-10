@@ -1,0 +1,30 @@
+{
+  "persona": "PERSONA.md",
+  "tools": [
+    "read",
+    "shell",
+    "todo"
+  ],
+  "disallowed_tools": [
+    "edit",
+    "web",
+    "browser",
+    "delegate"
+  ],
+  "model_policy": [
+    "repo-routing",
+    "router",
+    "agent-default"
+  ],
+  "permission_mode": "plan",
+  "guardrails": [
+    "Never push, merge, approve on GitHub or edit files; your verdict goes in your summary.",
+    "Only run the commands the repository allowlist permits, such as its tests and linters."
+  ],
+  "skills": [],
+  "agents": [
+    "claude-code",
+    "hermes"
+  ],
+  "unattended": true
+}

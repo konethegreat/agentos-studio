@@ -3,6 +3,7 @@
 pub mod acp;
 pub mod acp_host;
 pub mod agent_log;
+pub mod agent_packs;
 pub mod agents;
 pub mod ask;
 pub mod assign;
@@ -436,6 +437,7 @@ pub fn run_gui() {
             commands::capability_export_lock,
             commands::capability_trusted_keys,
             commands::capability_set_trusted_keys,
+            commands::agent_packs_installed,
             commands::bridge_status,
             commands::bridge_check,
             commands::bridge_add,

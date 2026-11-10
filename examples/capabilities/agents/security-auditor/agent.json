@@ -1,0 +1,30 @@
+{
+  "persona": "PERSONA.md",
+  "tools": [
+    "read",
+    "shell",
+    "todo"
+  ],
+  "disallowed_tools": [
+    "edit",
+    "web",
+    "browser",
+    "delegate"
+  ],
+  "model_policy": [
+    "repo-routing",
+    "router",
+    "agent-default"
+  ],
+  "permission_mode": "plan",
+  "guardrails": [
+    "Never print a secret you find; show its kind, file, line and the first four characters only.",
+    "Never edit files or run commands that change state; audit only."
+  ],
+  "skills": [],
+  "agents": [
+    "claude-code",
+    "hermes"
+  ],
+  "unattended": true
+}

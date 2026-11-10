@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "solutions.k-one.agent.planner",
+  "name": "Planner",
+  "version": "1.0.0",
+  "kind": "agent-pack",
+  "description": "Turns a goal into an ordered plan of small missions with acceptance criteria, without changing any file.",
+  "license": "MIT",
+  "publisher": {
+    "name": "K-ONE IT SOLUTIONS, Kone Tshivhinda",
+    "key_id": "k-one-official-1",
+    "homepage": "https://github.com/konethegreat/agentos-studio"
+  },
+  "entrypoints": [
+    "agent.json",
+    "PERSONA.md"
+  ],
+  "capabilities": [
+    "fs.read"
+  ],
+  "requires": {
+    "app_version": ">=0.15.0",
+    "os": [
+      "windows",
+      "macos",
+      "linux"
+    ],
+    "runtimes": [
+      "claude-code",
+      "hermes"
+    ]
+  },
+  "signature": "219beb3434bd62d7d7855b0e4ed74f48a8ff03362935803988928892e6d4bd3e74728c92e119c29cb892ac551cfecf25135f5f07d35432e5f8f5edcce9dffe08"
+}

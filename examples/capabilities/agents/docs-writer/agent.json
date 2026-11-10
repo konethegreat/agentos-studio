@@ -1,0 +1,31 @@
+{
+  "persona": "PERSONA.md",
+  "tools": [
+    "read",
+    "edit",
+    "todo",
+    "skills"
+  ],
+  "disallowed_tools": [
+    "shell",
+    "web",
+    "browser",
+    "delegate"
+  ],
+  "model_policy": [
+    "repo-routing",
+    "router",
+    "agent-default"
+  ],
+  "permission_mode": "edit",
+  "guardrails": [
+    "Only create or edit Markdown files (.md); never change source code, configuration or lockfiles.",
+    "No em dashes or en dashes; use hyphens, colons or periods."
+  ],
+  "skills": [],
+  "agents": [
+    "claude-code",
+    "hermes"
+  ],
+  "unattended": true
+}

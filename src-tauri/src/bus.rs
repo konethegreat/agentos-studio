@@ -378,6 +378,33 @@ pub fn claude_args(allowed: &[String], model: Option<&str>) -> Vec<String> {
     a
 }
 
+/// `claude -p` arguments under an agent pack's ceiling: its permission mode, only the allowlist
+/// entries the ceiling kept, and every tool family it dropped denied outright. Pure.
+pub fn claude_pack_args(c: &crate::agent_packs::Ceiling, model: Option<&str>) -> Vec<String> {
+    let mut a: Vec<String> = [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-mode",
+    ]
+    .map(String::from)
+    .to_vec();
+    a.push(c.claude_mode.clone());
+    if let Some(m) = model.filter(|m| !m.trim().is_empty()) {
+        a.extend(["--model".into(), m.trim().into()]);
+    }
+    if !c.claude_allowed.is_empty() {
+        a.push("--allowedTools".into());
+        a.extend(c.claude_allowed.iter().cloned());
+    }
+    if !c.claude_disallowed.is_empty() {
+        a.push("--disallowedTools".into());
+        a.extend(c.claude_disallowed.iter().cloned());
+    }
+    a
+}
+
 /// The app handle and worker table, so the scheduler thread can start workers like Run now does.
 type Host = (AppHandle, Arc<Mutex<HashMap<String, WorkerInfo>>>);
 static HOST: std::sync::OnceLock<Host> = std::sync::OnceLock::new();
@@ -567,38 +594,62 @@ pub fn spawn_worker(
             "{task_id} has no Repository line naming an existing folder, so no worker was started. Dispatch it with a repository."
         )
     })?;
-    let prompt = worker_prompt(task_id, agent, &task.body);
+    let base_claude = || {
+        let extra = repo_from_body(&task.body)
+            .map(|r| crate::routing::allowed_tools(&r))
+            .unwrap_or_default();
+        crate::routing::claude_allowed_tools(&extra)
+    };
+    // An agent pack narrows the worker: its persona first, then only the tools its ceiling keeps.
+    let pack = match line_value(&task.body, "Agent pack") {
+        Some(id) => Some(crate::agent_packs::for_worker(
+            &id,
+            agent,
+            &task.project,
+            &base_claude(),
+            unattended,
+        )?),
+        None => None,
+    };
+    let prompt = match &pack {
+        Some(p) => format!(
+            "{}{}",
+            p.preamble,
+            worker_prompt(task_id, agent, &task.body)
+        ),
+        None => worker_prompt(task_id, agent, &task.body),
+    };
     fs::create_dir_all(vault.worker_logs())?;
     let log_path = vault.worker_logs().join(format!("{task_id}.log"));
     let (exe_name, args, stdin_text): (&str, Vec<String>, Option<String>) = match agent {
         "hermes" => {
             let qf = vault.worker_logs().join(format!("{task_id}.prompt.md"));
             fs::write(&qf, &prompt)?;
-            (
-                "hermes",
-                vec![
-                    "chat".into(),
-                    "-Q".into(),
-                    "--oneshot".into(),
-                    "--max-turns".into(),
-                    "60".into(),
-                    "--query-file".into(),
-                    qf.display().to_string(),
-                ],
-                None,
-            )
+            let mut a: Vec<String> = vec![
+                "chat".into(),
+                "-Q".into(),
+                "--oneshot".into(),
+                "--max-turns".into(),
+                "60".into(),
+                "--query-file".into(),
+                qf.display().to_string(),
+            ];
+            if let Some(p) = &pack {
+                a.extend(["-t".into(), p.ceiling.hermes_toolsets.join(",")]);
+            }
+            ("hermes", a, None)
         }
         "claude-code" => {
             // The repository's committed allowlist, read from the main checkout.
-            let extra = repo_from_body(&task.body)
-                .map(|r| crate::routing::allowed_tools(&r))
-                .unwrap_or_default();
-            let allowed = crate::routing::claude_allowed_tools(&extra);
-            (
-                "claude",
-                claude_args(&allowed, model_from_body(&task.body).as_deref()),
-                Some(prompt.clone()),
-            )
+            let model = model_from_body(&task.body);
+            let args = match &pack {
+                Some(p) => claude_pack_args(&p.ceiling, model.as_deref()),
+                None => claude_args(&base_claude(), model.as_deref()),
+            };
+            ("claude", args, Some(prompt.clone()))
+        }
+        "antigravity" if pack.is_some() => {
+            bail!("agent packs run on claude-code or hermes; Antigravity cannot apply a pack's ceiling")
         }
         "antigravity" => {
             let extra = repo_from_body(&task.body)
@@ -1145,5 +1196,36 @@ mod tests {
         assert_eq!(repo_from_body(&body).unwrap(), d.path());
         assert!(repo_from_body("Repository: Z:/does/not/exist").is_none());
         assert!(repo_from_body("no repository line").is_none());
+    }
+
+    #[test]
+    fn pack_args_apply_the_ceiling() {
+        let spec = crate::agent_packs::parse_spec(
+            r#"{"persona":"P.md","tools":["read","shell"],"disallowed_tools":["edit"],"model_policy":["agent-default"],"permission_mode":"plan","agents":["claude-code"],"unattended":true}"#,
+        )
+        .unwrap();
+        let base: Vec<String> = ["Read", "Edit", "Bash(npm test)"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let c = crate::agent_packs::ceiling(
+            &spec,
+            "claude-code",
+            &["fs.read".to_string(), "shell.exec".to_string()],
+            &base,
+            &|_, _| "allow".to_string(),
+            true,
+        );
+        let a = claude_pack_args(&c, None);
+        let at = |flag: &str| a.iter().position(|x| x == flag).unwrap();
+        assert_eq!(a[at("--permission-mode") + 1], "plan");
+        let allowed: Vec<&String> = a[at("--allowedTools") + 1..at("--disallowedTools")]
+            .iter()
+            .collect();
+        assert_eq!(allowed, vec!["Read", "Bash(npm test)"]);
+        assert!(a[at("--disallowedTools")..].contains(&"Edit".to_string()));
+        assert!(!a
+            .iter()
+            .any(|x| x == "bypassPermissions" || x == "--dangerously-skip-permissions"));
     }
 }

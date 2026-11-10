@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "solutions.k-one.agent.code-reviewer",
+  "name": "Code reviewer",
+  "version": "1.0.0",
+  "kind": "agent-pack",
+  "description": "Reviews a pull request against its acceptance criteria and the repository conventions, and returns approve or reject with reasons.",
+  "license": "MIT",
+  "publisher": {
+    "name": "K-ONE IT SOLUTIONS, Kone Tshivhinda",
+    "key_id": "k-one-official-1",
+    "homepage": "https://github.com/konethegreat/agentos-studio"
+  },
+  "entrypoints": [
+    "agent.json",
+    "PERSONA.md"
+  ],
+  "capabilities": [
+    "fs.read",
+    "shell.exec"
+  ],
+  "requires": {
+    "app_version": ">=0.15.0",
+    "os": [
+      "windows",
+      "macos",
+      "linux"
+    ],
+    "runtimes": [
+      "claude-code",
+      "hermes"
+    ]
+  },
+  "signature": "9a92e062b54f0502a5a95872858482016ebbe158b108250316b3164b332b6182ff1c66d5d5aa5744f203282c36343cfdb1e1eea8087f024aeb620593dd1c3509"
+}

@@ -859,6 +859,29 @@ export type BridgeEntry = {
 export type BridgeStatus = { entry: BridgeEntry; state: string };
 export type BridgeCheck = { name: string; license: string | null; author: string | null; hash: string; problems: string[] };
 export type BridgeConfig = { dirs: string[]; applied: boolean; snippet: string };
+export type AgentSpec = {
+  persona: string;
+  tools: string[];
+  disallowed_tools: string[];
+  model_policy: string[];
+  permission_mode: "plan" | "ask" | "edit";
+  guardrails: string[];
+  skills: string[];
+  agents: string[];
+  unattended: boolean;
+};
+export type AgentCeiling = {
+  agent: string;
+  tools: string[];
+  dropped: { tool: string; reason: string }[];
+  claude_allowed: string[];
+  claude_disallowed: string[];
+  claude_mode: string;
+  hermes_toolsets: string[];
+  unattended_ok: boolean;
+  unattended_reason: string;
+};
+export type InstalledAgent = { entry: PackLockEntry; spec: AgentSpec; persona: string; dir: string; ceilings: AgentCeiling[]; status: string };
 export type TrustedKey = { key_id: string; name: string; public_key: string };
 export type BudgetStatus = { limit_usd: number; period: "day" | "week" | "month"; since: number; spent_usd: number; exhausted: boolean };
 
@@ -1081,6 +1104,7 @@ export const api = {
   capabilityRollback: (id: string) => invoke<PackLockEntry>("capability_rollback", { id }),
   capabilityUninstall: (id: string) => invoke<void>("capability_uninstall", { id }),
   capabilityExportLock: (project: string) => invoke<string>("capability_export_lock", { project }),
+  agentPacksInstalled: () => invoke<InstalledAgent[]>("agent_packs_installed"),
   bridgeStatus: () => invoke<BridgeStatus[]>("bridge_status"),
   bridgeCheck: (path: string) => invoke<BridgeCheck>("bridge_check", { path }),
   bridgeAdd: (path: string, source: string, approved?: boolean) =>
@@ -1108,8 +1132,10 @@ export const api = {
     provider: string;
     model: string;
     budgetUsd: number;
+    agentPack?: string;
   }) =>
     invoke<Mission>("create_mission", {
+      agentPack: input.agentPack || null,
       repo: input.repo,
       goal: input.goal,
       acceptance: input.acceptance,

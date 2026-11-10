@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bot, CheckCircle2, CircleAlert, Gauge, Pencil, RefreshCw, Terminal } from "lucide-react";
-import { api, errorText, type AgentCard } from "../lib/api";
+import { api, errorText, type AgentCard, type InstalledAgent } from "../lib/api";
 import { Badge, Button, Card, Empty, Modal, inputClass } from "../components/ui";
 import { useToast } from "../components/Toasts";
 
@@ -161,6 +161,8 @@ export function Agents() {
         </div>
       )}
 
+      <AgentPacks />
+
       {editing && (
         <Modal
           title={`Strengths for ${editing.label}`}
@@ -180,6 +182,63 @@ export function Agents() {
           <input className={inputClass} value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus />
         </Modal>
       )}
+    </div>
+  );
+}
+
+/**
+ * Installed agent packs: tailored agents with a persona, a model policy and a ceiling the host
+ * enforces. Shown per agent the pack supports, with what it gets and what was dropped and why.
+ */
+function AgentPacks() {
+  const [packs, setPacks] = useState<InstalledAgent[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .agentPacksInstalled()
+      .then(setPacks)
+      .catch((e) => setError(errorText(e)));
+  }, []);
+  return (
+    <div className="mt-6">
+      <div className="mb-2 flex items-baseline gap-2">
+        <h3 className="text-sm font-semibold text-slate-100">Agent packs</h3>
+        <span className="text-label text-slate-500">Installed from Brain, Capabilities. Choose one under Agent pack when you create a mission.</span>
+      </div>
+      {error && <div className="text-label text-rose-300">{error}</div>}
+      {packs && packs.length === 0 && <Empty icon={<Bot className="size-5" />} title="No agent packs installed" hint="Install one from examples/capabilities/agents through Brain, Capabilities, Capability packs." />}
+      <div className="grid gap-3 lg:grid-cols-2">
+        {packs?.map((p) => (
+          <Card key={p.entry.id} className="space-y-2 p-4">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-sm font-semibold text-slate-100">{p.entry.name}</span>
+              <Badge className="bg-white/5 text-slate-400 ring-white/10">v{p.entry.version}</Badge>
+              <Badge className={p.entry.tier === "official" ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25" : p.entry.tier === "verified" ? "bg-sky-500/10 text-sky-300 ring-sky-500/25" : "bg-amber-500/10 text-amber-300 ring-amber-500/25"}>{p.entry.tier}</Badge>
+              <span className="text-label text-slate-500">by {p.entry.publisher}</span>
+            </div>
+            {p.status !== "ok" && <div className="text-label text-rose-300">{p.status}</div>}
+            <div className="text-label text-slate-400">
+              Mode {p.spec.permission_mode} . model policy {p.spec.model_policy.join(" then ")} . {p.spec.unattended ? "may run unattended" : "supervised only"}
+            </div>
+            {p.ceilings.map((c) => (
+              <div key={c.agent} className="rounded-md bg-canvas/60 px-2.5 py-2 text-label">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-medium text-slate-300">{c.agent}</span>
+                  <span className={c.unattended_ok ? "text-emerald-300" : "text-slate-500"}>{c.unattended_ok ? "unattended allowed" : "supervised"}</span>
+                </div>
+                <div className="text-slate-400">Gets: {c.tools.length ? c.tools.join(", ") : "nothing"}</div>
+                {c.agent === "claude-code" && <div className="truncate text-slate-500" title={c.claude_allowed.join(" ")}>Allowlist: {c.claude_allowed.join(", ") || "none"} . mode {c.claude_mode}</div>}
+                {c.agent === "hermes" && <div className="text-slate-500">Toolsets: {c.hermes_toolsets.join(", ") || "none"}</div>}
+                {c.dropped.map((d) => (
+                  <div key={d.tool} className="text-amber-300/80">
+                    Dropped {d.tool}: {d.reason}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

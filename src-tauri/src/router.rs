@@ -244,6 +244,18 @@ pub fn with_eval_evidence(
 
 /// The eval notes in the configured vault, newest first. A missing or unreadable vault means no
 /// evidence, which declines the pick instead of failing mission creation.
+/// The router's pick for a Hermes mission in `role`, with the eval evidence it needs, only when
+/// the router may act. Used by agent packs whose model policy lists `router`.
+pub fn allowed_pick(role: &str) -> Option<Suggestion> {
+    if !auto_enabled() {
+        return None;
+    }
+    let all = missions::list(500).ok()?;
+    pick(&all, role, chrono::Utc::now().timestamp())
+        .and_then(|s| with_eval_evidence(s, &eval_notes()))
+        .ok()
+}
+
 fn eval_notes() -> Vec<EvalSummary> {
     let v = crate::vault::Vault::new(crate::settings::vault_path());
     crate::eval::list(&v).unwrap_or_default()

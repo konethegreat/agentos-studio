@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "solutions.k-one.agent.security-auditor",
+  "name": "Security auditor",
+  "version": "1.0.0",
+  "kind": "agent-pack",
+  "description": "Audits a repository or a change for secrets, injection, unsafe input handling and dependency risk, and reports findings by severity.",
+  "license": "MIT",
+  "publisher": {
+    "name": "K-ONE IT SOLUTIONS, Kone Tshivhinda",
+    "key_id": "k-one-official-1",
+    "homepage": "https://github.com/konethegreat/agentos-studio"
+  },
+  "entrypoints": [
+    "agent.json",
+    "PERSONA.md"
+  ],
+  "capabilities": [
+    "fs.read",
+    "shell.exec"
+  ],
+  "requires": {
+    "app_version": ">=0.15.0",
+    "os": [
+      "windows",
+      "macos",
+      "linux"
+    ],
+    "runtimes": [
+      "claude-code",
+      "hermes"
+    ]
+  },
+  "signature": "c2a7380494dd85ecac829ded79312701784f1f09ea95af2038fdba096a96e44bbb98fda8ca90bb06d309c1bd68929271566119f81b8c9a433bc165442121c701"
+}

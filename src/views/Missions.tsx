@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, ClipboardCheck, GitMerge, Play, Plus, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorText, type AutomationStatus, type BudgetStatus, type Mission } from "../lib/api";
+import { api, errorText, type AutomationStatus, type BudgetStatus, type InstalledAgent, type Mission } from "../lib/api";
 import { useToast } from "../components/Toasts";
 import { Guide, useReportGuides } from "../components/Guides";
 import { missionGuides } from "../lib/guides";
@@ -44,7 +44,12 @@ export function Missions({ repos }: { repos: string[] }) {
     budget: "0",
     decision: false,
     urgent: false,
+    pack: "",
   });
+  const [packs, setPacks] = useState<InstalledAgent[]>([]);
+  useEffect(() => {
+    void api.agentPacksInstalled().then(setPacks).catch(() => undefined);
+  }, []);
   const [kinds, setKinds] = useState<Record<string, string>>({});
 
   const [loaded, setLoaded] = useState(false);
@@ -182,6 +187,7 @@ export function Missions({ repos }: { repos: string[] }) {
         provider: form.provider,
         model: form.model,
         budgetUsd: Number(form.budget) || 0,
+        agentPack: form.pack,
       });
       if (form.decision) await invoke<void>("set_mission_kind", { id: made.id, kind: "decision" });
       if (form.urgent) await invoke<void>("set_mission_urgent", { id: made.id, urgent: true });
@@ -458,6 +464,23 @@ export function Missions({ repos }: { repos: string[] }) {
                 className="h-8 w-32 rounded-lg bg-white/[0.03] px-2 text-xs text-slate-200 outline-none ring-1 ring-line"
               />
             </div>
+          </label>
+          <label className="text-label text-slate-400" title="A tailored agent from an installed agent pack: its persona, its tool ceiling (enforced by Studio, never wider than the repository and your tool policy allow) and its model policy">
+            Agent pack
+            <select
+              value={form.pack}
+              onChange={(e) => setForm({ ...form, pack: e.target.value })}
+              className="mt-1 h-8 w-full rounded-lg bg-white/[0.03] px-2 text-xs text-slate-200 outline-none ring-1 ring-line"
+            >
+              <option value="">None: the agent as configured</option>
+              {packs
+                .filter((p) => p.status === "ok" && p.spec.agents.includes(form.agent.trim()))
+                .map((p) => (
+                  <option key={p.entry.id} value={p.entry.id}>
+                    {p.entry.name} ({p.entry.tier}, {p.spec.permission_mode})
+                  </option>
+                ))}
+            </select>
           </label>
           <label className="text-label text-slate-400 md:col-span-2">
             Goal
