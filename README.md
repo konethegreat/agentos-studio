@@ -35,6 +35,20 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.0.0
+
+The first public release. Download it from https://agentos-studio-website.erictshivhinda.workers.dev
+or from [Releases](https://github.com/konethegreat/agentos-studio/releases/latest).
+
+| Area | 1.0.0 |
+|---|---|
+| Home | Today: what waits on you, what runs and what it costs, the last digest |
+| Safety | Tool permissions per agent and project, unattended worker profile, budgets with a hard stop, constitution gate, merge policy |
+| Capabilities | One index of every skill, plugin, agent and MCP server; signed packs with trust tiers; skill bridge; agent packs; browser runtime |
+| Context | A context ledger of every compaction, with a per-mission context file in the worktree |
+| Extensions | Hook, command and MCP bundle packs run only in a scoped sandbox, behind approval, with an audit log |
+| First run | No owner-specific setup; install instructions for unsigned builds; docs for new users |
+
 ## What is new in v0.3.0
 
 | Area | v0.2 | v0.3 |
@@ -94,7 +108,8 @@ The vault is the single source of truth for work: every task is a Markdown file 
 
 ## Download
 
-Grab the latest installer from [Releases](https://github.com/konethegreat/agentos-studio/releases/latest):
+Grab the latest installer from the [download site](https://agentos-studio-website.erictshivhinda.workers.dev)
+or from [Releases](https://github.com/konethegreat/agentos-studio/releases/latest):
 
 | Platform | File |
 |---|---|
