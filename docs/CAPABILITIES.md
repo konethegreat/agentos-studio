@@ -272,20 +272,26 @@ Every run passes the same checks in this order, and each refusal is an audit row
   killed.
 - **Captured output.** stdout and stderr are capped at 16 KB each and passed through the same
   credential redaction as context notes.
+- **Plain arguments.** Arguments are passed as data. A `.cmd` or `.bat` hook runs through
+  `cmd /C`, which parses its whole line, so arguments to it may not contain `& | < > ^ % ! " ( )`;
+  control characters are refused for every interpreter.
 
 This is process scoping, not an operating system sandbox: a granted hook can still read files its
 user account can read. That is why execution needs a signed pack and an explicit grant.
 
 ### MCP bundles
 
-A bundle names one server through its `mcp_tools` (`server:tool`). Registering it:
+A bundle names one server through its `mcp_tools` (`server:tool`). The name may not be
+`agentos-hub`, and may not be a name any agent already uses for a server this bundle did not
+register, so a bundle can never overwrite an existing entry. Registering it:
 
 - writes `mcp.<server>.<tool> = ask` for every declared tool and `mcp.<server>.* = ask` for tools
   it adds later, unless your tool policy already denies a tool, which stays `deny`; registering
   again never resets a choice you made since;
 - records the approved pack hash in kv `extension.mcp.<pack id>`;
 - writes the server, for the agents you pick, as
-  `agentos-studio --extension-mcp <pack id>` (the staged hub binary), with no environment
+  `agentos-studio --extension-mcp <pack id>` (the staged hub when it is this exact build,
+  otherwise the running executable, so a stale copy never receives the flag), with no environment
   variables. That command re-verifies the pack, refuses a hash other than the approved one or a
   `capability.run` policy of `deny`, and starts the server with the same scoped environment in a
   sandbox folder, with stdio passed through. A server has no timeout: it lives as long as the

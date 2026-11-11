@@ -134,6 +134,28 @@ fn interpreter(entry: &Path) -> Result<(PathBuf, Vec<OsString>)> {
     Ok((exe, args))
 }
 
+/// Why these arguments may not reach this entrypoint, if they may not. `cmd /C` parses its whole
+/// command line, so `&`, `|`, redirections, `%` expansion and quotes in an argument would run
+/// commands the pack never shipped; other interpreters receive arguments as data. Control
+/// characters are refused everywhere. Pure.
+pub fn unsafe_args(entry: &Path, args: &[String]) -> Option<String> {
+    let cmd = entry
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
+    for a in args {
+        if a.chars().any(|c| c.is_control()) {
+            return Some("an argument contains a control character".into());
+        }
+        if cmd && a.chars().any(|c| "&|<>^%!\"()".contains(c)) {
+            return Some(format!(
+                "the argument '{a}' contains a character cmd.exe would interpret; a .cmd hook takes plain words only"
+            ));
+        }
+    }
+    None
+}
+
 /// The environment one extension child starts with. Pure.
 pub fn scoped_env<I>(base: I, pack_id: &str, sandbox: &Path) -> Vec<(OsString, OsString)>
 where
@@ -369,6 +391,9 @@ pub fn run_in(
     };
     let (exe, mut args) =
         interpreter(&entry).map_err(|err| refuse(c, &req.id, &format!("{err:#}")))?;
+    if let Some(why) = unsafe_args(&entry, &req.args) {
+        return Err(refuse(c, &req.id, &why));
+    }
     args.extend(req.args.iter().map(OsString::from));
     let env = scoped_env(base_env, &e.id, &run_dir);
     let timeout = Duration::from_secs(
@@ -521,6 +546,34 @@ pub struct McpRegistration {
     pub agents: Vec<crate::mcp_manager::AgentOutcome>,
 }
 
+/// Why a bundle may not take this server name, if it may not: `agentos-hub` is Studio's own
+/// server (a `*` default on it would put every hub tool on ask), and a name an agent already
+/// uses for a different server would overwrite that entry. Pure over `sources`.
+pub fn server_conflict(
+    server: &str,
+    pack_id: &str,
+    sources: &std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, crate::mcp_manager::ServerDef>,
+    >,
+) -> Option<String> {
+    if server.eq_ignore_ascii_case("agentos-hub") {
+        return Some("agentos-hub is Studio's own server; a bundle cannot use that name".into());
+    }
+    for (agent, servers) in sources {
+        if let Some(def) = servers.get(server) {
+            let ours =
+                def.args.iter().any(|a| a == SERVE_FLAG) && def.args.iter().any(|a| a == pack_id);
+            if !ours {
+                return Some(format!(
+                    "{agent} already has an MCP server named {server} that this bundle did not register"
+                ));
+            }
+        }
+    }
+    None
+}
+
 /// kv key recording the hash approved for a bundle server; `--extension-mcp` refuses any other.
 pub fn approved_key(id: &str) -> String {
     format!("extension.mcp.{id}")
@@ -535,6 +588,10 @@ pub fn register_mcp_in(
     id: &str,
     hub_exe: &Path,
     ctx: &marketplace::Ctx,
+    sources: &std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, crate::mcp_manager::ServerDef>,
+    >,
     approved: bool,
 ) -> Result<McpRegistration> {
     let (e, m, dir) = admit(
@@ -546,6 +603,9 @@ pub fn register_mcp_in(
         approved,
     )?;
     let server = bundle_server(&m).map_err(|err| refuse(c, id, &format!("{err:#}")))?;
+    if let Some(why) = server_conflict(&server, id, sources) {
+        return Err(refuse(c, id, &why));
+    }
     resolve_entry(&dir, &m, None).map_err(|err| refuse(c, id, &format!("{err:#}")))?;
     let denied: Vec<String> = marketplace::ceiling(&m, &e.tier, ctx)
         .into_iter()
@@ -602,24 +662,41 @@ pub fn register_mcp_in(
 }
 
 /// The executable agents start a bundle server through: the staged hub for this version when it
-/// exists, otherwise this executable.
+/// is byte-identical to this executable, otherwise this executable. A staged copy from an
+/// earlier build of the same version may predate `--extension-mcp`, and an older binary given
+/// an unknown flag would open the GUI instead of serving.
 pub fn hub_exe() -> PathBuf {
     let staged = crate::mcp_manager::hub_binary_for(
         &crate::mcp_manager::hub_root(),
         env!("CARGO_PKG_VERSION"),
     );
-    if staged.is_file() {
-        staged
+    match std::env::current_exe() {
+        Ok(me) => pick_hub_exe(&staged, &me),
+        Err(_) => staged,
+    }
+}
+
+/// `staged` when it holds the same bytes as `me`, else `me`. Pure over the two files.
+pub fn pick_hub_exe(staged: &Path, me: &Path) -> PathBuf {
+    let same = match (std::fs::metadata(staged), std::fs::metadata(me)) {
+        (Ok(a), Ok(b)) if a.len() == b.len() => {
+            std::fs::read(staged).ok() == std::fs::read(me).ok()
+        }
+        _ => false,
+    };
+    if same {
+        staged.to_path_buf()
     } else {
-        std::env::current_exe().unwrap_or(staged)
+        me.to_path_buf()
     }
 }
 
 /// Register against the live store and, when `targets` names agents, write their MCP configs.
 pub fn register_mcp(id: &str, targets: &[String], approved: bool) -> Result<McpRegistration> {
     let c = crate::store::open()?;
+    let sources = crate::mcp_manager::all_sources();
     let mut reg = marketplace::with_live_ctx(|ctx| {
-        register_mcp_in(&c, &Store::live(), id, &hub_exe(), ctx, approved)
+        register_mcp_in(&c, &Store::live(), id, &hub_exe(), ctx, &sources, approved)
     })?;
     if !targets.is_empty() {
         reg.agents = crate::mcp_manager::add_mcp_server(&reg.spec, targets)?;
@@ -1122,11 +1199,12 @@ mod tests {
             audit: &audit,
         };
         let hub = Path::new("C:/fixture/agentos-studio.exe");
-        assert!(register_mcp_in(&e.c, &e.store, id, hub, &ctx, false)
+        let none = std::collections::BTreeMap::new();
+        assert!(register_mcp_in(&e.c, &e.store, id, hub, &ctx, &none, false)
             .unwrap_err()
             .to_string()
             .starts_with(crate::permissions::APPROVAL_PREFIX));
-        let reg = register_mcp_in(&e.c, &e.store, id, hub, &ctx, true).unwrap();
+        let reg = register_mcp_in(&e.c, &e.store, id, hub, &ctx, &none, true).unwrap();
         assert_eq!(reg.server, "files-demo");
         assert_eq!(reg.spec.args, vec![SERVE_FLAG.to_string(), id.to_string()]);
         assert!(reg.spec.env_vars.is_empty(), "no credentials ride along");
@@ -1150,7 +1228,7 @@ mod tests {
         assert!(reg.rules.iter().any(|r| r.tool == "*" && r.policy == "ask"));
         // An owner's later choice is kept when the bundle is registered again.
         crate::policy::set_in(&e.c, "files-demo", "read_file", "allow").unwrap();
-        register_mcp_in(&e.c, &e.store, id, hub, &ctx, true).unwrap();
+        register_mcp_in(&e.c, &e.store, id, hub, &ctx, &none, true).unwrap();
         assert_eq!(
             crate::policy::decide_in(&e.c, "files-demo", "read_file"),
             "allow"
@@ -1178,7 +1256,7 @@ mod tests {
             &["mcp.tools", "shell.exec"],
             &["shell.exec"],
         );
-        assert!(register_mcp_in(&e.c, &e.store, id2, hub, &ctx, true)
+        assert!(register_mcp_in(&e.c, &e.store, id2, hub, &ctx, &none, true)
             .unwrap_err()
             .to_string()
             .contains("mcp.tools was not granted"));
@@ -1259,6 +1337,87 @@ mod tests {
             "{rec:?}"
         );
         crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn bundle_server_names_never_take_over_an_existing_server() {
+        use crate::mcp_manager::ServerDef;
+        let mut sources = std::collections::BTreeMap::new();
+        let mut claude = std::collections::BTreeMap::new();
+        claude.insert(
+            "github".to_string(),
+            ServerDef {
+                command: Some("npx".into()),
+                args: vec!["github-mcp".into()],
+                ..Default::default()
+            },
+        );
+        claude.insert(
+            "text-stats".to_string(),
+            ServerDef {
+                command: Some("agentos-studio.exe".into()),
+                args: vec![SERVE_FLAG.into(), "solutions.k-one.text-stats".into()],
+                ..Default::default()
+            },
+        );
+        sources.insert("claude-code".to_string(), claude);
+        assert!(server_conflict("agentos-hub", "x.y.z", &sources)
+            .unwrap()
+            .contains("Studio's own server"));
+        assert!(server_conflict("github", "x.y.z", &sources)
+            .unwrap()
+            .contains("claude-code already has"));
+        assert_eq!(
+            server_conflict("text-stats", "solutions.k-one.text-stats", &sources),
+            None,
+            "re-registering its own entry is allowed"
+        );
+        assert!(server_conflict("text-stats", "com.other.bundle", &sources).is_some());
+        assert_eq!(server_conflict("fresh", "x.y.z", &sources), None);
+    }
+
+    #[test]
+    fn cmd_hooks_take_plain_words_only() {
+        let cmd = Path::new("hooks/x.cmd");
+        let node = Path::new("hooks/x.mjs");
+        let words = vec![
+            "feat:".to_string(),
+            "add".to_string(),
+            "a-thing".to_string(),
+        ];
+        assert_eq!(unsafe_args(cmd, &words), None);
+        for bad in [
+            "a&calc", "a|b", "a>out", "%PATH%", "x^y", "\"q\"", "(x)", "!x!",
+        ] {
+            assert!(unsafe_args(cmd, &[bad.to_string()]).is_some(), "{bad}");
+            assert_eq!(
+                unsafe_args(node, &[bad.to_string()]),
+                None,
+                "{bad} is data for node"
+            );
+        }
+        assert!(unsafe_args(node, &["a\nb".to_string()]).is_some());
+    }
+
+    #[test]
+    fn hub_exe_never_points_at_a_different_build() {
+        let t = tempfile::tempdir().unwrap();
+        let staged = t.path().join("staged.exe");
+        let me = t.path().join("me.exe");
+        fs::write(&me, b"new build").unwrap();
+        assert_eq!(pick_hub_exe(&staged, &me), me, "no staged copy");
+        fs::write(&staged, b"old build").unwrap();
+        assert_eq!(
+            pick_hub_exe(&staged, &me),
+            me,
+            "a stale staged copy is never used"
+        );
+        fs::write(&staged, b"new build").unwrap();
+        assert_eq!(
+            pick_hub_exe(&staged, &me),
+            staged,
+            "the staged copy of this build wins"
+        );
     }
 
     #[test]

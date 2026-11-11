@@ -79,6 +79,7 @@ export function Capabilities() {
   const group = current ? groupOf.get(current.id) : undefined;
 
   const [bridging, setBridging] = useState(false);
+  const [packsVersion, setPacksVersion] = useState(0);
   async function bridge(r: CatalogRecord) {
     const dir = r.source_path.replace(/[\\/]SKILL\.md$/i, "");
     setBridging(true);
@@ -173,8 +174,8 @@ export function Capabilities() {
                   Read only. Studio reads frontmatter and manifests and never writes to Hermes, Qoder or Claude Code. Duplicates are shown with precedence, never merged.
                 </div>
               </div>
-              <Packs />
-              <ExtensionRuntime />
+              <Packs onChange={() => setPacksVersion((v) => v + 1)} />
+              <ExtensionRuntime refresh={packsVersion} />
               <SkillBridge onChange={() => void load()} />
               <Card className="p-4">
                 <div className="mb-2 text-xs font-semibold text-slate-300">Per store</div>
@@ -329,7 +330,7 @@ const SEVERITY_STYLE: Record<string, string> = {
  * then roll back, verify or remove. Studio checks before anything is activated and never runs
  * pack content while installing.
  */
-function Packs() {
+function Packs({ onChange }: { onChange: () => void }) {
   const toast = useToast();
   const [installed, setInstalled] = useState<InstalledPack[] | null>(null);
   const [source, setSource] = useState("");
@@ -383,6 +384,7 @@ function Packs() {
       setSource("");
       setPin("");
       await load();
+      onChange();
     } catch (e) {
       toast("error", errorText(e));
     } finally {
@@ -401,6 +403,7 @@ function Packs() {
         toast("ok", `${id} removed`);
       }
       await load();
+      onChange();
     } catch (e) {
       toast("error", errorText(e));
     } finally {
@@ -577,7 +580,7 @@ function blockedReason(p: InstalledPack): string {
  * (no credentials in the environment, a mission worktree or a sandbox, a timeout), MCP bundles
  * register with every tool on ask. Every run, registration and refusal is in the audit list.
  */
-function ExtensionRuntime() {
+function ExtensionRuntime({ refresh }: { refresh: number }) {
   const toast = useToast();
   const guarded = useGuarded();
   const [packs, setPacks] = useState<InstalledPack[] | null>(null);
@@ -601,7 +604,7 @@ function ExtensionRuntime() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refresh]);
 
   async function run(p: InstalledPack) {
     setBusy(p.entry.id);
