@@ -518,8 +518,9 @@ The two sections below (safety for unattended work, Today at a glance) were plan
 The master brief ends at 1.0. This is the order for what follows, each step depending on the one
 before it. Nothing here is built yet.
 
-- **1.0.x, keep the floor solid.** Fix #117: `hermes verify` falls back to the owner's checkout
-  when a task worktree is gone, so a done check can pass against the wrong tree. Then #107: merge
+- **1.0.x, keep the floor solid.** #117 (fixed): `hermes verify` fell back to the owner's
+  checkout when a task worktree was gone, so a verify could pass against the wrong tree; it now
+  verifies the pull request's head in Studio's own worktree, or records "not run". Then #107: merge
   the top-level test crates so a full `cargo test` links fewer binaries on an 11 GB machine.
   Patch releases go out through the in-app updater only.
 - **1.1, the fleet maintains itself.** Turn the 25 to 30 local repositories into standing goals

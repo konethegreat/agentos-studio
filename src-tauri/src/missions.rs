@@ -503,7 +503,11 @@ pub fn verify_failure(json: &str) -> Option<String> {
     if v.get("ok").and_then(serde_json::Value::as_bool) != Some(false) {
         return None;
     }
-    if v.get("error").and_then(serde_json::Value::as_str) == Some("no-recipe") {
+    // Nothing to run, or nothing safe to run it in (#117): missing, not failed. CI still gates.
+    if matches!(
+        v.get("error").and_then(serde_json::Value::as_str),
+        Some("no-recipe") | Some("not-run")
+    ) {
         return None;
     }
     let failed = v
