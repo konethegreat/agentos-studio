@@ -1,6 +1,6 @@
-import { Copy, Download, Layers, Link2, Unlink, Loader2, RefreshCw, RotateCcw, Search, ShieldAlert, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
+import { Copy, Download, Layers, Link2, Unlink, Loader2, Play, Plug, RefreshCw, RotateCcw, Search, ShieldAlert, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, errorText, type BridgeConfig, type BridgeStatus, type CatalogIndex, type CatalogRecord, type InstalledPack, type PackProposal } from "../lib/api";
+import { api, errorText, type BridgeConfig, type BridgeStatus, type CatalogIndex, type CatalogRecord, type ExtensionAuditEntry, type ExtensionRunRecord, type InstalledPack, type McpRegistration, type PackProposal } from "../lib/api";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card, Empty, inputClass } from "../components/ui";
@@ -174,6 +174,7 @@ export function Capabilities() {
                 </div>
               </div>
               <Packs />
+              <ExtensionRuntime />
               <SkillBridge onChange={() => void load()} />
               <Card className="p-4">
                 <div className="mb-2 text-xs font-semibold text-slate-300">Per store</div>
@@ -547,6 +548,194 @@ function Packs() {
                 </Button>
               )}
               <Button size="sm" variant="ghost" busy={busy === `uninstall:${p.entry.id}`} onClick={() => void act(p.entry.id, "uninstall")} title="Remove" icon={<Trash2 className="size-3.5" />} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Card>
+  );
+}
+
+const EXEC_KINDS = ["hook-pack", "command-pack", "mcp-bundle"];
+const NEEDS: Record<string, string[]> = {
+  "hook-pack": ["hooks.exec"],
+  "command-pack": ["shell.exec"],
+  "mcp-bundle": ["mcp.tools", "shell.exec"],
+};
+const MCP_AGENTS = ["hermes", "claude-code", "qoder", "antigravity"];
+
+/** Why a pack cannot execute, mirroring `extension_runtime::refusal`. Empty when it can. */
+function blockedReason(p: InstalledPack): string {
+  if (p.status !== "ok") return p.status;
+  if (p.entry.tier !== "official" && p.entry.tier !== "verified") return `${p.entry.tier} packs never execute code`;
+  const missing = (NEEDS[p.entry.kind] ?? []).filter((c) => !p.entry.granted.includes(c));
+  return missing.length ? `not granted: ${missing.join(", ")}` : "";
+}
+
+/**
+ * The extension runtime (Phase G item 11): hooks and command packs run as a scoped child process
+ * (no credentials in the environment, a mission worktree or a sandbox, a timeout), MCP bundles
+ * register with every tool on ask. Every run, registration and refusal is in the audit list.
+ */
+function ExtensionRuntime() {
+  const toast = useToast();
+  const guarded = useGuarded();
+  const [packs, setPacks] = useState<InstalledPack[] | null>(null);
+  const [runs, setRuns] = useState<ExtensionAuditEntry[]>([]);
+  const [worktree, setWorktree] = useState<Record<string, string>>({});
+  const [args, setArgs] = useState<Record<string, string>>({});
+  const [targets, setTargets] = useState<Record<string, string[]>>({});
+  const [last, setLast] = useState<ExtensionRunRecord | null>(null);
+  const [reg, setReg] = useState<McpRegistration | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [all, audit] = await Promise.all([api.capabilityInstalled(), api.extensionListRuns(30)]);
+      setPacks(all.filter((p) => EXEC_KINDS.includes(p.entry.kind)));
+      setRuns(audit);
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function run(p: InstalledPack) {
+    setBusy(p.entry.id);
+    try {
+      const a = (args[p.entry.id] ?? "").trim();
+      const r = await guarded((g) =>
+        api.extensionRun({ id: p.entry.id, args: a ? a.split(/\s+/) : [], worktree: worktree[p.entry.id]?.trim() || null }, g.approved),
+      );
+      setLast(r);
+      setReg(null);
+      toast(r.outcome === "ok" ? "ok" : "error", `${p.entry.name}: ${r.outcome}${r.exit_code !== null ? ` (exit ${r.exit_code})` : ""}`);
+    } catch (e) {
+      if (!(e instanceof ApprovalDeclined)) toast("error", errorText(e));
+    } finally {
+      setBusy(null);
+      await load();
+    }
+  }
+
+  async function register(p: InstalledPack) {
+    setBusy(p.entry.id);
+    try {
+      const r = await guarded((g) => api.extensionRegisterMcp(p.entry.id, targets[p.entry.id] ?? [], g.approved));
+      setReg(r);
+      setLast(null);
+      toast("ok", `${r.server} registered; ${r.rules.map((x) => `${x.tool} = ${x.policy}`).join(", ")}`);
+    } catch (e) {
+      if (!(e instanceof ApprovalDeclined)) toast("error", errorText(e));
+    } finally {
+      setBusy(null);
+      await load();
+    }
+  }
+
+  return (
+    <Card className="space-y-3 p-4">
+      <div>
+        <div className="text-xs font-semibold text-slate-300">Extension runtime</div>
+        <div className="text-label text-slate-500">
+          Hooks, command packs and MCP bundles from official or verified packs, only within what you granted. A run starts with no credentials in its environment, in the worktree you name or an empty sandbox, and is stopped at its timeout. Each run asks first (capability.run).
+        </div>
+      </div>
+      {packs?.length === 0 && <div className="text-label text-slate-600">No hook, command or MCP bundle packs installed. Install one above, for example examples/capabilities/hooks/commit-lint.</div>}
+      <ul className="space-y-1.5">
+        {packs?.map((p) => {
+          const why = blockedReason(p);
+          const mcp = p.entry.kind === "mcp-bundle";
+          return (
+            <li key={p.entry.id} className="space-y-1.5 rounded-md bg-canvas/60 px-2.5 py-2 text-label">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-slate-200">{p.entry.name}</span>
+                <Badge className="bg-white/5 text-slate-400 ring-white/10">{p.entry.kind}</Badge>
+                <Badge className={TIER_STYLE[p.entry.tier]}>{p.entry.tier}</Badge>
+                {why ? <span className="text-rose-300">{why}</span> : <span className="text-emerald-300">ready</span>}
+              </div>
+              {!mcp && (
+                <div className="flex gap-2">
+                  <input value={worktree[p.entry.id] ?? ""} onChange={(e) => setWorktree((w) => ({ ...w, [p.entry.id]: e.target.value }))} placeholder="Mission worktree (empty: sandbox)" className={inputClass} aria-label={`Worktree for ${p.entry.name}`} />
+                  <div className="w-44 shrink-0">
+                    <input value={args[p.entry.id] ?? ""} onChange={(e) => setArgs((a) => ({ ...a, [p.entry.id]: e.target.value }))} placeholder="Arguments" className={inputClass} aria-label={`Arguments for ${p.entry.name}`} />
+                  </div>
+                  <Button size="sm" variant="primary" disabled={!!why} busy={busy === p.entry.id} onClick={() => void run(p)} icon={<Play className="size-3.5" />}>
+                    Run
+                  </Button>
+                </div>
+              )}
+              {mcp && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {MCP_AGENTS.map((a) => (
+                    <label key={a} className="flex items-center gap-1 text-slate-400">
+                      <input
+                        type="checkbox"
+                        checked={(targets[p.entry.id] ?? []).includes(a)}
+                        onChange={(e) => setTargets((t) => ({ ...t, [p.entry.id]: e.target.checked ? [...(t[p.entry.id] ?? []), a] : (t[p.entry.id] ?? []).filter((x) => x !== a) }))}
+                        aria-label={`Register for ${a}`}
+                      />
+                      {a}
+                    </label>
+                  ))}
+                  <Button size="sm" variant="primary" disabled={!!why} busy={busy === p.entry.id} onClick={() => void register(p)} icon={<Plug className="size-3.5" />}>
+                    {(targets[p.entry.id] ?? []).length ? "Register" : "Register policy only"}
+                  </Button>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {last && (
+        <div className="rounded-lg border border-line bg-canvas/60 p-3 text-label" aria-label="Last run">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-slate-200">{last.entrypoint}</span>
+            <Badge className={last.outcome === "ok" ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25" : "bg-rose-500/10 text-rose-300 ring-rose-500/25"}>{last.outcome}</Badge>
+            <span className="text-slate-500">
+              exit {last.exit_code ?? "none"} . {last.duration_ms} ms . {last.sandbox ? "sandbox" : "worktree"}
+            </span>
+          </div>
+          <div className="mt-1 break-all text-slate-500">cwd {last.cwd}</div>
+          <div className="mt-1 text-slate-500">Environment it received (names only): {last.env_keys.join(", ")}</div>
+          {last.stdout && <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-black/30 p-2 font-mono text-2xs text-slate-300">{last.stdout}</pre>}
+          {last.stderr && <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-black/30 p-2 font-mono text-2xs text-rose-200">{last.stderr}</pre>}
+        </div>
+      )}
+      {reg && (
+        <div className="rounded-lg border border-line bg-canvas/60 p-3 text-label" aria-label="Registration">
+          <div className="text-slate-200">
+            {reg.server} starts as <span className="font-mono">{[reg.spec.command_or_url, ...reg.spec.args].join(" ")}</span>
+          </div>
+          <ul className="mt-1 font-mono text-slate-400">
+            {reg.rules.map((r) => (
+              <li key={r.tool}>
+                mcp.{reg.server}.{r.tool} = {r.policy}
+              </li>
+            ))}
+          </ul>
+          {reg.agents.map((a) => (
+            <div key={a.agent} className={a.ok ? "text-emerald-300" : "text-rose-300"}>
+              {a.agent}: {a.detail}
+            </div>
+          ))}
+        </div>
+      )}
+      <div>
+        <div className="mb-1 flex items-center gap-2 text-label font-medium text-slate-400">
+          Audit ({runs.length})
+          <Button size="sm" variant="ghost" onClick={() => void load()} title="Refresh" icon={<RefreshCw className="size-3" />} />
+        </div>
+        {runs.length === 0 && <div className="text-label text-slate-600">No runs, registrations or refusals yet.</div>}
+        <ul className="space-y-0.5">
+          {runs.map((r) => (
+            <li key={r.id} className="text-label">
+              <span className="text-slate-500">{new Date(r.at * 1000).toLocaleString()}</span>{" "}
+              <span className={r.outcome === "ok" ? "text-emerald-300" : r.outcome === "granted" ? "text-slate-300" : "text-rose-300"}>{r.outcome}</span>{" "}
+              <span className="font-mono text-slate-300">{r.action}</span> <span className="text-slate-400">{r.target}</span> <span className="break-all text-slate-500">{r.detail}</span>
             </li>
           ))}
         </ul>

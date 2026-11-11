@@ -27,6 +27,7 @@ pub mod council;
 pub mod digest;
 pub mod escalation;
 pub mod eval;
+pub mod extension_runtime;
 pub mod fleet;
 pub mod fork;
 pub mod github;
@@ -455,6 +456,9 @@ pub fn run_gui() {
             commands::context_rerun,
             commands::context_search,
             commands::context_eval,
+            commands::extension_run,
+            commands::extension_register_mcp,
+            commands::extension_list_runs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")

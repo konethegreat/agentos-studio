@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "solutions.k-one.commit-lint",
+  "name": "Commit message lint",
+  "version": "1.0.0",
+  "kind": "hook-pack",
+  "description": "Checks the newest commit message in the worktree it runs in: a conventional type prefix, a subject under 72 characters, and no em or en dashes. Exits 1 when a rule fails.",
+  "license": "MIT",
+  "publisher": {
+    "name": "K-ONE IT SOLUTIONS, Kone Tshivhinda",
+    "key_id": "k-one-official-1",
+    "homepage": "https://github.com/konethegreat/agentos-studio"
+  },
+  "entrypoints": [
+    "hooks/commit-lint.mjs"
+  ],
+  "capabilities": [
+    "fs.read",
+    "hooks.exec",
+    "shell.exec"
+  ],
+  "requires": {
+    "app_version": ">=0.15.0",
+    "os": [
+      "windows",
+      "macos",
+      "linux"
+    ],
+    "runtimes": [
+      "node"
+    ]
+  },
+  "signature": "1e8c825972aae911475d11fa032f8129620d71a1e87120756b6f787051605c1795dfbd9f384fbf12ecb50229449010435881ddad49d83ab462ebdc55dbe87d09"
+}

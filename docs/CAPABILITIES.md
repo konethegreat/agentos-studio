@@ -216,7 +216,14 @@ The tools a worker gets are the pack's tools, minus:
 2. any tool whose capability you did not grant when you installed the pack (`edit` needs
    `fs.write`, `shell` needs `shell.exec`, `web` and `browser` need `net.hosts`, MCP tools need
    `mcp.tools`);
-3. any MCP tool your scoped tool policy denies for that agent and repository.
+3. any MCP tool your scoped tool policy denies for that agent and repository;
+4. on Claude Code, any MCP tool on a server the repository allowlist does not already cover. A
+   pack never adds an `mcp__<server>__<tool>` rule the base allowlist lacks.
+
+Base server wildcards (`mcp__agentos-hub` among them) stay in the allowlist unless the pack's
+`disallowed_tools` names the server (`mcp:<server>`), so a pack worker keeps the hub it reports
+through. MCP tools dropped from a kept server are passed to `--disallowedTools` by name, so the
+wildcard cannot readmit them.
 
 On Claude Code the worker keeps only the repository's allowlist entries for the tools that remain,
 and every dropped family (Edit and Write, Bash, WebFetch and so on) is passed to
@@ -231,6 +238,72 @@ Install the pack in Brain, Capabilities, then pick it under **Agent pack** in th
 form. The Agents view lists every installed pack with its ceiling on each agent, including what
 was dropped and why. `examples/capabilities/agents` has five official packs: planner, code
 reviewer, security auditor, docs writer and researcher.
+
+## The extension runtime
+
+Hook packs, command packs and MCP bundles are the only packs that execute code, and they execute
+only through `extension_runtime.rs`. Installing one never runs it.
+
+### What has to be true before anything runs
+
+Every run passes the same checks in this order, and each refusal is an audit row:
+
+1. **Not tampered.** The active copy must still hash to what `capabilities.lock.json` pins.
+2. **The right kind.** `hook-pack` and `command-pack` run; `mcp-bundle` registers a server.
+3. **Signed.** Only `official` and `verified` packs execute. A `community` pack is untrusted for
+   execution, even if a lockfile was edited to grant it something.
+4. **Declared and granted.** A hook pack needs `hooks.exec`, a command pack `shell.exec`, an MCP
+   bundle `mcp.tools` and `shell.exec` (its server is a process). Each must be in the pack's
+   `capability.json` and granted on the permission sheet.
+5. **Approved.** The `capability.run` action (Safety, default `ask`) is checked through
+   `permissions::guard_in`, so every run asks unless you set it to allow.
+
+### What a run gets
+
+- **No credentials.** The child starts from `env_clear()` and gets only the unattended allowlist
+  (`permissions::unattended_env`) without the home and app data variables (`USERPROFILE`, `HOME`,
+  `APPDATA`, `LOCALAPPDATA` and the drive pair), because CLIs find their logins through those.
+  `AGENTOS_PACK_ID` names the pack; `TEMP` and `TMP` point at the run's sandbox. API keys and
+  tokens in Studio's environment never reach it.
+- **A confined folder.** It runs in the mission worktree you name (an absolute git checkout that
+  is not a system folder) or in a fresh sandbox under `%APPDATA%\agentos-studio\extension-sandbox`
+  that is deleted afterwards.
+- **A bounded time.** 30 seconds by default, at most 300; on timeout the whole process tree is
+  killed.
+- **Captured output.** stdout and stderr are capped at 16 KB each and passed through the same
+  credential redaction as context notes.
+
+This is process scoping, not an operating system sandbox: a granted hook can still read files its
+user account can read. That is why execution needs a signed pack and an explicit grant.
+
+### MCP bundles
+
+A bundle names one server through its `mcp_tools` (`server:tool`). Registering it:
+
+- writes `mcp.<server>.<tool> = ask` for every declared tool and `mcp.<server>.* = ask` for tools
+  it adds later, unless your tool policy already denies a tool, which stays `deny`; registering
+  again never resets a choice you made since;
+- records the approved pack hash in kv `extension.mcp.<pack id>`;
+- writes the server, for the agents you pick, as
+  `agentos-studio --extension-mcp <pack id>` (the staged hub binary), with no environment
+  variables. That command re-verifies the pack, refuses a hash other than the approved one or a
+  `capability.run` policy of `deny`, and starts the server with the same scoped environment in a
+  sandbox folder, with stdio passed through. A server has no timeout: it lives as long as the
+  agent session that started it.
+
+With no agent picked, "Register policy only" writes the policy and the approval and changes no
+agent config.
+
+### Using it
+
+Brain, Capabilities, **Extension runtime** lists installed hook, command and MCP bundle packs with
+the reason any of them cannot run, a Run button (worktree and arguments optional) for hooks and
+commands, a Register button with agent choices for bundles, the last run's exit code, output and
+the names of the variables the child received, and the audit list of runs, registrations and
+refusals. The examples are `examples/capabilities/hooks/commit-lint` (an official hook that lints
+the newest commit message: conventional prefix, subject under 72 characters, no em or en dashes)
+and `examples/capabilities/mcp/text-stats` (an official stdio server with `count_words` and
+`count_lines`).
 
 ## What is not here
 

@@ -634,8 +634,25 @@ this order, one pull request each:
   re-summarization (`-focus-<stamp>.md`), queries Hermes' FTS5 `messages_fts` alongside vault
   recall, and scores four probes (facts, artifacts, continuation, decisions) over 25 real
   sessions (38 cuts, 37/38 passing the 0.80 bar).
-- **G11, extension runtime:** hooks, command packs and MCP bundles, run only in the scoped
-  unattended environment and only within their declared capabilities.
+- **G11, extension runtime (shipped, `extension_runtime.rs`):** hooks, command packs and MCP
+  bundles execute only through one module. Each run is refused unless the active copy matches the
+  lockfile hash, the tier is official or verified, the kind's capability (`hooks.exec`,
+  `shell.exec`, or `mcp.tools` plus `shell.exec`) is declared and granted, and `capability.run`
+  passes `permissions::guard_in`. The child gets `env_clear()` plus the unattended allowlist
+  without the home and app data variables, plus `AGENTOS_PACK_ID`; it runs in the named mission
+  worktree or a deleted-afterwards sandbox, with a 30 second default and 300 second maximum
+  timeout that kills the process tree, and capped, redacted output. MCP bundles register their
+  server as `agentos-studio --extension-mcp <pack id>` (same scope, hash approved at
+  registration) with `mcp.<server>.<tool> = ask` and `mcp.<server>.* = ask` unless the policy
+  already denies a tool (`policy::decide_in` gained the `*` fallback). Runs, registrations and
+  refusals are audit rows shown in Capabilities, Extension runtime, with the commands
+  `extension_run`, `extension_register_mcp` and `extension_list_runs`. Examples:
+  `examples/capabilities/hooks/commit-lint` and `examples/capabilities/mcp/text-stats`, both
+  signed official. Also in this item, two G9 follow-ups from the qoder review: the agent pack
+  ceiling keeps base `mcp__<server>` wildcards the pack does not exclude (the hub stays
+  reachable), adds no MCP rule the repository allowlist lacks and denies dropped MCP tools by name,
+  and `bus::spawn_worker` resolves the pack ceiling over one store connection
+  (`agent_packs::for_worker_in`).
 
 ## v0.17.0: today at a glance (in progress)
 

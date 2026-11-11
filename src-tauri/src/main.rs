@@ -7,6 +7,15 @@ fn main() {
     if args.iter().any(|a| a == "--memory-quality") {
         std::process::exit(agentos_studio_lib::memory_quality::run_from_args(&args));
     }
+    // A registered MCP bundle's server, started by an agent through the extension runtime.
+    if args
+        .iter()
+        .any(|a| a == agentos_studio_lib::extension_runtime::SERVE_FLAG)
+    {
+        std::process::exit(agentos_studio_lib::extension_runtime::serve_from_args(
+            &args,
+        ));
+    }
     if args.iter().any(|a| a == "--mcp-stdio" || a == "--check") {
         std::process::exit(agentos_studio_lib::mcp_stdio::run_from_args(&args));
     }

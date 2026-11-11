@@ -192,6 +192,29 @@ reversible) for running a hook, command or bundled MCP server from an installed 
 default) without a prompt or an audit row, so the extension runtime can read `capability.run`
 before an unattended run.
 
+### Extension runtime (Phase G 11)
+
+`extension_runtime.rs` is the only module that executes pack code. `admit` runs the fixed checks
+(`marketplace::verify`, kind, official or verified tier, the kind's capability both requested and
+granted in the lock entry, then `permissions::guard_in(c, "capability.run", ..)`) and writes a
+`capability.refuse` audit row for every refusal. `run_in` resolves the entrypoint inside the
+active pack folder (listed in the manifest, canonical path under the pack), picks the interpreter
+by extension (`cmd /D /C`, `powershell -File`, `node`, `python -I`, `bash`), and spawns it with
+`env_clear()` plus `scoped_env` (the `unattended_env` allowlist without `USERPROFILE`, `HOME`,
+`APPDATA`, `LOCALAPPDATA` and the drive pair, `TEMP`/`TMP` at the run's sandbox, and
+`AGENTOS_PACK_ID`), in a checked worktree or a fresh sandbox under
+`%APPDATA%\agentos-studio\extension-sandbox`, with stdin null, a bounded timeout that kills the
+process tree (`taskkill /T /F`; a process group on Unix) and capped, redacted output; the outcome
+is a `capability.run` audit row. `register_mcp_in` admits an `mcp-bundle`, derives its single
+server from `mcp_tools`, writes `ask` for each tool and for `*` through `policy::set_default_in`
+(deny always applies, other defaults only where the owner has no row), stores the approved hash in
+kv `extension.mcp.<id>` and returns a `ServerSpec` for `agentos-studio --extension-mcp <id>`;
+`register_mcp` then calls `mcp_manager::add_mcp_server` for the chosen agents. `main.rs` routes
+`--extension-mcp` to `serve_from_args`, which re-admits the pack, compares the hash with the
+approved one and runs the server under the same scope with inherited stdio. `policy::decide_in`
+falls back to the server's `*` row, so the hub's own `check` sees bundle defaults too. No schema
+change: runs are audit rows, read back by `list_runs_in`.
+
 ### Unattended profile
 
 A mission worker runs with nobody watching, so it gets less than a session a person started.
