@@ -16,6 +16,7 @@ pub mod bus;
 pub mod catalog;
 pub mod chat_stream;
 pub mod cli_runner;
+pub mod clients;
 pub mod commands;
 pub mod completion;
 pub mod computer_use;
@@ -185,6 +186,9 @@ pub fn run_gui() {
             commands::check_full_stack_status,
             commands::install_or_repair_component,
             commands::setup_plan,
+            commands::clients_list,
+            commands::client_connect,
+            commands::client_disconnect,
             commands::scaffold_vault,
             commands::list_board,
             commands::read_task,

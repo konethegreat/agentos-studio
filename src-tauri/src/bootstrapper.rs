@@ -917,11 +917,46 @@ fn run_component(job: &Job, component: &str, vault: &Vault) -> Result<bool> {
 /// The one-click plan for this machine (docs/ONE-CLICK-SETUP.md).
 pub fn setup_plan(vault: &Vault) -> crate::setup_flow::Plan {
     let status = check_full_stack_status(vault);
-    crate::setup_flow::plan(
+    let mut plan = crate::setup_flow::plan(
         &status.components,
         crate::setup_flow::Os::current(),
         procs::find("winget").is_some(),
-    )
+    );
+    let exe = crate::mcp_manager::hub_binary_for(
+        &crate::mcp_manager::hub_root(),
+        env!("CARGO_PKG_VERSION"),
+    );
+    plan.apps = crate::clients::list(&exe.display().to_string())
+        .into_iter()
+        .filter(|c| c.present && !c.current)
+        .map(|c| c.label)
+        .collect();
+    plan
+}
+
+/// Give every installed app (Claude Desktop, Cursor, VS Code, Windsurf, Codex) the read-only hub.
+fn connect_apps(job: &Job, vault: &Vault) -> bool {
+    let exe = match crate::mcp_manager::stage_hub_binary() {
+        Ok(p) => p.display().to_string(),
+        Err(e) => {
+            job.emit("err", &format!("could not stage the hub: {e:#}"));
+            return false;
+        }
+    };
+    let mut ok = true;
+    for c in crate::clients::list(&exe)
+        .into_iter()
+        .filter(|c| c.present && !c.current)
+    {
+        match crate::clients::connect(&c.id, &exe, &vault.root) {
+            Ok(()) => job.emit("ok", &format!("{}: hub connected (read-only)", c.label)),
+            Err(e) => {
+                ok = false;
+                job.emit("err", &format!("{}: {e:#}", c.label));
+            }
+        }
+    }
+    ok
 }
 
 /// Run the system pass: every missing package in one elevated step. Returns the components that
@@ -1125,6 +1160,15 @@ fn set_up_everything(job: &Job, vault: &Vault) -> bool {
             &format!("{t}: {}", if ok { "done" } else { "needs attention" }),
         );
         all_ok &= ok;
+    }
+    if !after.apps.is_empty() {
+        let sub = Job {
+            app: job.app.clone(),
+            id: job.id.clone(),
+            component: "apps".into(),
+        };
+        sub.emit("step", "== other apps ==");
+        all_ok &= connect_apps(&sub, vault);
     }
     all_ok && setup_plan(vault).system.is_empty()
 }

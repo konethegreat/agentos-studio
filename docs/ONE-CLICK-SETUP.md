@@ -21,7 +21,13 @@ sign-ins only a person can do, and is working. Everything a program can do, Stud
    `git`, `node` and `npm` immediately.
 4. **User-level steps:** Hermes (its official installer), the Claude bridge plugin, the PATH fix,
    the Obsidian vault, the hub self-test and the hub registration in every agent that is present.
-5. **Sign-ins, last and in order:** GitHub (`gh auth login --web`), Claude (`claude auth login`)
+5. **Other apps:** the hub is added to Claude Desktop (including the Microsoft Store build),
+   Cursor, VS Code, Windsurf and the Codex CLI when they are installed. They get no identity
+   token, so they can read the bus and the shared memory but never write as an agent. A config
+   that is not plain JSON (VS Code allows comments) is left alone with a message, a backup of
+   the previous file is kept as `<config>.agentos-backup`, and every app update moves them to
+   the new hub like the four agents. Setup, Other apps connects or disconnects each one.
+6. **Sign-ins, last and in order:** GitHub (`gh auth login --web`), Claude (`claude auth login`)
    and the Hermes model picker. Each opens its own window; Setup shows which are still open.
 
 ## Why the app installer stays per-user (not "run as administrator")

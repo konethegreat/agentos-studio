@@ -69,6 +69,17 @@ export interface SetupPlan {
   admin_prompt: boolean;
   user: string[];
   sign_ins: string[];
+  apps: string[];
+}
+
+/** An app that calls the hub without running missions (Claude Desktop, Cursor, VS Code, ...). */
+export interface HubClient {
+  id: string;
+  label: string;
+  present: boolean;
+  config: string;
+  registered: string | null;
+  current: boolean;
 }
 
 export interface StackStatus {
@@ -960,6 +971,9 @@ export const api = {
   status: () => invoke<StackStatus>("check_full_stack_status"),
   repair: (component: string) => invoke<string>("install_or_repair_component", { component }),
   setupPlan: () => invoke<SetupPlan>("setup_plan"),
+  clientsList: () => invoke<HubClient[]>("clients_list"),
+  clientConnect: (id: string) => invoke<void>("client_connect", { id }),
+  clientDisconnect: (id: string) => invoke<void>("client_disconnect", { id }),
   scaffoldVault: (path: string) => invoke<string[]>("scaffold_vault", { path }),
   board: () => invoke<Board>("list_board"),
   readTask: (taskId: string) => invoke<{ task: Task; markdown: string; log: string }>("read_task", { taskId }),

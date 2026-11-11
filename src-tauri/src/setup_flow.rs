@@ -96,11 +96,17 @@ pub struct Plan {
     pub user: Vec<String>,
     /// Sign-ins only a person can finish, in order.
     pub sign_ins: Vec<String>,
+    /// Installed apps (Claude Desktop, VS Code, ...) that get the read-only hub.
+    #[serde(default)]
+    pub apps: Vec<String>,
 }
 
 impl Plan {
     pub fn is_empty(&self) -> bool {
-        self.system.is_empty() && self.user.is_empty() && self.sign_ins.is_empty()
+        self.system.is_empty()
+            && self.user.is_empty()
+            && self.sign_ins.is_empty()
+            && self.apps.is_empty()
     }
 }
 

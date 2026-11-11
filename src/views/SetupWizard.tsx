@@ -1,7 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { Brain, Cable, CheckCircle2, Circle, CircleAlert, Cloud, Cpu, FolderOpen, Layers, RefreshCw, Sparkles, Wrench } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api, errorText, type SetupEvent, type SetupPlan, type SettingsView, type StackStatus } from "../lib/api";
+import { api, errorText, type HubClient, type SetupEvent, type SetupPlan, type SettingsView, type StackStatus } from "../lib/api";
 import { Button, Card, inputClass } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { ConnectCard } from "../components/ConnectCard";
@@ -72,6 +72,7 @@ function SetupEverything({ status, activeJob, onRun }: { status: StackStatus | n
                 </li>
               )}
               {plan.user.length > 0 && <li>Then set up {names(plan.user)}.</li>}
+              {plan.apps.length > 0 && <li>Connect the hub to {plan.apps.join(", ")} (read-only).</li>}
               {plan.sign_ins.length > 0 && (
                 <li>Last, sign in to {names(plan.sign_ins)}. Each opens its own window; finish it there.</li>
               )}
@@ -84,6 +85,63 @@ function SetupEverything({ status, activeJob, onRun }: { status: StackStatus | n
           </Button>
         )}
       </div>
+    </Card>
+  );
+}
+
+/** Apps that call the hub without running missions: connect or disconnect each one. */
+function OtherApps({ activeJob }: { activeJob: string | null }) {
+  const toast = useToast();
+  const [apps, setApps] = useState<HubClient[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = () =>
+    api
+      .clientsList()
+      .then(setApps)
+      .catch(() => setApps([]));
+  useEffect(() => {
+    void load();
+  }, [activeJob]);
+  async function act(c: HubClient) {
+    setBusy(c.id);
+    try {
+      if (c.current) await api.clientDisconnect(c.id);
+      else await api.clientConnect(c.id);
+      toast("ok", c.current ? `${c.label}: hub removed` : `${c.label}: hub connected. Restart ${c.label} to load it.`);
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+  if (!apps) return null;
+  return (
+    <Card className="mb-5 overflow-hidden">
+      <div className="border-b border-line px-4 py-3">
+        <div className="text-sm font-semibold text-slate-100">Other apps</div>
+        <p className="text-label text-muted">
+          Claude Desktop, Cursor, VS Code, Windsurf and Codex can read the bus and the shared memory through the hub. They get no agent identity, so they never write as an agent.
+        </p>
+      </div>
+      <ul className="divide-y divide-line">
+        {apps.map((c) => (
+          <li key={c.id} className="flex items-center gap-3 px-4 py-2.5">
+            {c.current ? <CheckCircle2 className="size-4 shrink-0 text-ok" /> : c.present ? <CircleAlert className="size-4 shrink-0 text-warn" /> : <Circle className="size-4 shrink-0 text-slate-600" />}
+            <div className="min-w-0 flex-1">
+              <div className="text-sm text-slate-200">{c.label}</div>
+              <div className="truncate text-label text-muted" title={c.config}>
+                {!c.present ? "Not installed" : c.current ? "Connected to this version's hub" : c.registered ? "Connected to another hub build" : "Installed, not connected"}
+              </div>
+            </div>
+            {c.present && (
+              <Button size="sm" variant={c.current ? "ghost" : "primary"} busy={busy === c.id} disabled={activeJob !== null} onClick={() => void act(c)}>
+                {c.current ? "Disconnect" : c.registered ? "Update" : "Connect"}
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
@@ -170,6 +228,7 @@ export function SetupWizard({
       <div className="mb-5">
         <ConnectCard />
       </div>
+      <OtherApps activeJob={activeJob} />
       <div className="mb-5 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">1-Click Setup and Integrations</h1>
