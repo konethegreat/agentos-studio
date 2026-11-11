@@ -495,7 +495,7 @@ Also in this release, merged since 0.14.0:
 - Help now bundles NOTION.md and COMPUTER-USE.md; installed builds had been missing both user
   guides because bundled docs are an explicit list.
 
-## v0.16.0: safety for unattended work (in progress)
+## v0.16.0: safety for unattended work (Phase G built; release pending)
 
 Phase G of the 2026-11-08 master brief, split between Hermes (items 3 to 5) and Qoder (items 1
 and 2), per `03_Memory/Phase_D_H_Coordination.md`.
@@ -557,8 +557,10 @@ and 2), per `03_Memory/Phase_D_H_Coordination.md`.
 Phase G grows into the capability platform (owner decision of 2026-11-10, bus TASK-018), built in
 this order, one pull request each:
 
-- **G3, budgets with a hard stop:** a global and per-goal metered budget that stops new work when
-  passed, with spend against budget in the digest.
+- **G3, budgets with a hard stop (done, #131):** a global and per-goal metered budget that stops
+  new work when passed, with spend against budget in the digest; described above under "A global
+  metered budget with a hard stop (G3)".
+- **G4, constitution gate (done):** described above under "The constitution gate (G4)".
 - **G5, one merge policy (done):** Law 3 of the constitution is now "Pull requests, one merge
   policy": agents open pull requests and AgentOS Studio merges them. A mission's agent never
   merges its own pull request; Studio runs the constitution gate, a different agent reviews, and
@@ -653,6 +655,10 @@ this order, one pull request each:
   reachable), adds no MCP rule the repository allowlist lacks and denies dropped MCP tools by name,
   and `bus::spawn_worker` resolves the pack ceiling over one store connection
   (`agent_packs::for_worker_in`).
+
+Phase G is complete on `main` (G3 to G11, bus TASK-018): every item above merged with its
+gates, CI and, for new screens, release-build evidence in `docs/pr-evidence/`. No version bump
+or release was part of this phase; the next release carries it.
 
 ## v0.17.0: today at a glance (in progress)
 
