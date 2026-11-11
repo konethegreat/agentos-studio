@@ -22,6 +22,7 @@ pub mod computer_use;
 pub mod connect;
 pub mod constitution;
 pub mod constitution_gate;
+pub mod context_ledger;
 pub mod council;
 pub mod digest;
 pub mod escalation;
@@ -449,6 +450,11 @@ pub fn run_gui() {
             commands::skill_proposal_approve,
             commands::skill_proposal_dismiss,
             commands::file_provenance,
+            commands::context_events,
+            commands::context_scan,
+            commands::context_rerun,
+            commands::context_search,
+            commands::context_eval,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")

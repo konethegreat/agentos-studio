@@ -153,6 +153,41 @@ fn secrets() -> &'static [(&'static str, Regex)] {
     )
 }
 
+/// Rules only `redact` applies on top of `secrets`: unquoted upper-case env assignments (a read
+/// `.env`)
+/// and authorization headers echoed by a tool. The diff gate keeps its narrower set.
+fn redact_extra() -> &'static [(&'static str, Regex)] {
+    static C: OnceLock<Vec<(&'static str, Regex)>> = OnceLock::new();
+    re(
+        &C,
+        &[
+            (
+                "an authorization header",
+                r"(?i)\b(?:authorization|proxy-authorization)\b\s*[:=]\s*(?:bearer|basic|token)?\s*[A-Za-z0-9_\-+/=.~]{8,}",
+            ),
+            ("a bearer token", r"(?i)\bbearer\s+[A-Za-z0-9_\-+/=.~]{16,}"),
+            (
+                "a credential assignment",
+                r#"\b[A-Z0-9_]*(?:API_?KEY|SECRET|TOKEN|PASSWORD|PASSWD|_PAT)[A-Z0-9_]*["']?\s*[:=]\s*["']?[A-Za-z0-9_\-+/=.]{12,}["']?"#,
+            ),
+        ],
+    )
+}
+
+/// Replace every credential-shaped span with `[redacted: <kind>]`. Shares its rules with the
+/// diff gate, so the ledger and the gate cannot drift apart. Pure.
+pub fn redact(text: &str) -> String {
+    let mut out = text.to_string();
+    for (kind, r) in secrets().iter().chain(redact_extra().iter()) {
+        if r.is_match(&out) {
+            out = r
+                .replace_all(&out, format!("[redacted: {kind}]").as_str())
+                .into_owned();
+        }
+    }
+    out
+}
+
 /// Characters that hide text or reorder it on screen. Pure.
 pub fn hidden_char(c: char) -> Option<&'static str> {
     match c as u32 {
@@ -383,6 +418,21 @@ mod tests {
             &["\"integrity\": \"sha512-abc\u{2014}\""],
         );
         assert!(check_diff(&lock).is_empty());
+    }
+
+    #[test]
+    fn redact_replaces_credentials_and_keeps_prose() {
+        let gh = format!("ghp_{}", "x".repeat(36));
+        let env = format!("GITHUB_TOKEN={}", "q".repeat(20));
+        let text = format!(
+            "pushed with {gh}\n{env}\nAuthorization: Bearer {}",
+            "t".repeat(24)
+        );
+        let r = redact(&text);
+        assert!(!r.contains(&gh) && !r.contains(&"q".repeat(20)) && !r.contains(&"t".repeat(24)));
+        assert!(r.contains("[redacted: a GitHub token]"), "{r}");
+        let prose = "path: src-tauri/src/budget.rs and tokens_before: 1200 stay as written";
+        assert_eq!(redact(prose), prose);
     }
 
     #[test]

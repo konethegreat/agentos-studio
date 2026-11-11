@@ -23,7 +23,7 @@ use crate::store;
 pub const ROLES: [&str; 5] = ["planner", "implementer", "reviewer", "gatekeeper", "memory"];
 pub const STATUSES: [&str; 6] = ["queued", "running", "review", "blocked", "done", "failed"];
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct Mission {
     pub id: String,
     pub repo: String,
@@ -239,6 +239,10 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         })?;
     // Every attempt gets its own worktree and branch, so a mission never shares a checkout.
     let wt = crate::worktree::create(&dir, &m)?;
+    // The worker's pinned context, local to the worktree and never committed.
+    if let Err(e) = crate::context_ledger::write_worktree_context(&wt, &m) {
+        eprintln!("{id}: context file not written: {e:#}");
+    }
     let conventions = crate::learning::conventions_for(v, &m.repo);
     let args = crate::vault::DelegateArgs {
         title: m.goal.chars().take(90).collect(),
@@ -309,6 +313,12 @@ pub fn bus_instructions(
         b.push_str(&format!(
             "\n\nConventions from earlier reviews in this repository:\n{}",
             conventions
+        ));
+    }
+    if worktree.is_some() {
+        b.push_str(&format!(
+            "\n\nRead {} in your worktree before you start, and before you finish update its Decisions, Next step and Open questions sections. It is excluded from commits; never add it.",
+            crate::context_ledger::context_rel(&m.id)
         ));
     }
     b.push_str(&format!("\n\nRepository: {}", dir.display()));

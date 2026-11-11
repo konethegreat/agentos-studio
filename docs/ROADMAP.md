@@ -623,10 +623,17 @@ this order, one pull request each:
   carries `Agent pack: <id>`, `bus::spawn_worker` applies the ceiling and puts the persona first.
   The Agents view lists installed packs with each ceiling and what was dropped and why. The five
   packs are in `examples/capabilities/agents`, signed with the official key.
-- **G10, context ledger:** Hermes and Claude Code keep doing their own compaction. Studio records
-  each compaction, writes a fixed-schema summary through Hermes' pre-compress checkpoint contract,
-  keeps `.agentos/context/<mission>.md` in each worktree and measures recall with four probes over
-  real sessions.
+- **G10, context ledger (shipped, `context_ledger.rs`, `ContextLedger.tsx`, migration 11):** Hermes
+  and Claude Code keep doing their own compaction. Studio records each compaction in the
+  append-only `context_events` table, writes an immutable 13-section anchored summary under
+  `03_Memory/context/<agent>-<session tail>-<first>-<last>.md` with file, symbol, decision,
+  masked tool output and commit pointers, keeps `.agentos/context/<mission>.md` in each worktree
+  (excluded from git through `<git-common-dir>/info/exclude`, verified with `git check-ignore`,
+  and named in the mission brief), redacts credentials through `constitution_gate::redact`
+  before any note is written, supports non-destructive focused
+  re-summarization (`-focus-<stamp>.md`), queries Hermes' FTS5 `messages_fts` alongside vault
+  recall, and scores four probes (facts, artifacts, continuation, decisions) over 25 real
+  sessions (38 cuts, 37/38 passing the 0.80 bar).
 - **G11, extension runtime:** hooks, command packs and MCP bundles, run only in the scoped
   unattended environment and only within their declared capabilities.
 

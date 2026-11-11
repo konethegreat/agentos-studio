@@ -1856,3 +1856,63 @@ pub async fn digest_latest(state: State<'_, AppState>) -> CmdResult<Option<Strin
     let v = current_vault(&state);
     blocking(move || Ok(crate::digest::latest(&v))).await
 }
+
+// ---------------------------------------------------------------------------
+// Context ledger (Phase G 10)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn context_events(limit: Option<usize>) -> CmdResult<Vec<crate::context_ledger::Event>> {
+    blocking(move || {
+        let c = crate::store::open()?;
+        crate::context_ledger::list(&c, limit.unwrap_or(200))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn context_scan(
+    state: State<'_, AppState>,
+) -> CmdResult<crate::context_ledger::ScanReport> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let c = crate::store::open()?;
+        Ok(crate::context_ledger::scan(&v.root, &c))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn context_rerun(
+    state: State<'_, AppState>,
+    id: i64,
+    focus: String,
+) -> CmdResult<String> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let c = crate::store::open()?;
+        crate::context_ledger::rerun(&v.root, &c, id, &focus)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn context_search(
+    state: State<'_, AppState>,
+    query: String,
+    limit: Option<usize>,
+) -> CmdResult<Vec<crate::context_ledger::Hit>> {
+    let v = current_vault(&state);
+    blocking(move || crate::context_ledger::search(&v, &query, limit.unwrap_or(20))).await
+}
+
+#[tauri::command]
+pub async fn context_eval(
+    min_messages: Option<usize>,
+    bar: Option<f64>,
+) -> CmdResult<crate::context_ledger::EvalReport> {
+    blocking(move || {
+        crate::context_ledger::evaluate(min_messages.unwrap_or(12), bar.unwrap_or(0.8))
+    })
+    .await
+}
