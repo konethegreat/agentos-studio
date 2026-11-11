@@ -52,6 +52,7 @@ pub mod missions;
 pub mod model_layer;
 pub mod model_watch;
 pub mod models;
+pub mod notices;
 pub mod notion;
 pub mod notion_goals;
 pub mod notion_sync;
@@ -147,6 +148,27 @@ pub fn run_gui() {
             std::thread::spawn(move || {
                 boot::run(Some(boot_handle));
             });
+            // Notification centre: questions, finished goals and blocked missions also raise a
+            // Windows notification, once each, unless the owner switched them off.
+            let nh = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(30));
+                loop {
+                    let now = chrono::Utc::now().timestamp();
+                    if let Ok(c) = crate::store::open() {
+                        for n in crate::notices::take_for_os_in(&c, now).unwrap_or_default() {
+                            use tauri_plugin_notification::NotificationExt;
+                            let _ = nh
+                                .notification()
+                                .builder()
+                                .title(&n.title)
+                                .body(&n.detail)
+                                .show();
+                        }
+                    }
+                    std::thread::sleep(Duration::from_secs(60));
+                }
+            });
             // Update checks: shortly after start, then every 6 hours. New versions raise an
             // in-app event and, once per version, an OS notification.
             let upd = app.handle().clone();
@@ -187,6 +209,8 @@ pub fn run_gui() {
             commands::install_or_repair_component,
             commands::setup_plan,
             commands::clients_list,
+            commands::notices_list,
+            commands::notices_read,
             commands::client_connect,
             commands::client_disconnect,
             commands::scaffold_vault,

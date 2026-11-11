@@ -110,6 +110,17 @@ pub async fn check_full_stack_status(
     blocking(move || Ok(bootstrapper::check_full_stack_status(&v))).await
 }
 
+/// The notification centre: everything that needs attention, newest first.
+#[tauri::command]
+pub async fn notices_list() -> CmdResult<Vec<crate::notices::Notice>> {
+    blocking(|| crate::notices::list(chrono::Utc::now().timestamp())).await
+}
+
+#[tauri::command]
+pub async fn notices_read() -> CmdResult<()> {
+    blocking(|| crate::notices::mark_read(chrono::Utc::now().timestamp())).await
+}
+
 /// Claude Desktop, Cursor, VS Code, Windsurf and Codex: installed, and connected to the hub?
 #[tauri::command]
 pub async fn clients_list() -> CmdResult<Vec<crate::clients::Client>> {

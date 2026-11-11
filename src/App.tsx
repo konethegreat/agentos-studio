@@ -445,7 +445,7 @@ function Studio() {
       <div className="flex h-full">
         <NavRail groups={railGroups} view={view as RailView} onGo={(v) => go(v as View)} />
         <main className="flex min-w-0 flex-1 flex-col">
-          <StatusBar hermes={hermes} stack={status} onOpenDiagnostics={() => go("diagnostics")} onRefresh={() => void loadHermes(true)} />
+          <StatusBar hermes={hermes} stack={status} onOpenDiagnostics={() => go("diagnostics")} onRefresh={() => void loadHermes(true)} onGo={(v) => go(v as View)} />
           <UpdateBanner onOpen={() => go("updates")} />
           <div className="relative min-h-0 flex-1">
             {view === "today" && <Today />}

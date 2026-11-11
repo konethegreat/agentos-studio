@@ -3,6 +3,7 @@ import { NEXT_PREF, setThemePref, themePref, type ThemePref } from "../lib/theme
 import type { ReactNode } from "react";
 import type { FleetPause, HermesStatus, StackStatus } from "../lib/api";
 import { useCli } from "./CliDrawer";
+import { NoticeBell } from "./NoticeBell";
 import { api } from "../lib/api";
 import { useEffect, useState } from "react";
 
@@ -101,10 +102,12 @@ export function StatusBar({
   stack,
   onOpenDiagnostics,
   onRefresh,
+  onGo,
 }: {
   hermes: HermesStatus | null;
   stack: StackStatus | null;
   onOpenDiagnostics: () => void;
+  onGo: (view: string) => void;
   onRefresh: () => void;
 }) {
   const cli = useCli();
@@ -191,6 +194,7 @@ export function StatusBar({
         {healthy ? <CircleCheck className="size-4" /> : <TriangleAlert className="size-4" />}
         {healthy ? "Healthy" : stack ? `${needs} need attention` : "Checking"}
       </button>
+      <NoticeBell onGo={onGo} />
       <PauseButton />
       <ThemeButton />
       <button
