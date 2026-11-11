@@ -51,7 +51,7 @@ function SetupEverything({ status, activeJob, onRun }: { status: StackStatus | n
       stop = true;
     };
   }, [status?.checked_at, activeJob]);
-  const empty = plan !== null && plan.system.length + plan.user.length + plan.sign_ins.length === 0;
+  const empty = plan !== null && plan.system.length + plan.user.length + plan.sign_ins.length + plan.apps.length === 0;
   return (
     <Card className="mb-5 overflow-hidden border-emerald-500/30">
       <div className="flex items-start gap-4 px-5 py-4">

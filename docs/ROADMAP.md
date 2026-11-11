@@ -523,7 +523,7 @@ before it. Nothing here is built yet.
   verifies the pull request's head in Studio's own worktree, or records "not run". Then #107: merge
   the top-level test crates so a full `cargo test` links fewer binaries on an 11 GB machine.
   Patch releases go out through the in-app updater only.
-- **1.1, a new user is working in minutes (in progress).** Owner direction 2026-11-11: reduce
+- **1.1, a new user is working in minutes (shipped in 1.1.0: #148, #149, #150; also #117 fixed in #146 and the rail badges in #147).** Owner direction 2026-11-11: reduce
   manual setup to the sign-ins only a person can do, and make every count in the app explain
   itself. Three parts, each its own PR:
   - **One-click setup.** "Set up everything" on Setup installs every missing tool in one pass:
