@@ -858,6 +858,11 @@ pub fn auto_update_hub(vault: &Path) -> Result<Vec<AgentOutcome>> {
         }
         out.extend(add_mcp_server(&spec, std::slice::from_ref(agent))?);
     }
+    // Claude Desktop, Cursor, VS Code, Windsurf and Codex follow the hub like the agents do.
+    let moved = crate::clients::follow_update(&exe, vault, &root);
+    if !moved.is_empty() {
+        eprintln!("hub: moved {} to {exe}", moved.join(", "));
+    }
     Ok(out)
 }
 

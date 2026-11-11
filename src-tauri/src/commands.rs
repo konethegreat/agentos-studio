@@ -110,6 +110,35 @@ pub async fn check_full_stack_status(
     blocking(move || Ok(bootstrapper::check_full_stack_status(&v))).await
 }
 
+/// Claude Desktop, Cursor, VS Code, Windsurf and Codex: installed, and connected to the hub?
+#[tauri::command]
+pub async fn clients_list() -> CmdResult<Vec<crate::clients::Client>> {
+    blocking(|| {
+        let exe = crate::mcp_manager::hub_binary_for(
+            &crate::mcp_manager::hub_root(),
+            env!("CARGO_PKG_VERSION"),
+        );
+        Ok(crate::clients::list(&exe.display().to_string()))
+    })
+    .await
+}
+
+/// Give one app the read-only hub (no identity token, so it can read but never write as an agent).
+#[tauri::command]
+pub async fn client_connect(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let exe = crate::mcp_manager::stage_hub_binary()?;
+        crate::clients::connect(&id, &exe.display().to_string(), &v.root)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn client_disconnect(id: String) -> CmdResult<()> {
+    blocking(move || crate::clients::disconnect(&id)).await
+}
+
 /// What "Set up everything" will do on this machine (docs/ONE-CLICK-SETUP.md).
 #[tauri::command]
 pub async fn setup_plan(state: State<'_, AppState>) -> CmdResult<crate::setup_flow::Plan> {
