@@ -397,10 +397,17 @@ function Studio() {
     };
   }, []);
 
+  // Where each rail count comes from, so the badge names its source and the tab that holds it.
+  const BADGE_SOURCE: Record<string, Pick<RailGroup, "badgeLabel" | "badgeTab">> = {
+    work: { badgeLabel: "Agent Bus tasks pending or in progress", badgeTab: "mission" },
+    system: { badgeLabel: "updates available", badgeTab: "updates" },
+    code: { badgeLabel: "failing CI runs", badgeTab: "github" },
+  };
   const railGroups = useMemo<RailGroup[]>(
     () =>
       GROUPS.map((g) => ({
         ...g,
+        ...(BADGE_SOURCE[g.id] ?? {}),
         badge:
           g.id === "work"
             ? (board ? board.pending.length + board.in_progress.length : 0)
