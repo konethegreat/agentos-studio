@@ -523,7 +523,25 @@ before it. Nothing here is built yet.
   verifies the pull request's head in Studio's own worktree, or records "not run". Then #107: merge
   the top-level test crates so a full `cargo test` links fewer binaries on an 11 GB machine.
   Patch releases go out through the in-app updater only.
-- **1.1, the fleet maintains itself.** Turn the 25 to 30 local repositories into standing goals
+- **1.1, a new user is working in minutes (in progress).** Owner direction 2026-11-11: reduce
+  manual setup to the sign-ins only a person can do, and make every count in the app explain
+  itself. Three parts, each its own PR:
+  - **One-click setup.** "Set up everything" on Setup installs every missing tool in one pass:
+    on Windows one admin prompt covers every winget install (Git, Node.js, GitHub CLI, Claude
+    Code), and winget itself is installed when it is missing; Homebrew on macOS; pkexec with apt
+    or dnf on Linux. Then Hermes, its plugins, PATH, the vault and the hub registrations, then the
+    sign-ins in order. The machine PATH is re-read so new tools are found without a restart.
+    Design and the reason the app installer itself stays per-user: `docs/ONE-CLICK-SETUP.md`.
+  - **More apps connect.** The hub registers in Claude Desktop, Cursor, VS Code, Windsurf and the
+    Codex CLI when they are installed, follows the app on every update like the four agents, and
+    is read-only for them (no hub identity token), so a chat app can read the bus and memory but
+    never write as an agent.
+  - **Notification centre.** One bell with every event that needs attention (a question waiting,
+    a goal finished, a mission blocked, failing CI, an update), each linking to its screen, plus
+    Windows notifications for the same events with a switch to turn them off.
+  - Alongside: the download site redesign with UI Vault components and setup guides for each
+    platform (agentos-studio-website).
+- **1.2, the fleet maintains itself.** Turn the 25 to 30 local repositories into standing goals
   that need no prompting: each repository opts in with `.agentos/routing.json` (`allow_merge`,
   roles), and a weekly maintenance goal per opted-in repository covers dependency updates, red CI
   and stale docs. All of it goes through the existing review and merge gate, with a machine-wide
@@ -531,12 +549,12 @@ before it. Nothing here is built yet.
   (v0.14), merge policy and budgets (Phase G). Done when: one week passes with every opted-in
   repository's main green, no owner clicks beyond escalations, and $0 metered spend outside the
   set budget.
-- **1.2, intervene without stopping.** A real pause for a running mission (today Stop cancels the
+- **1.3, intervene without stopping.** A real pause for a running mission (today Stop cancels the
   turn), plus a run export: one mission's prompt, tool calls and results as a Markdown report in
   the vault. Depends on: the run timeline (v0.12) and the context ledger (G10).
-- **1.3, scorecards that move defaults.** Per-model scorecards from real missions (PARITY says
+- **1.4, scorecards that move defaults.** Per-model scorecards from real missions (PARITY says
   part) feed the shadow router. A default moves only after the evaluation replays (v0.13) beat it,
-  never silently. Depends on: 1.1, because it needs enough missions to score.
+  never silently. Depends on: 1.2, because it needs enough missions to score.
 - **When Hermes ships them:** outbound network rules and an OS keychain for unattended workers.
   Safety already shows both as waiting on Hermes; Studio wires them up when Hermes provides the
   surface, and does not build its own proxy or vault.

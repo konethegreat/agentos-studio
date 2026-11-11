@@ -70,6 +70,7 @@ pub mod review_agent;
 pub mod router;
 pub mod routing;
 pub mod settings;
+pub mod setup_flow;
 pub mod single;
 pub mod skill_bridge;
 pub mod skill_proposals;
@@ -183,6 +184,7 @@ pub fn run_gui() {
             commands::save_settings,
             commands::check_full_stack_status,
             commands::install_or_repair_component,
+            commands::setup_plan,
             commands::scaffold_vault,
             commands::list_board,
             commands::read_task,

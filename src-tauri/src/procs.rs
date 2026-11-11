@@ -229,12 +229,19 @@ fn wait_with_timeout(
 /// The persisted user PATH (Windows registry), which can be newer than this process's PATH.
 #[cfg(windows)]
 pub fn user_path_entries() -> Vec<String> {
-    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
-    let raw: String = RegKey::predef(HKEY_CURRENT_USER)
+    let user: String = RegKey::predef(HKEY_CURRENT_USER)
         .open_subkey("Environment")
         .and_then(|k| k.get_value("Path"))
         .unwrap_or_default();
+    // Installers (winget, Git, Node.js) write the machine PATH, which a running process never
+    // sees; reading it here lets Setup find a tool it just installed without a restart.
+    let machine: String = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey(r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
+        .and_then(|k| k.get_value("Path"))
+        .unwrap_or_default();
+    let raw = format!("{user};{machine}");
     raw.split(';')
         .filter(|s| !s.trim().is_empty())
         .map(expand_env)

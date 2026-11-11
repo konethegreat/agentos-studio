@@ -1,7 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { Brain, Cable, CheckCircle2, Circle, CircleAlert, Cloud, Cpu, FolderOpen, Layers, RefreshCw, Sparkles, Wrench } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api, errorText, type SetupEvent, type SettingsView, type StackStatus } from "../lib/api";
+import { api, errorText, type SetupEvent, type SetupPlan, type SettingsView, type StackStatus } from "../lib/api";
 import { Button, Card, inputClass } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { ConnectCard } from "../components/ConnectCard";
@@ -15,6 +15,78 @@ const PILLAR_ICON: Record<number, ReactNode> = {
   5: <Cable className="size-5" />,
   6: <Wrench className="size-5" />,
 };
+
+/** Plain names for plan steps, so the plan reads as sentences. */
+const STEP_NAME: Record<string, string> = {
+  git: "Git",
+  node: "Node.js",
+  gh: "GitHub CLI",
+  "claude-cli": "Claude Code",
+  path: "PATH fix",
+  hermes: "Hermes",
+  "hermes-plugin": "Hermes Claude bridge",
+  vault: "Obsidian vault",
+  "bus-selftest": "hub self-test",
+  "mcp-hermes": "hub in Hermes",
+  "mcp-claude": "hub in Claude Code",
+  "mcp-qoder": "hub in Qoder",
+  "mcp-antigravity": "hub in Antigravity",
+  "claude-auth": "Claude",
+  "hermes-model": "Hermes model",
+};
+const names = (ids: string[]) => ids.map((i) => STEP_NAME[i] ?? i).join(", ");
+
+/** The one-click plan: what installs with one admin prompt, what runs as you, what you sign in to. */
+function SetupEverything({ status, activeJob, onRun }: { status: StackStatus | null; activeJob: string | null; onRun: () => void }) {
+  const [plan, setPlan] = useState<SetupPlan | null>(null);
+  useEffect(() => {
+    let stop = false;
+    api
+      .setupPlan()
+      .then((p) => {
+        if (!stop) setPlan(p);
+      })
+      .catch(() => undefined);
+    return () => {
+      stop = true;
+    };
+  }, [status?.checked_at, activeJob]);
+  const empty = plan !== null && plan.system.length + plan.user.length + plan.sign_ins.length === 0;
+  return (
+    <Card className="mb-5 overflow-hidden border-emerald-500/30">
+      <div className="flex items-start gap-4 px-5 py-4">
+        <Sparkles className="mt-0.5 size-6 shrink-0 text-emerald-300" />
+        <div className="min-w-0 flex-1">
+          <div className="text-base font-semibold text-slate-100">{empty ? "Everything is set up" : "Set up everything"}</div>
+          {plan === null ? (
+            <p className="text-small text-muted">Checking this machine...</p>
+          ) : empty ? (
+            <p className="text-small text-muted">Every required tool is installed, signed in and connected. Optional items below are yours to add.</p>
+          ) : (
+            <ol className="mt-1 list-decimal space-y-1 pl-5 text-small text-slate-300">
+              {plan.system.length > 0 && (
+                <li>
+                  Install {names(plan.system)}
+                  {plan.install_winget ? ", and winget first" : ""}
+                  {plan.admin_prompt ? ". Windows asks for admin permission once for all of them." : "."}
+                </li>
+              )}
+              {plan.user.length > 0 && <li>Then set up {names(plan.user)}.</li>}
+              {plan.sign_ins.length > 0 && (
+                <li>Last, sign in to {names(plan.sign_ins)}. Each opens its own window; finish it there.</li>
+              )}
+            </ol>
+          )}
+        </div>
+        {!empty && (
+          <Button variant="primary" size="lg" busy={activeJob !== null} disabled={plan === null} icon={<Sparkles className="size-4" />} onClick={onRun}>
+            Set up everything
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 export function SetupWizard({
   status,
@@ -49,7 +121,14 @@ export function SetupWizard({
   async function repair(component: string) {
     try {
       await api.repair(component);
-      toast("info", component === "all" ? "Auto-setup started. Sign-in windows open where needed." : `Working on ${component}`);
+      toast(
+        "info",
+        component === "everything"
+          ? "Setup started. Approve the admin prompt once; sign-in windows open at the end."
+          : component === "all"
+            ? "Auto-setup started. Sign-in windows open where needed."
+            : `Working on ${component}`,
+      );
     } catch (e) {
       toast("error", errorText(e));
     }
@@ -87,6 +166,7 @@ export function SetupWizard({
 
   return (
     <div className="h-full overflow-y-auto px-6 pb-10 pt-5">
+      <SetupEverything status={status} activeJob={activeJob} onRun={() => void repair("everything")} />
       <div className="mb-5">
         <ConnectCard />
       </div>
@@ -101,8 +181,8 @@ export function SetupWizard({
           <Button variant="secondary" busy={refreshing} icon={<RefreshCw className="size-4" />} onClick={refresh}>
             Re-check
           </Button>
-          <Button variant="primary" size="lg" busy={activeJob !== null} icon={<Sparkles className="size-4" />} onClick={() => repair("all")}>
-            Auto-Setup and Repair Everything
+          <Button variant="secondary" busy={activeJob !== null} icon={<Wrench className="size-4" />} onClick={() => repair("all")}>
+            Repair what is broken
           </Button>
         </div>
       </div>
