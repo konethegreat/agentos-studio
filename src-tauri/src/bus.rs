@@ -602,7 +602,8 @@ pub fn spawn_worker(
     };
     // An agent pack narrows the worker: its persona first, then only the tools its ceiling keeps.
     let pack = match line_value(&task.body, "Agent pack") {
-        Some(id) => Some(crate::agent_packs::for_worker(
+        Some(id) => Some(crate::agent_packs::for_worker_in(
+            &crate::store::open()?,
             &id,
             agent,
             &task.project,
