@@ -62,6 +62,15 @@ export interface Pillar {
   ok: boolean;
 }
 
+/** What "Set up everything" will do (docs/ONE-CLICK-SETUP.md). */
+export interface SetupPlan {
+  system: string[];
+  install_winget: boolean;
+  admin_prompt: boolean;
+  user: string[];
+  sign_ins: string[];
+}
+
 export interface StackStatus {
   components: Component[];
   pillars: Pillar[];
@@ -950,6 +959,7 @@ export const api = {
   saveSettings: (vault: string, scanRoots: string[]) => invoke<SettingsView>("save_settings", { vault, scanRoots }),
   status: () => invoke<StackStatus>("check_full_stack_status"),
   repair: (component: string) => invoke<string>("install_or_repair_component", { component }),
+  setupPlan: () => invoke<SetupPlan>("setup_plan"),
   scaffoldVault: (path: string) => invoke<string[]>("scaffold_vault", { path }),
   board: () => invoke<Board>("list_board"),
   readTask: (taskId: string) => invoke<{ task: Task; markdown: string; log: string }>("read_task", { taskId }),

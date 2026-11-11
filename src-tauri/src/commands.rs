@@ -110,6 +110,13 @@ pub async fn check_full_stack_status(
     blocking(move || Ok(bootstrapper::check_full_stack_status(&v))).await
 }
 
+/// What "Set up everything" will do on this machine (docs/ONE-CLICK-SETUP.md).
+#[tauri::command]
+pub async fn setup_plan(state: State<'_, AppState>) -> CmdResult<crate::setup_flow::Plan> {
+    let v = current_vault(&state);
+    blocking(move || Ok(bootstrapper::setup_plan(&v))).await
+}
+
 #[tauri::command]
 pub fn install_or_repair_component(
     app: AppHandle,

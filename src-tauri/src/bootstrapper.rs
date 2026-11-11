@@ -914,6 +914,221 @@ fn run_component(job: &Job, component: &str, vault: &Vault) -> Result<bool> {
     }
 }
 
+/// The one-click plan for this machine (docs/ONE-CLICK-SETUP.md).
+pub fn setup_plan(vault: &Vault) -> crate::setup_flow::Plan {
+    let status = check_full_stack_status(vault);
+    crate::setup_flow::plan(
+        &status.components,
+        crate::setup_flow::Os::current(),
+        procs::find("winget").is_some(),
+    )
+}
+
+/// Run the system pass: every missing package in one elevated step. Returns the components that
+/// reported success.
+fn system_pass(job: &Job, plan: &crate::setup_flow::Plan) -> Result<Vec<String>> {
+    use crate::setup_flow::{Os, SYSTEM_PKGS};
+    let pkgs: Vec<&crate::setup_flow::SystemPkg> = SYSTEM_PKGS
+        .iter()
+        .filter(|p| plan.system.iter().any(|s| s == p.component))
+        .collect();
+    if pkgs.is_empty() {
+        return Ok(Vec::new());
+    }
+    match Os::current() {
+        Os::Windows => {
+            let dir = crate::store::studio_dir().join("setup");
+            std::fs::create_dir_all(&dir)?;
+            let log = dir.join(format!("elevated-{}.log", job.id));
+            let result = dir.join(format!("elevated-{}.json", job.id));
+            let script = dir.join(format!("elevated-{}.ps1", job.id));
+            let ids: Vec<&str> = pkgs.iter().map(|p| p.winget).collect();
+            std::fs::write(
+                &script,
+                crate::setup_flow::windows_script(
+                    &ids,
+                    plan.install_winget,
+                    &log.display().to_string(),
+                    &result.display().to_string(),
+                ),
+            )?;
+            job.emit(
+                "cmd",
+                &format!(
+                    "Installing {} with one admin prompt (Windows asks once)",
+                    ids.join(", ")
+                ),
+            );
+            let ps = procs::find("powershell").ok_or_else(|| anyhow!("PowerShell not found"))?;
+            let inner = format!(
+                "-NoProfile -ExecutionPolicy Bypass -File \"{}\"",
+                script.display()
+            );
+            let launch = format!(
+                "try {{ Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '{}' ; exit 0 }} catch {{ exit 5 }}",
+                inner.replace('\'', "''")
+            );
+            let mut child = procs::command(&ps)
+                .args(["-NoProfile", "-Command", &launch])
+                .stdin(Stdio::null())
+                .spawn()
+                .context("starting the elevated install")?;
+            // Stream the elevated script's log while it runs.
+            let mut seen = 0usize;
+            let status = loop {
+                if let Ok(text) = std::fs::read_to_string(&log) {
+                    for l in text.lines().skip(seen) {
+                        job.emit("out", l.trim_start_matches('\u{feff}'));
+                    }
+                    seen = text.lines().count();
+                }
+                if let Some(st) = child.try_wait()? {
+                    break st;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            };
+            if let Ok(text) = std::fs::read_to_string(&log) {
+                for l in text.lines().skip(seen) {
+                    job.emit("out", l.trim_start_matches('\u{feff}'));
+                }
+            }
+            let _ = std::fs::remove_file(&script);
+            if !status.success() {
+                bail!("the admin prompt was declined, so nothing was installed");
+            }
+            let codes: Value = std::fs::read_to_string(&result)
+                .ok()
+                .and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok())
+                .unwrap_or(Value::Null);
+            let _ = std::fs::remove_file(&result);
+            Ok(pkgs
+                .iter()
+                .filter(|p| {
+                    codes
+                        .get(p.winget)
+                        .and_then(Value::as_i64)
+                        .is_some_and(crate::setup_flow::winget_ok)
+                })
+                .map(|p| p.component.to_string())
+                .collect())
+        }
+        Os::MacOs => {
+            if procs::find("brew").is_none() {
+                job.emit("out", "Homebrew is missing: its installer opens in Terminal and asks for your password");
+                let cmd = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"";
+                let script = format!(
+                    "tell application \"Terminal\" to do script \"{}\"",
+                    cmd.replace('\\', "\\\\").replace('"', "\\\"")
+                );
+                let _ = Command::new("osascript").args(["-e", &script]).status();
+                bail!(
+                    "finish the Homebrew install in Terminal, then press Set up everything again"
+                );
+            }
+            let names: Vec<&str> = pkgs.iter().map(|p| p.brew).collect();
+            let mut args = vec!["install"];
+            args.extend(names.iter().copied());
+            let ok = stream(job, "brew", &args, None)?;
+            Ok(if ok {
+                pkgs.iter().map(|p| p.component.to_string()).collect()
+            } else {
+                Vec::new()
+            })
+        }
+        Os::Linux => {
+            let dnf = procs::find("dnf").is_some();
+            let mgr = if dnf { "dnf" } else { "apt-get" };
+            let names = crate::setup_flow::linux_packages(&plan.system, dnf);
+            if procs::find("pkexec").is_none() {
+                bail!(
+                    "install {} with sudo {mgr} install, then press Re-check",
+                    names.join(" ")
+                );
+            }
+            let mut args = vec![mgr, "install", "-y"];
+            args.extend(names.iter().map(String::as_str));
+            let ok = stream(job, "pkexec", &args, None)?;
+            Ok(if ok {
+                pkgs.iter().map(|p| p.component.to_string()).collect()
+            } else {
+                Vec::new()
+            })
+        }
+    }
+}
+
+/// "Set up everything": the system pass with one admin prompt, then the user steps, then the
+/// sign-ins, re-reading the machine between passes so a fresh install is found at once.
+fn set_up_everything(job: &Job, vault: &Vault) -> bool {
+    let plan = setup_plan(vault);
+    if plan.is_empty() {
+        job.emit("out", "Every required component is already set up");
+        return true;
+    }
+    job.emit(
+        "out",
+        &format!(
+            "Plan: install {}; then {}; then sign in: {}",
+            if plan.system.is_empty() {
+                "nothing".into()
+            } else {
+                plan.system.join(", ")
+            },
+            if plan.user.is_empty() {
+                "no other steps".into()
+            } else {
+                plan.user.join(", ")
+            },
+            if plan.sign_ins.is_empty() {
+                "none".into()
+            } else {
+                plan.sign_ins.join(", ")
+            },
+        ),
+    );
+    let mut all_ok = true;
+    let installed = match system_pass(job, &plan) {
+        Ok(v) => v,
+        Err(e) => {
+            job.emit("err", &format!("{e:#}"));
+            Vec::new()
+        }
+    };
+    // Anything the system pass did not install gets its one-by-one install (Claude Code falls
+    // back to npm there), so a failed package never stops the rest.
+    let retry: Vec<String> = plan
+        .system
+        .iter()
+        .filter(|s| !installed.contains(s))
+        .cloned()
+        .collect();
+    let after = setup_plan(vault);
+    let steps: Vec<String> = retry
+        .into_iter()
+        .filter(|s| s != "gh")
+        .chain(after.user.iter().cloned())
+        .chain(after.sign_ins.iter().cloned())
+        .collect();
+    for t in steps {
+        let sub = Job {
+            app: job.app.clone(),
+            id: job.id.clone(),
+            component: t.clone(),
+        };
+        sub.emit("step", &format!("== {t} =="));
+        let ok = run_component(&sub, &t, vault).unwrap_or_else(|e| {
+            sub.emit("err", &format!("{e:#}"));
+            false
+        });
+        sub.emit(
+            if ok { "ok" } else { "err" },
+            &format!("{t}: {}", if ok { "done" } else { "needs attention" }),
+        );
+        all_ok &= ok;
+    }
+    all_ok && setup_plan(vault).system.is_empty()
+}
+
 /// Start an install/repair job in the background; progress arrives as `agentos://setup-progress`.
 pub fn install_or_repair_component(app: AppHandle, vault: Vault, component: String) -> String {
     let id = uuid::Uuid::new_v4().simple().to_string()[..8].to_string();
@@ -924,6 +1139,18 @@ pub fn install_or_repair_component(app: AppHandle, vault: Vault, component: Stri
             id: job_id,
             component: component.clone(),
         };
+        if component == "everything" {
+            let ok = set_up_everything(&job, &vault);
+            job.finish(
+                ok,
+                if ok {
+                    "Set up finished"
+                } else {
+                    "Set up finished with items that need attention"
+                },
+            );
+            return;
+        }
         let targets: Vec<String> = if component == "all" {
             let status = check_full_stack_status(&vault);
             let broken: Vec<String> = status
