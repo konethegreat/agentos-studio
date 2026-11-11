@@ -35,6 +35,13 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.1.0
+
+- **Set up everything.** One button on Setup installs every missing tool after a single admin prompt (winget on Windows, Homebrew on macOS, pkexec on Linux), then Hermes, the vault and the hub, then opens the sign-ins. See [docs/ONE-CLICK-SETUP.md](docs/ONE-CLICK-SETUP.md).
+- **More apps.** Claude Desktop, Cursor, VS Code, Windsurf and Codex get the hub, read-only, and follow every update.
+- **Notifications.** A bell lists every question, finished goal, blocked mission and review, each linking to its screen, with Windows alerts you can switch off. Rail badges now say what they count.
+- **Fix.** `hermes verify` never runs in your own checkout (#117).
+
 ## What is new in 1.0.0
 
 The first public release. Download it from https://agentos-studio-website.erictshivhinda.workers.dev
