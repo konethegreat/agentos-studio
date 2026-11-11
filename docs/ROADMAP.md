@@ -495,7 +495,25 @@ Also in this release, merged since 0.14.0:
 - Help now bundles NOTION.md and COMPUTER-USE.md; installed builds had been missing both user
   guides because bundled docs are an explicit list.
 
-## v0.16.0: safety for unattended work (Phase G built; release pending)
+## v1.0.0: public release (shipped)
+
+Phases G and H of the 2026-11-08 master brief ship together as 1.0.0, the first public release.
+The two sections below (safety for unattended work, Today at a glance) were planned as 0.16.0 and
+0.17.0 and never released separately; everything in them is in 1.0.0.
+
+- **Phase G, safety and capabilities (Hermes and Qoder):** tool permissions per agent and
+  project, the unattended worker profile, budgets with a hard stop, the constitution gate, merge
+  policy, the capability fabric, the marketplace with signed packs and trust tiers, the skill
+  bridge, the browser runtime, agent packs, the context ledger and the extension runtime.
+- **Phase H, for people who are not the owner (Qoder):** a first run that needs none of the
+  owner's setup (#100), honest unsigned-build install instructions (#102), the Today home screen
+  (#122) and docs written for strangers (#104).
+- **Download site (H4):** live at https://agentos-studio-website.erictshivhinda.workers.dev,
+  serving each platform's installer from the latest GitHub release (agentos-studio-website#1, #2).
+- Open, and stated in Safety: outbound network rules and an OS keychain for unattended workers
+  wait on Hermes, which does not provide them in v0.23.
+
+## v0.16.0 (released as 1.0.0): safety for unattended work
 
 Phase G of the 2026-11-08 master brief, split between Hermes (items 3 to 5) and Qoder (items 1
 and 2), per `03_Memory/Phase_D_H_Coordination.md`.
@@ -656,11 +674,10 @@ this order, one pull request each:
   and `bus::spawn_worker` resolves the pack ceiling over one store connection
   (`agent_packs::for_worker_in`).
 
-Phase G is complete on `main` (G3 to G11, bus TASK-018): every item above merged with its
-gates, CI and, for new screens, release-build evidence in `docs/pr-evidence/`. No version bump
-or release was part of this phase; the next release carries it.
+Phase G is complete (G3 to G11, bus TASK-018): every item above merged with its gates, CI and,
+for new screens, release-build evidence in `docs/pr-evidence/`. Released in 1.0.0.
 
-## v0.17.0: today at a glance (in progress)
+## v0.17.0 (released as 1.0.0): today at a glance
 
 Phase H wave 3 of the 2026-11-08 master brief. Today is the screen Studio opens on.
 
