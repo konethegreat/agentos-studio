@@ -315,6 +315,12 @@ pub fn bus_instructions(
             conventions
         ));
     }
+    if worktree.is_some() {
+        b.push_str(&format!(
+            "\n\nRead {} in your worktree before you start, and before you finish update its Decisions, Next step and Open questions sections. It is excluded from commits; never add it.",
+            crate::context_ledger::context_rel(&m.id)
+        ));
+    }
     b.push_str(&format!("\n\nRepository: {}", dir.display()));
     if let Some(wt) = worktree {
         b.push_str(&format!(

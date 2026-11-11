@@ -500,17 +500,22 @@ without replacing Hermes' or Claude Code's own compaction. Migration 11 adds the
 `context_events` table to `studio.db`. `scan` reads Hermes' `state.db` (`_compressed_summary = 1`
 and preceding `compacted = 1` rows) in read-only URI mode and walks `~/.claude/projects/*/*.jsonl`
 for `compact_boundary` markers, writes an immutable 13-section Markdown note under
-`03_Memory/context/<date>-<agent>-<session>-<first>-<last>.md` when absent, and records the row once.
+`03_Memory/context/<agent>-<session tail>-<first>-<last>.md` when absent, and records the row once.
 
 Each note maps the runtime's summary into the fixed 13-section schema (`Goal`, `Constraints`,
 `Key knowledge`, `Artifact trail`, `File state`, `Recent actions`, `Task state`, `Open tasks`,
 `Next step`, `Decisions`, `Running jobs`, `User preferences`, `Security constraints`) and anchors
 the dropped range with deterministically extracted file paths, modified files, symbols, decision
 lines, and masked tool outputs (`mask_tool_output` preserves the first line, exit codes, file paths
-and error lines). `rerun` writes a sibling `-focus-<timestamp>.md` note from the original message
+and error lines). Every note body and the focus hint pass through `constitution_gate::redact`
+before hashing and writing, so a token echoed by a tool or pasted into chat is replaced with
+`[redacted: <kind>]` and never reaches the vault. `rerun` writes a sibling `-focus-<timestamp>.md` note from the original message
 range with a user focus hint while leaving the original note and transcript untouched. `search`
 combines vault FTS5 recall with read-only queries against Hermes' `messages_fts`. When a mission
-starts in a worktree, `write_worktree_context` writes `.agentos/context/<mission>.md` and adds
-`.agentos/` to the worktree's git exclude file so the worker's scratchpad is never committed.
+starts in a worktree, `write_worktree_context` writes `.agentos/context/<mission>.md`, adds
+`/.agentos/context/` to `<git-common-dir>/info/exclude` (git reads exclude rules only from the
+common dir, so the line covers the primary checkout and every linked worktree), and fails unless
+`git check-ignore` confirms the file is ignored. The mission brief tells the worker to read the
+file first and update its Decisions, Next step and Open questions before finishing.
 `evaluate` scores four probes (facts, artifacts, continuation, decisions) comparing each runtime's
 baseline against Studio's anchored summary across real compactions and 60-percent session replays.

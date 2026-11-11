@@ -626,9 +626,11 @@ this order, one pull request each:
 - **G10, context ledger (shipped, `context_ledger.rs`, `ContextLedger.tsx`, migration 11):** Hermes
   and Claude Code keep doing their own compaction. Studio records each compaction in the
   append-only `context_events` table, writes an immutable 13-section anchored summary under
-  `03_Memory/context/<date>-<agent>-<session>-<first>-<last>.md` with file, symbol, decision,
+  `03_Memory/context/<agent>-<session tail>-<first>-<last>.md` with file, symbol, decision,
   masked tool output and commit pointers, keeps `.agentos/context/<mission>.md` in each worktree
-  (excluded from git through `.git/info/exclude`), supports non-destructive focused
+  (excluded from git through `<git-common-dir>/info/exclude`, verified with `git check-ignore`,
+  and named in the mission brief), redacts credentials through `constitution_gate::redact`
+  before any note is written, supports non-destructive focused
   re-summarization (`-focus-<stamp>.md`), queries Hermes' FTS5 `messages_fts` alongside vault
   recall, and scores four probes (facts, artifacts, continuation, decisions) over 25 real
   sessions (38 cuts, 37/38 passing the 0.80 bar).

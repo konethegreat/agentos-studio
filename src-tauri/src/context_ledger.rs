@@ -762,9 +762,22 @@ fn claude_text(v: &serde_json::Value) -> String {
         Some(serde_json::Value::Array(parts)) => parts
             .iter()
             .filter_map(|p| {
-                p.get("text")
-                    .and_then(|t| t.as_str())
-                    .or_else(|| p.get("content").and_then(|t| t.as_str()))
+                if let Some(t) = p.get("text").and_then(|t| t.as_str()) {
+                    return Some(t.to_string());
+                }
+                match p.get("content") {
+                    Some(serde_json::Value::String(t)) => Some(t.clone()),
+                    // tool_result blocks usually carry an array of text blocks.
+                    Some(serde_json::Value::Array(inner)) => {
+                        let t = inner
+                            .iter()
+                            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        (!t.is_empty()).then_some(t)
+                    }
+                    _ => None,
+                }
             })
             .collect::<Vec<_>>()
             .join("\n"),
@@ -889,10 +902,26 @@ fn commit_at(repo: Option<&Path>, at: i64) -> String {
         .unwrap_or_default()
 }
 
+/// A focus hint safe to put in YAML frontmatter: one line, no control characters, no secrets.
+/// Pure.
+pub fn clean_focus(focus: &str) -> String {
+    let one: String = focus
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let one = one.split_whitespace().collect::<Vec<_>>().join(" ");
+    crate::constitution_gate::redact(&one)
+        .chars()
+        .take(200)
+        .collect()
+}
+
 /// The note for one compaction: frontmatter plus the fixed schema. Pure apart from `commit`.
 pub fn note_text(f: &Found, commit: &str, focus: &str) -> (String, Event) {
     let a = anchors(&f.dropped);
-    let body = render_summary(&f.summary, &a, focus);
+    let focus = clean_focus(focus);
+    // Every line that reaches the vault goes through the gate's credential rules first.
+    let body = crate::constitution_gate::redact(&render_summary(&f.summary, &a, &focus));
     let first = f.dropped.first().map(|m| m.id).unwrap_or(0);
     let last = f.dropped.last().map(|m| m.id).unwrap_or(0);
     let before = f.tokens_before.unwrap_or_else(|| {
@@ -1318,7 +1347,9 @@ pub fn worktree_context(m: &crate::missions::Mission, has_agents_md: bool) -> St
 }
 
 /// Write the context file into a worktree (once; a worker's own updates are never overwritten)
-/// and keep it out of commits through the repository's local exclude file.
+/// and keep it out of commits through `<git-common-dir>/info/exclude` (git reads exclude rules
+/// only from the common dir, so the pattern covers the primary checkout and every linked
+/// worktree). Fails when `git check-ignore` does not confirm the file is ignored.
 pub fn write_worktree_context(worktree: &Path, m: &crate::missions::Mission) -> Result<PathBuf> {
     let path = worktree.join(context_rel(&m.id));
     if !path.exists() {
@@ -1355,8 +1386,27 @@ pub fn write_worktree_context(worktree: &Path, m: &crate::missions::Mission) -> 
                 fs::write(&f, out)?;
             }
         }
+        // The contract is "never committed": prove git ignores the file, or report failure.
+        let ignored = crate::procs::command(&git)
+            .arg("-C")
+            .arg(worktree)
+            .args(["check-ignore", "-q", &context_rel(&m.id)])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ignored {
+            anyhow::bail!(
+                "{} is not ignored by git in {}; a worker could commit it",
+                context_rel(&m.id),
+                worktree.display()
+            );
+        }
+        return Ok(path);
     }
-    Ok(path)
+    anyhow::bail!(
+        "git not found, so {} cannot be excluded from commits",
+        context_rel(&m.id)
+    )
 }
 
 #[cfg(test)]
@@ -1392,6 +1442,87 @@ mod tests {
         assert!(masked.contains("error[E0425]"));
         assert!(masked.starts_with("[terminal output masked"));
         assert!(mask_tool_output("t", "done\nexit code: 0").contains("exit 0"));
+    }
+
+    #[test]
+    fn notes_never_carry_credentials() {
+        // Built at run time so no scanner sees a token-shaped literal in the source.
+        let notion = format!("ntn_{}", "a1B2".repeat(11));
+        let openai = format!("sk-{}", "Zz9y".repeat(10));
+        let dropped = vec![
+            m(
+                1,
+                "user",
+                &format!("Use this token {notion} for the publish step please"),
+            ),
+            call(2, "read_file", r#"{"path": ".env"}"#),
+            m(
+                3,
+                "tool",
+                &format!("OPENROUTER_API_KEY={openai}\nerror: Authorization: Bearer {openai}"),
+            ),
+            m(
+                4,
+                "assistant",
+                "I decided to keep the key out of the repository entirely.",
+            ),
+        ];
+        let (note, _) = note_text(
+            &Found {
+                agent: "claude-code".into(),
+                session_id: "s-9".into(),
+                source: "t.jsonl".into(),
+                dropped,
+                summary: format!("## Goal\nPublish with {notion}"),
+                ..Default::default()
+            },
+            "",
+            &format!("publish\n{openai}"),
+        );
+        assert!(!note.contains(&notion), "{note}");
+        assert!(!note.contains(&openai), "{note}");
+        assert!(note.contains("[redacted:"), "{note}");
+        let fm_end = note[4..].find("\n---\n").unwrap();
+        assert!(
+            !note[..fm_end].contains("\npublish\n"),
+            "focus stays one line"
+        );
+        assert!(note.contains("focus: \"publish [redacted"), "{note}");
+    }
+
+    #[test]
+    fn claude_tool_result_arrays_are_read() {
+        let v = serde_json::json!({"message": {"content": [
+            {"type": "tool_result", "content": [{"type": "text", "text": "exit code: 2 in src/a.rs"}]}
+        ]}});
+        assert_eq!(claude_text(&v), "exit code: 2 in src/a.rs");
+    }
+
+    #[test]
+    fn worktree_context_is_ignored_by_git() {
+        let Some(git) = crate::procs::find("git") else {
+            return;
+        };
+        let t = tempfile::tempdir().unwrap();
+        let ok = crate::procs::command(&git)
+            .arg("-C")
+            .arg(t.path())
+            .args(["init", "-q"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok);
+        let mission = crate::missions::Mission {
+            id: "M-900".into(),
+            goal: "g".into(),
+            ..Default::default()
+        };
+        let p = write_worktree_context(t.path(), &mission).unwrap();
+        assert!(p.is_file());
+        // A second call keeps the worker's edits and still passes the ignore check.
+        fs::write(&p, "worker edit").unwrap();
+        write_worktree_context(t.path(), &mission).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "worker edit");
     }
 
     #[test]
