@@ -13,7 +13,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::missions::Mission;
 use crate::procs;
@@ -402,9 +403,204 @@ pub fn verify(repo_dir: &Path) -> String {
     }
 }
 
+/// Where a mission's work is verified before review. Never the owner's checkout: it holds
+/// whatever branch the owner has (usually `main` before the merge), so a verify there tests the
+/// wrong tree and leaves build output in the owner's folder (#117).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerifyAt {
+    /// The task's own worktree, still on disk.
+    Workspace(PathBuf),
+    /// The worktree is gone: a fresh detached worktree of the pull request's head.
+    PullHead(u64),
+    /// Nothing safe to verify; recorded as not run, with the reason.
+    NotRun(String),
+}
+
+/// Pick where to verify. `is_dir` is injected so the choice is unit tested. Pure.
+pub fn verify_at(
+    workspace: Option<&str>,
+    is_dir: impl Fn(&Path) -> bool,
+    pr: Option<u64>,
+) -> VerifyAt {
+    if let Some(ws) = workspace.map(str::trim).filter(|w| !w.is_empty()) {
+        let p = PathBuf::from(ws);
+        if is_dir(&p) {
+            return VerifyAt::Workspace(p);
+        }
+    }
+    match pr {
+        Some(n) => VerifyAt::PullHead(n),
+        None => VerifyAt::NotRun(
+            "the task's worktree is gone and the mission has no pull request".into(),
+        ),
+    }
+}
+
+/// The recorded result when verify did not run. The gate treats it like a missing result (CI
+/// still has to pass) and the reviewer is told why. Pure.
+pub fn verify_not_run(reason: &str) -> String {
+    serde_json::json!({"ok": false, "error": "not-run", "reason": reason}).to_string()
+}
+
+/// The pull request number at the end of a GitHub PR URL. Pure.
+pub fn pr_number_in(url: &str) -> Option<u64> {
+    url.trim_end_matches('/').rsplit('/').next()?.parse().ok()
+}
+
+/// Verify where `verify_at` says: the worktree, the pull request's head in a worktree under
+/// Studio's data folder (removed afterwards), or record why it did not run.
+pub fn verify_mission(
+    mission_id: &str,
+    repo: &str,
+    workspace: Option<&str>,
+    pr: Option<u64>,
+) -> String {
+    match verify_at(workspace, |p| p.is_dir(), pr) {
+        VerifyAt::Workspace(dir) => verify(&dir),
+        VerifyAt::NotRun(reason) => verify_not_run(&reason),
+        VerifyAt::PullHead(n) => match pull_head_worktree(mission_id, repo, n) {
+            Ok((dir, wt)) => {
+                let out = verify(&wt);
+                remove_verify_worktree(&dir, &wt);
+                out
+            }
+            Err(e) => verify_not_run(&format!("could not check out pull request #{n}: {e:#}")),
+        },
+    }
+}
+
+fn pull_head_worktree(mission_id: &str, repo: &str, pr: u64) -> Result<(PathBuf, PathBuf)> {
+    let dir = crate::review_agent::project_dir(repo)
+        .filter(|d| d.is_dir())
+        .ok_or_else(|| anyhow!("repository '{repo}' is not a known project with a folder"))?;
+    let wt = crate::store::studio_dir()
+        .join("verify")
+        .join(format!("mission-{}", crate::vault::slug(mission_id, 40)));
+    let wts = wt.display().to_string();
+    let git = |args: &[&str]| {
+        procs::run_with_timeout("git", args, None, Some(&dir), Duration::from_secs(120))
+    };
+    remove_verify_worktree(&dir, &wt);
+    let refspec = format!("pull/{pr}/head");
+    let (code, _, err) = git(&["fetch", "-q", "origin", &refspec])?;
+    if code != Some(0) {
+        bail!("git fetch {refspec} failed: {}", err.trim());
+    }
+    let (code, sha, err) = git(&["rev-parse", "FETCH_HEAD"])?;
+    let sha = sha.trim().to_string();
+    if code != Some(0) || sha.is_empty() {
+        bail!("no head for pull request #{pr}: {}", err.trim());
+    }
+    if let Some(parent) = wt.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let (code, _, err) = git(&["worktree", "add", "-q", "--detach", &wts, &sha])?;
+    if code != Some(0) {
+        bail!("git worktree add failed: {}", err.trim());
+    }
+    Ok((dir, wt))
+}
+
+fn remove_verify_worktree(dir: &Path, wt: &Path) {
+    let wts = wt.display().to_string();
+    let _ = procs::run_with_timeout(
+        "git",
+        &["worktree", "remove", "--force", &wts],
+        None,
+        Some(dir),
+        Duration::from_secs(60),
+    );
+    let _ = std::fs::remove_dir_all(wt);
+    let _ = procs::run_with_timeout(
+        "git",
+        &["worktree", "prune"],
+        None,
+        Some(dir),
+        Duration::from_secs(60),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verify_never_falls_back_to_the_owners_checkout() {
+        let all = |_: &Path| true;
+        let none = |_: &Path| false;
+        assert_eq!(
+            verify_at(Some("C:/wt/t_1"), all, Some(7)),
+            VerifyAt::Workspace(PathBuf::from("C:/wt/t_1"))
+        );
+        // Worktree gone: the pull request's head, never the project folder.
+        assert_eq!(
+            verify_at(Some("C:/wt/t_1"), none, Some(7)),
+            VerifyAt::PullHead(7)
+        );
+        assert_eq!(verify_at(None, all, Some(7)), VerifyAt::PullHead(7));
+        assert_eq!(verify_at(Some("  "), all, Some(7)), VerifyAt::PullHead(7));
+        assert!(matches!(verify_at(None, none, None), VerifyAt::NotRun(_)));
+        assert!(matches!(
+            verify_at(Some("C:/gone"), none, None),
+            VerifyAt::NotRun(_)
+        ));
+    }
+
+    /// Live (#117): with the task worktree gone, verify the pull request's head of the sandbox
+    /// repository in Studio's own worktree, leave the owner's checkout untouched, and clean up.
+    /// `cargo test --lib -- --ignored verify_pull_head_live --nocapture`
+    #[test]
+    #[ignore]
+    fn verify_pull_head_live() {
+        let repo = "agentos-sandbox-1";
+        let dir = crate::review_agent::project_dir(repo).expect("sandbox project");
+        let status = |d: &Path| {
+            procs::run_with_timeout(
+                "git",
+                &["status", "--porcelain"],
+                None,
+                Some(d),
+                Duration::from_secs(30),
+            )
+            .unwrap()
+            .1
+        };
+        let before = status(&dir);
+        let out = verify_mission("LIVE-117", repo, Some("C:/does/not/exist"), Some(16));
+        println!("{out}");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_ne!(
+            v.get("error").and_then(Value::as_str),
+            Some("not-run"),
+            "{out}"
+        );
+        assert_eq!(status(&dir), before, "the owner's checkout changed");
+        let name = format!("mission-{}", crate::vault::slug("LIVE-117", 40));
+        let wt = crate::store::studio_dir().join("verify").join(&name);
+        assert!(!wt.exists(), "verify worktree left behind");
+        let (_, list, _) = procs::run_with_timeout(
+            "git",
+            &["worktree", "list"],
+            None,
+            Some(&dir),
+            Duration::from_secs(30),
+        )
+        .unwrap();
+        assert!(!list.contains(&name), "{list}");
+    }
+
+    #[test]
+    fn a_verify_that_did_not_run_is_missing_not_failed() {
+        let j = verify_not_run("the task's worktree is gone");
+        assert_eq!(crate::missions::verify_failure(&j), None);
+        assert_eq!(
+            crate::review_agent::verify_line(&j),
+            "not run: the task's worktree is gone"
+        );
+        assert_eq!(pr_number_in("https://github.com/o/r/pull/42"), Some(42));
+        assert_eq!(pr_number_in("https://github.com/o/r/pull/42/"), Some(42));
+        assert_eq!(pr_number_in("https://github.com/o/r"), None);
+    }
 
     fn mission() -> Mission {
         Mission {

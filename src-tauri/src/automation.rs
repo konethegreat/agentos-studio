@@ -434,16 +434,14 @@ fn advance_kanban(m: &Mission, task: &str, global_stop: bool) -> anyhow::Result<
             if let Some(url) = missions::pull_url(&summaries) {
                 missions::set_pr(&m.id, &url)?;
             }
-            // Verify where the work was done: the task's worktree when it had one.
-            let dir = view
-                .workspace_path
+            // Verify where the work was done: the task's worktree, else the pull request's head
+            // in Studio's own worktree. Never the owner's checkout (#117).
+            let pr = missions::pull_url(&summaries)
+                .or_else(|| m.pr_url.clone())
                 .as_deref()
-                .map(std::path::PathBuf::from)
-                .filter(|d| d.is_dir())
-                .or_else(|| crate::review_agent::project_dir(&m.repo).filter(|d| d.is_dir()));
-            if let Some(dir) = dir {
-                missions::set_verify(&m.id, &kanban::verify(&dir))?;
-            }
+                .and_then(kanban::pr_number_in);
+            let result = kanban::verify_mission(&m.id, &m.repo, view.workspace_path.as_deref(), pr);
+            missions::set_verify(&m.id, &result)?;
             missions::submit_for_review(&m.id, spent)?;
             crate::stuck::reset(&m.id);
             Ok(Advance::Review)

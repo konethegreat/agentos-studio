@@ -69,6 +69,13 @@ pub fn verify_line(json: &str) -> String {
     if v.get("error").and_then(Value::as_str) == Some("no-recipe") {
         return String::new();
     }
+    if v.get("error").and_then(Value::as_str) == Some("not-run") {
+        let why = v
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or("no worktree");
+        return format!("not run: {why}");
+    }
     let ok = v.get("ok").and_then(Value::as_bool);
     let phases: Vec<String> = v
         .get("phases")

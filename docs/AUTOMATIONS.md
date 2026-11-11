@@ -60,8 +60,8 @@ where possible. It reads the diff, the test output and the mission acceptance cr
 4. CI is green on the PR head,
 5. the spend is inside the mission budget,
 6. the repository is on the auto-merge allow list,
-7. `hermes verify` did not fail in the repository (a repository with no build or test recipe
-   passes this check).
+7. `hermes verify` did not fail on the mission's work (a repository with no build or test recipe
+   passes this check, and so does a verify that could not run, since CI still has to be green).
 
 Any one failing means the PR waits for a human. That is the whole safety story and it is
 deliberately boring.
@@ -88,7 +88,11 @@ deliberately boring.
   so a mission keeps going with Studio closed. When the worker asks for review, kanban runs its own
   review pass and marks the task done; Studio treats that as "work finished", never as approval.
   The scheduler then records the metered spend of every Hermes session the task used, runs
-  `hermes verify --json --skip-start` in the repository, and moves the mission to Studio review.
+  `hermes verify --json --skip-start` on the mission's work, and moves the mission to Studio review.
+  That is the task's worktree, or, when Hermes already removed it, a fresh detached worktree of the
+  pull request's head under Studio's data folder, deleted afterwards. It never runs in your own
+  checkout, which holds whatever branch you have open; with no worktree and no pull request the
+  result says "not run" and the reviewer is told why.
   A rejection queues the mission again and the next attempt is a new kanban task that carries the
   reviewer's note. The repository must be a Hermes project: a mission never runs in the home folder.
 - **Parallel missions in one repository:** with "Hermes missions per repository" above 1, each
