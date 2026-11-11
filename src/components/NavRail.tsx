@@ -32,6 +32,10 @@ export type RailGroup = {
   defaultView: RailView;
   tabs: { id: RailView; label: string; hint: string }[];
   badge?: number;
+  /** What the badge counts, said in the tooltip and to screen readers. */
+  badgeLabel?: string;
+  /** The tab the count belongs to; it carries the same badge when the group is open. */
+  badgeTab?: RailView;
 };
 
 /**
@@ -89,8 +93,10 @@ export function NavRail({
               <button
                 type="button"
                 onClick={() => onGo(g.defaultView)}
-                aria-label={g.label}
-                title={`${g.label} (${g.tabs.map((t) => t.label).join(", ")})`}
+                aria-label={g.badge ? `${g.label}, ${g.badge} ${g.badgeLabel ?? "new"}` : g.label}
+                title={`${g.label} (${g.tabs.map((t) => t.label).join(", ")})${
+                  g.badge ? `\n${g.badge} ${g.badgeLabel ?? "new"}` : ""
+                }`}
                 aria-current={active ? "page" : undefined}
                 className={`relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left transition-colors ${
                   active ? "bg-white/[0.07] text-slate-100" : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
@@ -114,12 +120,20 @@ export function NavRail({
                       key={t.id}
                       type="button"
                       onClick={() => onGo(t.id)}
-                      title={t.hint}
-                      className={`flex h-8 w-full items-center rounded-md px-2 text-left text-ui transition-colors ${
+                      title={g.badge && g.badgeTab === t.id ? `${t.hint}\n${g.badge} ${g.badgeLabel ?? "new"}` : t.hint}
+                      className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-ui transition-colors ${
                         view === t.id ? "bg-emerald-500/10 text-emerald-200" : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
                       }`}
                     >
                       <span className="truncate">{t.label}</span>
+                      {g.badge && g.badgeTab === t.id ? (
+                        <span
+                          aria-label={`${g.badge} ${g.badgeLabel ?? "new"}`}
+                          className="ml-auto rounded-full bg-emerald-500 px-1.5 text-2xs font-bold leading-4 text-emerald-950"
+                        >
+                          {g.badge > 99 ? "99+" : g.badge}
+                        </span>
+                      ) : null}
                     </button>
                   ))}
                 </div>
