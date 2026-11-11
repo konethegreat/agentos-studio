@@ -14,7 +14,7 @@
 //! destructive is opted into `ask` or `deny` explicitly.
 
 use anyhow::Result;
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use serde::Serialize;
 
 use crate::store;
@@ -29,34 +29,52 @@ pub struct ToolPolicy {
 }
 
 pub fn decide(server: &str, tool: &str) -> String {
-    let Ok(c) = store::open() else {
-        return "allow".into();
-    };
+    match store::open() {
+        Ok(c) => decide_in(&c, server, tool),
+        Err(_) => "allow".into(),
+    }
+}
+
+fn stored_in(c: &Connection, server: &str, tool: &str) -> Option<String> {
     c.query_row(
         "SELECT policy FROM tool_policy WHERE server = ?1 AND tool = ?2",
         params![server, tool],
         |r| r.get::<_, String>(0),
     )
-    .map(|p| {
-        if POLICIES.contains(&p.as_str()) {
-            p
-        } else {
-            "allow".into()
-        }
-    })
-    .unwrap_or_else(|_| "allow".into())
+    .ok()
+    .filter(|p| POLICIES.contains(&p.as_str()))
+}
+
+/// The policy for one tool: its own row, then the server's `*` row (an MCP bundle registers
+/// `mcp.<server>.* = ask`, so tools it adds later still ask), then `allow`.
+pub fn decide_in(c: &Connection, server: &str, tool: &str) -> String {
+    stored_in(c, server, tool)
+        .or_else(|| (tool != "*").then(|| stored_in(c, server, "*")).flatten())
+        .unwrap_or_else(|| "allow".into())
 }
 
 pub fn set(server: &str, tool: &str, policy: &str) -> Result<()> {
+    set_in(&store::open()?, server, tool, policy)
+}
+
+pub fn set_in(c: &Connection, server: &str, tool: &str, policy: &str) -> Result<()> {
     if !POLICIES.contains(&policy) {
         anyhow::bail!("policy must be allow, ask or deny");
     }
-    let c = store::open()?;
     c.execute(
         "INSERT INTO tool_policy (server, tool, policy) VALUES (?1, ?2, ?3)
          ON CONFLICT(server, tool) DO UPDATE SET policy = excluded.policy",
         params![server, tool, policy],
     )?;
+    Ok(())
+}
+
+/// Write a default: `deny` always applies (it only narrows), anything else only when the owner
+/// has no row for the tool yet, so registering a bundle again never widens or resets a choice.
+pub fn set_default_in(c: &Connection, server: &str, tool: &str, policy: &str) -> Result<()> {
+    if policy == "deny" || stored_in(c, server, tool).is_none() {
+        set_in(c, server, tool, policy)?;
+    }
     Ok(())
 }
 
@@ -115,6 +133,21 @@ mod tests {
         assert!(set("agentos-hub", "x", "sometimes").is_err());
 
         assert_eq!(list().len(), 2);
+
+        // A server wildcard covers tools without their own row; a tool row wins over it.
+        set("bundle", "*", "ask").unwrap();
+        set("bundle", "safe", "allow").unwrap();
+        assert_eq!(decide("bundle", "anything"), "ask");
+        assert_eq!(decide("bundle", "safe"), "allow");
+        let c = crate::store::open().unwrap();
+        set_default_in(&c, "bundle", "safe", "ask").unwrap();
+        assert_eq!(
+            decide("bundle", "safe"),
+            "allow",
+            "a default never resets a choice"
+        );
+        set_default_in(&c, "bundle", "safe", "deny").unwrap();
+        assert_eq!(decide("bundle", "safe"), "deny", "deny always narrows");
         crate::store::set_test_db(None);
     }
 }

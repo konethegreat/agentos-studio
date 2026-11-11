@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "solutions.k-one.text-stats",
+  "name": "Text statistics MCP server",
+  "version": "1.0.0",
+  "kind": "mcp-bundle",
+  "description": "A small stdio MCP server with two read-only tools that count the words and lines of the text they are given. It reads no files and opens no network connections.",
+  "license": "MIT",
+  "publisher": {
+    "name": "K-ONE IT SOLUTIONS, Kone Tshivhinda",
+    "key_id": "k-one-official-1",
+    "homepage": "https://github.com/konethegreat/agentos-studio"
+  },
+  "entrypoints": [
+    "server/server.mjs"
+  ],
+  "capabilities": [
+    "mcp.tools",
+    "shell.exec"
+  ],
+  "requires": {
+    "app_version": ">=0.15.0",
+    "os": [
+      "windows",
+      "macos",
+      "linux"
+    ],
+    "runtimes": [
+      "node"
+    ]
+  },
+  "mcp_tools": [
+    "text-stats:count_words",
+    "text-stats:count_lines"
+  ],
+  "signature": "6a5cdf4f4c53abe917b959125a549a6a024bfd5124a5bcce19c18c5ecf5b36bb4010502bb06dab85ea2694291af376e9c990cd40b0bec4a0ad55a2855ecaf103"
+}

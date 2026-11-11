@@ -1916,3 +1916,30 @@ pub async fn context_eval(
     })
     .await
 }
+
+#[tauri::command]
+pub async fn extension_run(
+    req: crate::extension_runtime::RunRequest,
+    approved: Option<bool>,
+) -> CmdResult<crate::extension_runtime::RunRecord> {
+    blocking(move || crate::extension_runtime::run(&req, approved.unwrap_or(false))).await
+}
+
+#[tauri::command]
+pub async fn extension_register_mcp(
+    id: String,
+    targets: Vec<String>,
+    approved: Option<bool>,
+) -> CmdResult<crate::extension_runtime::McpRegistration> {
+    blocking(move || {
+        crate::extension_runtime::register_mcp(&id, &targets, approved.unwrap_or(false))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn extension_list_runs(
+    limit: Option<usize>,
+) -> CmdResult<Vec<crate::permissions::AuditEntry>> {
+    blocking(move || crate::extension_runtime::list_runs(limit.unwrap_or(50))).await
+}

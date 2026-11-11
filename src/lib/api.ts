@@ -845,6 +845,37 @@ export type PackProposal = {
   refusal: string | null;
 };
 export type InstalledPack = { entry: PackLockEntry; status: string; path: string };
+
+/** Phase G item 11: one run of a hook or command pack through the extension runtime. */
+export type ExtensionRunRequest = {
+  id: string;
+  entrypoint?: string | null;
+  args?: string[];
+  worktree?: string | null;
+  timeout_secs?: number | null;
+};
+export type ExtensionRunRecord = {
+  pack: string;
+  kind: string;
+  entrypoint: string;
+  cwd: string;
+  sandbox: boolean;
+  exit_code: number | null;
+  timed_out: boolean;
+  duration_ms: number;
+  stdout: string;
+  stderr: string;
+  env_keys: string[];
+  outcome: string;
+};
+export type McpRegistration = {
+  pack: string;
+  server: string;
+  spec: { name: string; transport: string; command_or_url: string; args: string[] };
+  rules: { tool: string; policy: string }[];
+  agents: { agent: string; ok: boolean; detail: string }[];
+};
+export type ExtensionAuditEntry = { id: number; at: number; action: string; target: string; detail: string; outcome: string };
 export type BridgeEntry = {
   folder: string;
   name: string;
@@ -1194,6 +1225,11 @@ export const api = {
   contextSearch: (query: string, limit = 20) => invoke<ContextHit[]>("context_search", { query, limit }),
   contextEval: (minMessages = 12, bar = 0.8) =>
     invoke<ContextEvalReport>("context_eval", { minMessages, bar }),
+  extensionRun: (req: ExtensionRunRequest, approved?: boolean) =>
+    invoke<ExtensionRunRecord>("extension_run", { req, approved }),
+  extensionRegisterMcp: (id: string, targets: string[], approved?: boolean) =>
+    invoke<McpRegistration>("extension_register_mcp", { id, targets, approved }),
+  extensionListRuns: (limit = 50) => invoke<ExtensionAuditEntry[]>("extension_list_runs", { limit }),
 
   runCli: (command: string, cwd: string) => invoke<string>("execute_cli_command", { command, cwd }),
   killCli: (runId: string) => invoke<void>("kill_cli_command", { runId }),

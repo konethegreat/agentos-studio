@@ -192,15 +192,35 @@ pub fn ceiling(
     profile_enforced: bool,
 ) -> Ceiling {
     let disallowed: BTreeSet<&str> = spec.disallowed_tools.iter().map(String::as_str).collect();
+    // A base `mcp__<server>` wildcard survives unless the pack excludes the whole server.
+    let server_excluded = |server: &str| {
+        disallowed.contains("mcp") || disallowed.contains(format!("mcp:{server}").as_str())
+    };
+    let kept_server = |server: &str| {
+        !server_excluded(server) && base_allowed.iter().any(|e| e == &format!("mcp__{server}"))
+    };
     let mut tools = BTreeSet::new();
     let mut dropped = Vec::new();
     for t in &spec.tools {
+        let mcp = t.strip_prefix("mcp:").and_then(|r| r.split_once(':'));
         let why = if disallowed.contains(t.as_str()) {
             Some("the pack disallows it".to_string())
         } else if let Some(cap) = tool_capability(t).filter(|c| !granted.iter().any(|g| g == c)) {
             Some(format!("{cap} was not granted when the pack was installed"))
-        } else if let Some((s, n)) = t.strip_prefix("mcp:").and_then(|r| r.split_once(':')) {
-            (policy(s, n) == "deny").then(|| "your tool policy denies it".to_string())
+        } else if let Some((s, n)) = mcp {
+            if policy(s, n) == "deny" {
+                Some("your tool policy denies it".to_string())
+            } else if agent == "claude-code"
+                && !kept_server(s)
+                && !base_allowed.iter().any(|e| e == &format!("mcp__{s}__{n}"))
+            {
+                // A pack never adds an MCP rule the repository allowlist does not already have.
+                Some(format!(
+                    "the repository allowlist does not cover the {s} server"
+                ))
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -214,21 +234,20 @@ pub fn ceiling(
             }
         }
     }
-    // Claude Code: keep only allowlist entries whose family survived; deny the rest outright.
+    // Claude Code: keep only allowlist entries whose family survived, plus base server
+    // wildcards the pack does not exclude (the hub stays reachable); deny the rest outright.
     let mut claude_allowed = Vec::new();
     for e in base_allowed {
-        if let Some(f) = claude_family(e) {
-            if tools.contains(&f) {
+        if let Some(server) = e
+            .strip_prefix("mcp__")
+            .filter(|r| !r.contains("__") && !r.is_empty())
+        {
+            if !server_excluded(server) {
                 claude_allowed.push(e.clone());
             }
-        }
-    }
-    for t in tools.iter().filter(|t| t.starts_with("mcp:")) {
-        let mut p = t.splitn(3, ':').skip(1);
-        if let (Some(s), Some(n)) = (p.next(), p.next()) {
-            let e = format!("mcp__{s}__{n}");
-            if !claude_allowed.contains(&e) {
-                claude_allowed.push(e);
+        } else if let Some(f) = claude_family(e) {
+            if tools.contains(&f) {
+                claude_allowed.push(e.clone());
             }
         }
     }
@@ -237,6 +256,22 @@ pub fn ceiling(
         if !tools.contains(fam) {
             claude_disallowed.extend(names.iter().map(|s| s.to_string()));
         }
+    }
+    // A kept server wildcard must not readmit a tool the pack or the policy dropped.
+    for d in &dropped {
+        if let Some((s, n)) = d.tool.strip_prefix("mcp:").and_then(|r| r.split_once(':')) {
+            let e = format!("mcp__{s}__{n}");
+            if !claude_disallowed.contains(&e) {
+                claude_disallowed.push(e);
+            }
+        }
+    }
+    for server in disallowed
+        .iter()
+        .filter_map(|d| d.strip_prefix("mcp:"))
+        .filter(|r| !r.contains(':'))
+    {
+        claude_disallowed.push(format!("mcp__{server}"));
     }
     let edit = tools.contains("edit");
     let claude_mode = match spec.permission_mode.as_str() {
@@ -446,6 +481,19 @@ pub fn for_worker(
     base_allowed: &[String],
     unattended: bool,
 ) -> Result<WorkerPack> {
+    let c = crate::store::open()?;
+    for_worker_in(&c, id, agent, project, base_allowed, unattended)
+}
+
+/// `for_worker` over a connection the caller already holds (`bus::spawn_worker`).
+pub fn for_worker_in(
+    conn: &rusqlite::Connection,
+    id: &str,
+    agent: &str,
+    project: &str,
+    base_allowed: &[String],
+    unattended: bool,
+) -> Result<WorkerPack> {
     let (entry, spec, persona) = load(id)?;
     if !spec.agents.iter().any(|a| a == agent) {
         bail!(
@@ -454,7 +502,8 @@ pub fn for_worker(
         );
     }
     let repo = crate::bus::repo_slug(project);
-    let policy = |s: &str, t: &str| crate::permissions::effective_tool_policy(agent, repo, s, t).0;
+    let policy =
+        |s: &str, t: &str| crate::permissions::effective_tool_policy_in(conn, agent, repo, s, t).0;
     let c = ceiling(
         &spec,
         agent,
@@ -612,11 +661,13 @@ mod tests {
                 "ask".to_string()
             }
         };
+        let mut with_github = base();
+        with_github.push("mcp__github".into());
         let c = ceiling(
             &s,
             "claude-code",
             &caps(&["fs.read", "mcp.tools"]),
-            &base(),
+            &with_github,
             &policy,
             true,
         );
@@ -626,9 +677,14 @@ mod tests {
         assert!(!c
             .claude_allowed
             .contains(&"mcp__github__merge_pull_request".to_string()));
-        assert!(c
-            .claude_allowed
-            .contains(&"mcp__github__list_issues".to_string()));
+        assert!(
+            c.claude_disallowed
+                .contains(&"mcp__github__merge_pull_request".to_string()),
+            "the kept server wildcard must not readmit a denied tool"
+        );
+        assert!(c.tools.contains(&"mcp:github:list_issues".to_string()));
+        assert!(c.claude_allowed.contains(&"mcp__github".to_string()));
+        assert!(c.claude_allowed.iter().all(|a| with_github.contains(a)));
         assert!(
             !c.tools.contains(&"todo".to_string()),
             "a disallowed tool stays out"
@@ -651,6 +707,42 @@ mod tests {
         );
         assert!(!h.hermes_toolsets.contains(&"file".to_string()));
         assert_eq!(c.claude_mode, "default", "edit mode needs the edit tool");
+    }
+
+    #[test]
+    fn pack_workers_keep_the_hub_and_add_no_uncovered_mcp_rules() {
+        let mut b = base();
+        b.push("mcp__agentos-hub".into());
+        let s = spec(&["read", "mcp:slack:post_message"], &[]);
+        let c = ceiling(
+            &s,
+            "claude-code",
+            &caps(&["fs.read", "mcp.tools"]),
+            &b,
+            &|_, _| "allow".into(),
+            true,
+        );
+        assert!(c.claude_allowed.contains(&"mcp__agentos-hub".to_string()));
+        assert!(!c.claude_allowed.iter().any(|a| a.contains("slack")));
+        assert!(c
+            .dropped
+            .iter()
+            .any(|d| d.tool == "mcp:slack:post_message" && d.reason.contains("allowlist")));
+        assert!(c.claude_allowed.iter().all(|a| b.contains(a)));
+        // A pack that excludes the hub server loses the wildcard and denies it outright.
+        let no_hub = spec(&["read"], &["mcp:agentos-hub"]);
+        let c = ceiling(
+            &no_hub,
+            "claude-code",
+            &caps(&["fs.read"]),
+            &b,
+            &|_, _| "allow".into(),
+            true,
+        );
+        assert!(!c.claude_allowed.contains(&"mcp__agentos-hub".to_string()));
+        assert!(c
+            .claude_disallowed
+            .contains(&"mcp__agentos-hub".to_string()));
     }
 
     #[test]

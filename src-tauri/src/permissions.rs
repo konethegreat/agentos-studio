@@ -682,6 +682,27 @@ pub fn effective_tool_policy(
     (decision.policy, source)
 }
 
+/// `effective_tool_policy` over a connection the caller already holds, so a worker spawn reads
+/// the whole pack ceiling through one connection instead of one per tool.
+pub fn effective_tool_policy_in(
+    c: &Connection,
+    agent: &str,
+    repo: Option<&str>,
+    server: &str,
+    tool: &str,
+) -> (String, String) {
+    let decision = decide_in(
+        c,
+        Some(agent).filter(|a| !a.trim().is_empty()),
+        repo,
+        server,
+        tool,
+        || crate::policy::decide_in(c, server, tool),
+    );
+    let source = rule_text(&decision, server, tool);
+    (decision.policy, source)
+}
+
 fn source_text(decision: &ToolDecision) -> String {
     match decision.source.split_once(':') {
         Some(("repo", r)) => format!("the policy for {r}"),

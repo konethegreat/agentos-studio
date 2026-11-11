@@ -190,5 +190,18 @@ not because code exists.
 | Compaction event log | implicit in `state.db` or `.jsonl` `compact_boundary` | append-only `context_events` table (migration 11): agent, session, message range, dropped count, token reduction, model, prompt hash, git commit, note path and SHA-256 |
 | Anchored compaction summary | free-form summary text | immutable 13-section note in `03_Memory/context/` with extracted file paths, Rust/TS symbols, decisions, masked tool outputs (keeping exit codes, paths and errors) and git commit |
 | Re-summarize with a focus | overwrites or not available | writes a sibling `-focus-<stamp>.md` note without touching the original note or transcript |
-| Pinned mission worktree context | none | `.agentos/context/<mission>.md` written on mission start and excluded via `.git/info/exclude` |
+| Pinned mission worktree context | none | `.agentos/context/<mission>.md` written on mission start, excluded via `<git-common-dir>/info/exclude` and verified with `git check-ignore` |
 | Compaction quality measurement | none | four-probe harness (facts, artifacts, continuation, decisions) over real compactions and 60% session cuts (37/38 rows >= 0.80 across 25 real sessions) |
+
+## Extension runtime (Phase G 11)
+
+| Capability | Claude Code / Qoder plugins | Studio |
+|---|---|---|
+| Who may execute | any installed plugin's hooks and servers | official or verified packs only, with the kind's capability declared and granted, after `capability.run` approval |
+| Environment of a hook or server | the agent's own, credentials included | `env_clear()` plus the unattended allowlist minus home and app data variables, plus `AGENTOS_PACK_ID` |
+| Working folder | the session's folder | the named mission worktree or a sandbox deleted after the run |
+| Time limit | none | 30 s default, 300 s maximum, process tree killed |
+| Tampered copy | runs | refused (lockfile hash, and for MCP bundles the hash approved at registration) |
+| New MCP server's tools | allowed by default | `mcp.<server>.<tool> = ask` and `mcp.<server>.* = ask`, deny kept |
+| Record | none | audit row per run, registration and refusal, listed in Capabilities |
+| OS-level sandbox | no | no: process scoping only, stated in docs/CAPABILITIES.md |
