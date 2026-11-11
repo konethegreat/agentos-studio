@@ -513,6 +513,38 @@ The two sections below (safety for unattended work, Today at a glance) were plan
 - Open, and stated in Safety: outbound network rules and an OS keychain for unattended workers
   wait on Hermes, which does not provide them in v0.23.
 
+## After 1.0 (planned, not built)
+
+The master brief ends at 1.0. This is the order for what follows, each step depending on the one
+before it. Nothing here is built yet.
+
+- **1.0.x, keep the floor solid.** Fix #117: `hermes verify` falls back to the owner's checkout
+  when a task worktree is gone, so a done check can pass against the wrong tree. Then #107: merge
+  the top-level test crates so a full `cargo test` links fewer binaries on an 11 GB machine.
+  Patch releases go out through the in-app updater only.
+- **1.1, the fleet maintains itself.** Turn the 25 to 30 local repositories into standing goals
+  that need no prompting: each repository opts in with `.agentos/routing.json` (`allow_merge`,
+  roles), and a weekly maintenance goal per opted-in repository covers dependency updates, red CI
+  and stale docs. All of it goes through the existing review and merge gate, with a machine-wide
+  cap on concurrent workers sized to this laptop (two cargo builds never overlap). Depends on: goals
+  (v0.14), merge policy and budgets (Phase G). Done when: one week passes with every opted-in
+  repository's main green, no owner clicks beyond escalations, and $0 metered spend outside the
+  set budget.
+- **1.2, intervene without stopping.** A real pause for a running mission (today Stop cancels the
+  turn), plus a run export: one mission's prompt, tool calls and results as a Markdown report in
+  the vault. Depends on: the run timeline (v0.12) and the context ledger (G10).
+- **1.3, scorecards that move defaults.** Per-model scorecards from real missions (PARITY says
+  part) feed the shadow router. A default moves only after the evaluation replays (v0.13) beat it,
+  never silently. Depends on: 1.1, because it needs enough missions to score.
+- **When Hermes ships them:** outbound network rules and an OS keychain for unattended workers.
+  Safety already shows both as waiting on Hermes; Studio wires them up when Hermes provides the
+  surface, and does not build its own proxy or vault.
+- **Not planned:** a paid code signing certificate (the owner's decision; installers stay
+  unsigned, with honest first-run instructions), and a hosted cloud dashboard (Notion publishing
+  covers it).
+- **Download site domain:** it serves from workers.dev, and the Cloudflare account has no zone.
+  A custom domain needs a domain registered first; the Worker change after that is one route.
+
 ## v0.16.0 (released as 1.0.0): safety for unattended work
 
 Phase G of the 2026-11-08 master brief, split between Hermes (items 3 to 5) and Qoder (items 1
