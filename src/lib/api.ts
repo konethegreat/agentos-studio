@@ -72,6 +72,18 @@ export interface SetupPlan {
   apps: string[];
 }
 
+/** One item in the notification centre; `view` is the screen that owns it. */
+export interface Notice {
+  id: string;
+  kind: string;
+  title: string;
+  detail: string;
+  view: string;
+  at: number;
+  unread: boolean;
+  open: boolean;
+}
+
 /** An app that calls the hub without running missions (Claude Desktop, Cursor, VS Code, ...). */
 export interface HubClient {
   id: string;
@@ -972,6 +984,8 @@ export const api = {
   repair: (component: string) => invoke<string>("install_or_repair_component", { component }),
   setupPlan: () => invoke<SetupPlan>("setup_plan"),
   clientsList: () => invoke<HubClient[]>("clients_list"),
+  notices: () => invoke<Notice[]>("notices_list"),
+  noticesRead: () => invoke<void>("notices_read"),
   clientConnect: (id: string) => invoke<void>("client_connect", { id }),
   clientDisconnect: (id: string) => invoke<void>("client_disconnect", { id }),
   scaffoldVault: (path: string) => invoke<string[]>("scaffold_vault", { path }),
