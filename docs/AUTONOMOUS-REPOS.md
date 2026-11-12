@@ -56,6 +56,11 @@ for the owner. Levels: **Full** (the gate merges; needs `allow_merge`), **Ask on
 is asked before a merge), **Watch** (the owner clicks each step). Full without `allow_merge`
 reads as Ask. `autonomy.budget_usd` sets a metered budget per goal (0 for flat subscriptions).
 
+**Direction.** Type a standing direction before Opt in (for example "keep the design exactly as
+it is; update the content only"). It is committed as `autonomy.brief` and appended to every goal
+for that repository, so the planner writes the plan around it, every worker sees it, and the
+reviewer requests changes on any pull request that breaks it.
+
 **Pause here** stops one repository on this machine only; the committed opt-in stays, so another
 machine running Studio keeps working on it.
 

@@ -24,6 +24,7 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
   const [busy, setBusy] = useState("");
   const [level, setLevel] = useState("full");
   const [filter, setFilter] = useState<"all" | "in" | "out">("all");
+  const [brief, setBrief] = useState("");
 
   const load = useCallback(async () => {
     // Settings answer at once; the repository list walks the scan roots and takes seconds.
@@ -140,6 +141,17 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
             Refresh
           </Button>
         </div>
+        <label className="block space-y-1">
+          <span className="text-label text-muted">
+            Direction for the repositories you opt in next (optional): every goal carries it, and the reviewer enforces it
+          </span>
+          <textarea
+            className={`${inputClass} h-16 py-2`}
+            placeholder="Keep the design exactly as it is; update the content only: the latest projects, releases and links."
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+          />
+        </label>
       </Card>
 
       {repos === null ? (
@@ -175,7 +187,7 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
                         variant="primary"
                         busy={busy === `opt:${r.slug}`}
                         onClick={() =>
-                          void act(`opt:${r.slug}`, () => api.autonomyOptIn(r.slug, r.path, level), (u) => `Opted in: ${String(u)}`)
+                          void act(`opt:${r.slug}`, () => api.autonomyOptIn(r.slug, r.path, level, brief), (u) => `Opted in: ${String(u)}`)
                         }
                       >
                         Opt in
@@ -194,6 +206,7 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
                 </div>
                 {r.enabled && (
                   <>
+                    {r.brief && <div className="line-clamp-2 text-2xs italic text-slate-400">Direction: {r.brief}</div>}
                     <div className="text-small text-slate-300">
                       {r.goal ? (
                         <button className="underline" onClick={onOpenGoals}>
