@@ -67,6 +67,7 @@ pub mod policy;
 pub mod procs;
 pub mod projects;
 pub mod provenance;
+pub mod provider_health;
 pub mod pty;
 pub mod review_agent;
 pub mod router;
@@ -169,6 +170,30 @@ pub fn run_gui() {
                     std::thread::sleep(Duration::from_secs(60));
                 }
             });
+            // Connection health: every 5 minutes, check the subscriptions Hermes runs on and
+            // announce a provider that newly cannot run (signed out, usage limit, plugin off).
+            let ph = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(45));
+                loop {
+                    let report = crate::provider_health::check(chrono::Utc::now().timestamp());
+                    if let Ok(c) = crate::store::open() {
+                        let fresh = crate::provider_health::record_in(&c, &report);
+                        if crate::notices::os_enabled_in(&c) {
+                            for h in fresh {
+                                use tauri_plugin_notification::NotificationExt;
+                                let _ = ph
+                                    .notification()
+                                    .builder()
+                                    .title(format!("{}: {}", h.label, h.state.replace('_', " ")))
+                                    .body(&h.detail)
+                                    .show();
+                            }
+                        }
+                    }
+                    std::thread::sleep(Duration::from_secs(300));
+                }
+            });
             // Update checks: shortly after start, then every 6 hours. New versions raise an
             // in-app event and, once per version, an OS notification.
             let upd = app.handle().clone();
@@ -188,7 +213,7 @@ pub fn run_gui() {
                     if upd.emit(updates::EV_UPDATES, &report).is_err() {
                         break;
                     }
-                    std::thread::sleep(Duration::from_secs(6 * 3600));
+                    std::thread::sleep(Duration::from_secs(updates::next_check_secs(&report)));
                 }
             });
             // Heartbeat: Hermes version, provider, model and MCP count every 15 seconds.
@@ -211,6 +236,8 @@ pub fn run_gui() {
             commands::clients_list,
             commands::notices_list,
             commands::notices_read,
+            commands::provider_health,
+            commands::provider_fix,
             commands::client_connect,
             commands::client_disconnect,
             commands::scaffold_vault,

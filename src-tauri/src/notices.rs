@@ -145,6 +145,22 @@ pub fn list_in(c: &Connection, now: i64) -> Result<Vec<Notice>> {
             open,
         });
     }
+    // Subscriptions and keys Hermes is set to use that cannot run right now.
+    if let Some(r) = crate::provider_health::last_in(c) {
+        for h in r.problems() {
+            let at = h.last_failure.as_ref().map_or(r.checked_at, |f| f.at);
+            out.push(Notice {
+                id: format!("connection.{}.{}", h.id, h.state),
+                kind: "connection".into(),
+                title: format!("{}: {}", h.label, h.state.replace('_', " ")),
+                detail: h.detail.clone(),
+                view: "setup".into(),
+                at,
+                unread: at > read_until,
+                open: true,
+            });
+        }
+    }
     out.sort_by_key(|n| std::cmp::Reverse(n.at));
     Ok(out)
 }

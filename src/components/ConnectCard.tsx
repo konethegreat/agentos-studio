@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Circle, ExternalLink, KeyRound, RefreshCw } from "lucide-react";
-import { api, errorText } from "../lib/api";
+import { CheckCircle2, Circle, CircleAlert, ExternalLink, KeyRound, RefreshCw } from "lucide-react";
+import { api, errorText, type ProviderHealthReport } from "../lib/api";
 import { studio } from "../lib/studio";
 import { useToast } from "./Toasts";
 import { Button, Card, inputClass } from "./ui";
@@ -16,6 +16,89 @@ type Connection = {
   setup_label: string | null;
   link: string | null;
 };
+
+const STATE_TEXT: Record<string, string> = {
+  ok: "working",
+  signed_out: "signed out",
+  plugin_disabled: "plugin off",
+  rate_limited: "usage limit",
+  failing: "failing",
+  not_set_up: "not set up",
+};
+
+/**
+ * Whether each subscription Hermes runs on can run right now, from Hermes' own sign-in state and
+ * the failures it logged, with the one command that fixes each problem. Checked every 5 minutes.
+ */
+function ConnectionHealth() {
+  const toast = useToast();
+  const [r, setR] = useState<ProviderHealthReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function load(fresh: boolean) {
+    setBusy(true);
+    try {
+      setR(await api.providerHealth(fresh));
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  useEffect(() => {
+    void load(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  async function fix(id: string, action: string, label: string) {
+    try {
+      await api.providerFix(id, action);
+      toast("info", `${label}: finish it in the window that opened, then press Check now.`);
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }
+  return (
+    <div className="border-t border-line px-4 py-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-small font-semibold text-slate-200">Can Hermes run right now?</div>
+        <Button size="sm" variant="ghost" busy={busy} icon={<RefreshCw className="size-3.5" />} onClick={() => void load(true)}>
+          Check now
+        </Button>
+      </div>
+      {r?.advice && (
+        <div className="mb-2 rounded-lg bg-amber-500/[0.06] px-3 py-2 text-small text-amber-200 ring-1 ring-amber-500/25">
+          {r.advice}
+          <button className="ml-2 underline" onClick={() => void fix("openrouter", "add_fallback", "Add a fallback")}>
+            Add a fallback
+          </button>
+        </div>
+      )}
+      {r === null ? (
+        <div className="text-small text-slate-500">Asking Hermes...</div>
+      ) : (
+        <ul className="space-y-1.5">
+          {r.providers.map((h) => (
+            <li key={h.id} className="flex items-start gap-2">
+              {h.state === "ok" ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-ok" /> : h.state === "not_set_up" ? <Circle className="mt-0.5 size-4 shrink-0 text-slate-600" /> : <CircleAlert className="mt-0.5 size-4 shrink-0 text-warn" />}
+              <div className="min-w-0 flex-1">
+                <div className="text-small text-slate-200">
+                  {h.label}
+                  {h.in_use && <span className="ml-1.5 text-2xs text-emerald-300">{r.active === h.id ? "active" : "fallback"}</span>}
+                  <span className="ml-1.5 text-2xs text-muted">{STATE_TEXT[h.state] ?? h.state}</span>
+                </div>
+                <div className="text-label text-muted">{h.detail}</div>
+              </div>
+              {h.fix && (
+                <Button size="sm" onClick={() => void fix(h.id, h.fix![0], h.fix![1])}>
+                  {h.fix[1]}
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 /**
  * Connect the subscriptions an agent can actually use. A key is written straight to the Hermes
@@ -131,6 +214,7 @@ export function ConnectCard() {
           </div>
         ))
       )}
+      <ConnectionHealth />
     </Card>
   );
 }

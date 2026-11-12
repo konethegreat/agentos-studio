@@ -10,6 +10,7 @@ const ICON: Record<string, ReactNode> = {
   mission_blocked: <CircleAlert className="size-4 text-amber-300" />,
   mission_failed: <CircleX className="size-4 text-red-300" />,
   review: <Eye className="size-4 text-sky-300" />,
+  connection: <CircleAlert className="size-4 text-red-300" />,
 };
 
 function ago(at: number): string {

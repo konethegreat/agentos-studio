@@ -72,6 +72,26 @@ export interface SetupPlan {
   apps: string[];
 }
 
+/** One subscription or key Hermes runs on, as Hermes reports it (docs/CONNECTIONS.md). */
+export interface ProviderHealth {
+  id: string;
+  label: string;
+  in_use: boolean;
+  signed_in: boolean | null;
+  plugin_enabled: boolean | null;
+  state: "ok" | "signed_out" | "plugin_disabled" | "rate_limited" | "failing" | "not_set_up";
+  detail: string;
+  last_failure: { at: number; kind: string; summary: string; resets: string | null } | null;
+  fix: [string, string] | null;
+}
+export interface ProviderHealthReport {
+  providers: ProviderHealth[];
+  active: string | null;
+  fallbacks: string[];
+  advice: string | null;
+  checked_at: number;
+}
+
 /** One item in the notification centre; `view` is the screen that owns it. */
 export interface Notice {
   id: string;
@@ -985,6 +1005,8 @@ export const api = {
   setupPlan: () => invoke<SetupPlan>("setup_plan"),
   clientsList: () => invoke<HubClient[]>("clients_list"),
   notices: () => invoke<Notice[]>("notices_list"),
+  providerHealth: (fresh: boolean) => invoke<ProviderHealthReport>("provider_health", { fresh }),
+  providerFix: (provider: string, action: string) => invoke<void>("provider_fix", { provider, action }),
   noticesRead: () => invoke<void>("notices_read"),
   clientConnect: (id: string) => invoke<void>("client_connect", { id }),
   clientDisconnect: (id: string) => invoke<void>("client_disconnect", { id }),

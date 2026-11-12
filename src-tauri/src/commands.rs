@@ -110,6 +110,29 @@ pub async fn check_full_stack_status(
     blocking(move || Ok(bootstrapper::check_full_stack_status(&v))).await
 }
 
+/// Connection health of every subscription and key Hermes runs on; `fresh` checks now.
+#[tauri::command]
+pub async fn provider_health(fresh: bool) -> CmdResult<crate::provider_health::Report> {
+    blocking(move || {
+        let c = crate::store::open()?;
+        if !fresh {
+            if let Some(r) = crate::provider_health::last_in(&c) {
+                return Ok(r);
+            }
+        }
+        let r = crate::provider_health::check(chrono::Utc::now().timestamp());
+        let _ = crate::provider_health::record_in(&c, &r);
+        Ok(r)
+    })
+    .await
+}
+
+/// Start one fix (a sign-in, enabling a plugin, adding a fallback) in its own console window.
+#[tauri::command]
+pub async fn provider_fix(provider: String, action: String) -> CmdResult<()> {
+    blocking(move || crate::provider_health::run_fix(&provider, &action)).await
+}
+
 /// The notification centre: everything that needs attention, newest first.
 #[tauri::command]
 pub async fn notices_list() -> CmdResult<Vec<crate::notices::Notice>> {
