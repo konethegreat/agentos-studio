@@ -75,16 +75,6 @@ pub fn env_has(key: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn run(cmd: &mut Command) -> Option<String> {
-    let out = cmd.output().ok()?;
-    let text = String::from_utf8_lossy(&out.stdout).to_string();
-    Some(if out.status.success() {
-        "ok".into()
-    } else {
-        text.chars().take(200).collect()
-    })
-}
-
 fn claude_connected() -> (bool, String) {
     let Some(exe) = procs::find("claude") else {
         return (false, "Claude Code is not installed".into());
@@ -97,15 +87,29 @@ fn claude_connected() -> (bool, String) {
         use std::os::windows::process::CommandExt;
         c.creation_flags(procs::CREATE_NO_WINDOW);
     }
-    match run(&mut c) {
-        Some(s) if s == "ok" => (true, "Signed in through the Claude CLI".into()),
-        Some(cli) if cli.to_lowercase().contains("logged") => {
-            (true, "Signed in through the Claude CLI".into())
-        }
-        _ => (
+    let out = c.output().ok();
+    let text = out
+        .as_ref()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+    claude_auth_verdict(&text)
+}
+
+/// Read `claude auth status` JSON. Only `loggedIn: true` counts: the old text check also matched
+/// "Not logged in", so a signed-out Claude read as connected. Pure.
+pub fn claude_auth_verdict(text: &str) -> (bool, String) {
+    let v: serde_json::Value = serde_json::from_str(text.trim()).unwrap_or_default();
+    if v.get("loggedIn").and_then(serde_json::Value::as_bool) == Some(true) {
+        let how = v
+            .get("authMethod")
+            .and_then(|x| x.as_str())
+            .unwrap_or("claude.ai");
+        (true, format!("Signed in through the Claude CLI ({how})"))
+    } else {
+        (
             false,
-            "Run `claude auth login` once, or use Setup to do it".into(),
-        ),
+            "Signed out. Run `claude auth login` once, or use Sign in".into(),
+        )
     }
 }
 
@@ -233,6 +237,14 @@ pub fn save_key(provider: &str, key: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_logged_in_true_counts_as_signed_in() {
+        assert!(claude_auth_verdict(r#"{"loggedIn": true, "authMethod": "claude.ai"}"#).0);
+        assert!(!claude_auth_verdict(r#"{"loggedIn": false}"#).0);
+        assert!(!claude_auth_verdict("Not logged in. Run claude auth login").0);
+        assert!(!claude_auth_verdict("").0);
+    }
 
     #[test]
     fn plugin_status_needs_enabled_not_just_present() {

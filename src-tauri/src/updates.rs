@@ -34,12 +34,13 @@ const CLAUDE_NPM: &str = "https://registry.npmjs.org/@anthropic-ai/claude-code/l
 const CLAUDE_CHANGELOG: &str =
     "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md";
 
-pub const PRODUCTS: [&str; 3] = ["hermes", "claude-code", "studio"];
+pub const PRODUCTS: [&str; 4] = ["hermes", "claude-code", "hermes-plugins", "studio"];
 
 pub fn label(product: &str) -> &'static str {
     match product {
         "hermes" => "Hermes Agent",
         "claude-code" => "Claude Code",
+        "hermes-plugins" => "Hermes plugins",
         _ => "AgentOS Studio",
     }
 }
@@ -558,6 +559,72 @@ pub fn check_claude() -> ProductUpdate {
     p
 }
 
+/// Plugins with an update or a fix pending, from `hermes plugins check-updates --json`. The
+/// Claude and Antigravity providers are plugins, so a stale one breaks sign-in after a Hermes
+/// update even when Hermes itself is current. Pure.
+pub fn plugins_pending(json: &str) -> Option<Vec<String>> {
+    let v: Value = serde_json::from_str(json.trim()).ok()?;
+    Some(
+        v.as_array()?
+            .iter()
+            .filter(|p| {
+                p.get("update_available").and_then(Value::as_bool) == Some(true)
+                    || p.get("needs_fixing").is_some_and(|n| !n.is_null())
+            })
+            .filter_map(|p| p.get("name").and_then(Value::as_str).map(String::from))
+            .collect(),
+    )
+}
+
+pub fn check_plugins() -> ProductUpdate {
+    let mut p = base("hermes-plugins");
+    if procs::find("hermes").is_none() {
+        p.state = "not_installed".into();
+        p.detail = "hermes was not found on PATH".into();
+        return p;
+    }
+    p.installed = true;
+    p.can_update = true;
+    p.update_note = "Runs hermes plugins update for every plugin with an update. The Claude and Antigravity providers are plugins, so keeping them current keeps those sign-ins working.".into();
+    let out = procs::run_with_timeout(
+        "hermes",
+        &["plugins", "check-updates", "--json"],
+        None,
+        None,
+        Duration::from_secs(120),
+    );
+    match out.ok().and_then(|(_, o, _)| plugins_pending(&o)) {
+        Some(names) if names.is_empty() => {
+            p.state = "up_to_date".into();
+            p.detail = "Every plugin is current".into();
+            p.current = Some("current".into());
+            p.latest = Some("current".into());
+        }
+        Some(names) => {
+            p.state = "available".into();
+            p.current = Some("installed".into());
+            p.latest = Some(names.join(", "));
+            p.detail = format!("Updates for {}", names.join(", "));
+        }
+        None => p.detail = "Could not check: hermes plugins check-updates gave no result".into(),
+    }
+    p
+}
+
+/// When the next update check runs: soon after a check that could not reach a source (offline,
+/// GitHub or npm down), otherwise every three hours. Pure.
+pub fn next_check_secs(report: &UpdateReport) -> u64 {
+    if report
+        .products
+        .iter()
+        .any(|p| p.detail.starts_with("Could not"))
+    {
+        15 * 60
+    } else {
+        3 * 3600
+    }
+}
+
 /// True when this executable runs out of a Cargo `target` directory (a source build).
 pub fn is_source_build(exe: &Path) -> bool {
     let s = exe.display().to_string().replace('\\', "/").to_lowercase();
@@ -614,6 +681,7 @@ pub fn check_all() -> UpdateReport {
     let handles = [
         std::thread::spawn(check_hermes),
         std::thread::spawn(check_claude),
+        std::thread::spawn(check_plugins),
         std::thread::spawn(check_studio),
     ];
     let mut products: Vec<ProductUpdate> = handles
@@ -1000,6 +1068,7 @@ pub fn apply_update(app: AppHandle, product: &str, approved: bool) -> Result<Str
     let status = match product {
         "hermes" => check_hermes(),
         "claude-code" => check_claude(),
+        "hermes-plugins" => check_plugins(),
         _ => check_studio(),
     };
     if status.state != "available" {
@@ -1080,6 +1149,12 @@ pub fn apply_update(app: AppHandle, product: &str, approved: bool) -> Result<Str
                     require_ok(pg, "claude", &["update"], None)?;
                     let now = procs::version("claude").unwrap_or_default();
                     Ok(format!("Claude Code updated: {now}"))
+                }
+                "hermes-plugins" => {
+                    m.note = "Plugins have no rollback here; Hermes keeps each plugin's previous commit in its own history.".into();
+                    write_manifest(&mut m)?;
+                    require_ok(pg, "hermes", &["plugins", "update"], None)?;
+                    Ok(format!("Hermes plugins updated: {to}"))
                 }
                 _ => {
                     m.note = format!("Rollback downloads and runs the v{from} installer.");
@@ -1163,6 +1238,7 @@ pub fn rollback(app: AppHandle, backup_id: &str, approved: bool) -> Result<Strin
                 require_ok(pg, "claude", &["install", &m.from_version, "--force"], None)?;
                 Ok(format!("Claude Code reinstalled at {}", m.from_version))
             }
+            "hermes-plugins" => bail!("Plugin updates cannot be rolled back from Studio"),
             _ => {
                 let path = install_studio_release(
                     pg,
@@ -1187,6 +1263,24 @@ pub fn rollback(app: AppHandle, backup_id: &str, approved: bool) -> Result<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_updates_and_fixes_are_pending_and_offline_retries_soon() {
+        let j = r#"[{"name":"a","update_available":false,"needs_fixing":null},
+                   {"name":"antigravity-oauth","update_available":true,"needs_fixing":null},
+                   {"name":"c","update_available":false,"needs_fixing":"min_hermes"}]"#;
+        assert_eq!(plugins_pending(j).unwrap(), ["antigravity-oauth", "c"]);
+        assert_eq!(plugins_pending("[]").unwrap(), Vec::<String>::new());
+        assert!(plugins_pending("not json").is_none());
+        let mut r = UpdateReport::default();
+        let mut p = base("studio");
+        p.detail = "Up to date".into();
+        r.products.push(p.clone());
+        assert_eq!(next_check_secs(&r), 3 * 3600);
+        p.detail = "Could not reach GitHub: timeout".into();
+        r.products.push(p);
+        assert_eq!(next_check_secs(&r), 15 * 60);
+    }
 
     #[test]
     fn compares_versions() {
