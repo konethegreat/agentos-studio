@@ -35,6 +35,11 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.2.0
+
+- **Prompts that hand work on.** Work, Prompts writes a prompt from what Studio knows about a project (commits, open tasks and phases, missions, pull requests, AGENTS.md, the project note, or a Hermes session to carry forward), checks it, sharpens it, and hands it to Claude Code, Antigravity, Qoder, Cursor, Claude Desktop or any chat app. Every prompt is saved with its project and every version is kept. See [docs/PROMPTS.md](docs/PROMPTS.md).
+- **Repositories that keep themselves busy.** Opt a repository in and it keeps docs/agentos/PHASES.md and TASKS.md; Studio keeps one goal in flight for it, agents open a pull request per task, the review gate merges it, and the repository and the vault get a report. See [docs/AUTONOMOUS-REPOS.md](docs/AUTONOMOUS-REPOS.md).
+
 ## What is new in 1.1.1
 
 - **Connections that stay working.** Setup shows whether each subscription Hermes runs on can run right now (signed in, plugin on, usage limit with its reset time, recent failures, a fallback chain), with the one command that fixes it; a provider in use that stops raises a bell item and a Windows notification. See [docs/CONNECTIONS.md](docs/CONNECTIONS.md).

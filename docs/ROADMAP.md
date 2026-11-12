@@ -545,7 +545,7 @@ before it. Nothing here is built yet.
     Windows notifications for the same events with a switch to turn them off.
   - Alongside: the download site redesign with UI Vault components and setup guides for each
     platform (agentos-studio-website).
-- **1.2, prompts that hand work on (owner direction 2026-11-12).** Studio does not replace
+- **1.2, prompts that hand work on (shipped in 1.2.0, #155; owner direction 2026-11-12).** Studio does not replace
   Claude Code, Antigravity, Qoder or Claude Desktop, so handing work to them must be easy and
   good. Work, Prompts: saved prompts that know their project (every version kept, mirrored to
   the vault), drafted from the repository, open tasks and phases, missions, pull requests,
@@ -554,7 +554,7 @@ before it. Nothing here is built yet.
   dashes, size per receiver, missing paths); Sharpen and What is unclear? as one quiet Hermes
   turn each; and handoff by copy, a file in the repository, or a bus task. Design:
   `docs/PROMPTS.md`. Depends on: the context ledger (G10) and the bus.
-- **1.3, every repository keeps itself busy (owner direction 2026-11-12: 33 repositories, too
+- **1.3, every repository keeps itself busy (shipped in 1.2.0, #156; the one-week done check runs from the release; owner direction 2026-11-12: 33 repositories, too
   many to watch one by one).** Each opted-in repository gets `docs/agentos/PHASES.md` and
   `docs/agentos/TASKS.md`, written by a planning agent from the code and kept current; Studio
   takes the next open task as a mission, the agent opens the pull request and ticks the task in
