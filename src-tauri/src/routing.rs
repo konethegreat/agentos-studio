@@ -44,7 +44,23 @@ pub struct Policy {
 }
 
 /// What every headless Claude Code mission worker may run: git, pull requests and the hub.
-pub const BASE_TOOLS: [&str; 3] = ["mcp__agentos-hub", "Bash(git *)", "Bash(gh pr *)"];
+///
+/// The read-only `gh` queries are here because work that must state facts (a portfolio, a
+/// changelog, a plan from open issues) needs them, and a headless worker that is denied them
+/// gives up without a pull request.
+pub const BASE_TOOLS: [&str; 11] = [
+    "mcp__agentos-hub",
+    "Bash(git *)",
+    "Bash(gh pr *)",
+    "Bash(gh repo view*)",
+    "Bash(gh repo list*)",
+    "Bash(gh issue list*)",
+    "Bash(gh issue view*)",
+    "Bash(gh release list*)",
+    "Bash(gh release view*)",
+    "Bash(gh run list*)",
+    "Bash(gh run view*)",
+];
 
 /// The `--allowedTools` list for a Claude Code worker: the base rules plus the repository's own,
 /// each `Bash(...)` rule mirrored as `PowerShell(...)` because Claude Code on Windows runs shell
@@ -210,6 +226,14 @@ mod tests {
                 "mcp(agentos-hub/*)",
                 "command(regex:git .*)",
                 "command(regex:gh pr .*)",
+                "command(regex:gh repo view.*)",
+                "command(regex:gh repo list.*)",
+                "command(regex:gh issue list.*)",
+                "command(regex:gh issue view.*)",
+                "command(regex:gh release list.*)",
+                "command(regex:gh release view.*)",
+                "command(regex:gh run list.*)",
+                "command(regex:gh run view.*)",
                 "command(regex:npm test.*)",
                 "command(regex:node .*\\.js)",
             ]

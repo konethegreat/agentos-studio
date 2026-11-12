@@ -67,6 +67,55 @@ fn reassign(v: &Vault, m: &Mission, task: &str) -> anyhow::Result<String> {
     Ok(to.to_string())
 }
 
+/// What to do with a worker that reported done without a pull request: there is nothing to
+/// review. The first time the mission goes back to the queue for a different agent; the second
+/// time it is blocked, so its goal asks the owner. Pure.
+pub fn no_pr_step(attempts: u32) -> &'static str {
+    if attempts == 0 {
+        "retry"
+    } else {
+        "block"
+    }
+}
+
+pub fn no_pr_key(id: &str) -> String {
+    format!("mission.nopr.{id}")
+}
+
+fn no_pr_retry(m: &Mission) -> anyhow::Result<String> {
+    let attempts: u32 = kv(&no_pr_key(&m.id))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    kv_set(&no_pr_key(&m.id), &(attempts + 1).to_string());
+    let from = m.agent.trim().to_lowercase();
+    if no_pr_step(attempts) == "block" {
+        missions::block(
+            &m.id,
+            &format!("{from} finished twice without opening a pull request, so there is nothing to review"),
+            false,
+        )?;
+        return Ok(format!(
+            "{}: finished again without a pull request; blocked",
+            m.id
+        ));
+    }
+    let to = crate::bus::best_headless(&from, crate::bus::headless_available).unwrap_or("hermes");
+    missions::block(
+        &m.id,
+        &format!("{from} finished without a pull request"),
+        false,
+    )?;
+    missions::set_agent(&m.id, to)?;
+    missions::unblock(
+        &m.id,
+        &format!("{from} reported done without opening a pull request; retrying with {to}"),
+    )?;
+    Ok(format!(
+        "{}: {from} opened no pull request; queued again for {to}",
+        m.id
+    ))
+}
+
 fn kv(key: &str) -> Option<String> {
     let c = store::open().ok()?;
     store::kv_get(&c, key).ok().flatten()
@@ -261,6 +310,18 @@ pub fn tick(v: &Vault) -> TickReport {
                     let _ = missions::set_pr(&m.id, &url);
                 }
             }
+            let has_pr = missions::get(&m.id)
+                .ok()
+                .flatten()
+                .and_then(|x| x.pr_url)
+                .is_some();
+            if !has_pr {
+                match no_pr_retry(m) {
+                    Ok(note) => report.stuck.push(note),
+                    Err(e) => report.error = Some(e.to_string()),
+                }
+                continue;
+            }
             match missions::submit_for_review(&m.id, 0.0) {
                 Ok(_) => {
                     crate::stuck::reset(&m.id);
@@ -283,6 +344,15 @@ pub fn tick(v: &Vault) -> TickReport {
     // missions always; standalone missions when Automations are on.
     let now = chrono::Utc::now().timestamp();
     for m in all.iter().filter(|m| m.status == "review") {
+        // A review needs a pull request: without one the reviewer refuses, and the mission would
+        // sit in review for ever. Send it back the same way as a worker that opened none.
+        if m.pr_url.is_none() && !crate::council::is_council(m.task_id.as_deref()) {
+            match no_pr_retry(m) {
+                Ok(note) => report.stuck.push(note),
+                Err(e) => report.error = Some(e.to_string()),
+            }
+            continue;
+        }
         let eligible = report.enabled || crate::goals::goal_of(&m.id).is_some();
         let state = crate::review_agent::auto_state(&m.id);
         if crate::review_agent::auto_review_due(m, state.as_deref(), now, eligible) {
@@ -717,6 +787,14 @@ mod tests {
     }
 
     #[test]
+    fn work_without_a_pull_request_is_retried_once_then_blocked() {
+        assert_eq!(no_pr_step(0), "retry");
+        assert_eq!(no_pr_step(1), "block");
+        assert_eq!(no_pr_step(5), "block");
+        assert_eq!(no_pr_key("M-7"), "mission.nopr.M-7");
+    }
+
+    #[test]
     fn a_finished_task_moves_the_mission_to_review_not_done() {
         let d = tempfile::tempdir().unwrap();
         let _g = crate::store::test_env_lock();
@@ -749,7 +827,12 @@ mod tests {
         let task_id = task["id"].as_str().unwrap().to_string();
         missions::dispatch(&mission.id, &task_id).unwrap();
         v.claim_task(&task_id, "hermes").unwrap();
-        v.complete_task(&task_id, "hermes", "done").unwrap();
+        v.complete_task(
+            &task_id,
+            "hermes",
+            "Opened https://github.com/konethegreat/repo/pull/3",
+        )
+        .unwrap();
 
         let report = tick(&v);
         assert_eq!(report.moved_to_review, vec![mission.id.clone()]);
@@ -758,6 +841,53 @@ mod tests {
         assert_ne!(
             after.status, "done",
             "the scheduler never approves its own work"
+        );
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn done_without_a_pull_request_goes_back_to_the_queue_not_to_review() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let v = Vault::new(d.path().join("vault"));
+        v.scaffold().unwrap();
+        let mission = missions::create(
+            "repo",
+            "goal",
+            "acceptance",
+            "implementer",
+            "hermes",
+            "claude-subscription",
+            "",
+            0.0,
+        )
+        .unwrap();
+        let task = v
+            .delegate_task(crate::vault::DelegateArgs {
+                title: "t".into(),
+                assigned_to: "hermes".into(),
+                creator: "test".into(),
+                project: "repo".into(),
+                context_files: Vec::new(),
+                instructions: "do it".into(),
+                priority: "high".into(),
+            })
+            .unwrap();
+        let task_id = task["id"].as_str().unwrap().to_string();
+        missions::dispatch(&mission.id, &task_id).unwrap();
+        v.claim_task(&task_id, "hermes").unwrap();
+        v.complete_task(&task_id, "hermes", "I could not run gh, so I stopped")
+            .unwrap();
+        let report = tick(&v);
+        assert!(report.moved_to_review.is_empty(), "nothing to review");
+        let after = missions::get(&mission.id).unwrap().unwrap();
+        assert_eq!(after.status, "queued", "queued again for another agent");
+        assert_eq!(kv(&no_pr_key(&mission.id)).as_deref(), Some("1"));
+        missions::delete(&mission.id).unwrap();
+        assert!(
+            kv(&no_pr_key(&mission.id)).is_none(),
+            "the marker goes with the row"
         );
         crate::store::set_test_db(None);
     }
