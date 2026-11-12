@@ -150,8 +150,13 @@ pub fn allowed_tools(repo_dir: &Path) -> Vec<String> {
     load(repo_dir).map(|p| p.allowed_tools).unwrap_or_default()
 }
 
+///
+/// The policy is what is merged on origin's default branch (an opt-in is a merged pull request),
+/// so a stale or diverged owner checkout neither hides it nor grants tools that were never
+/// merged. A folder without an origin copy (a new repository, a test) falls back to the file.
 pub fn load(repo_dir: &Path) -> Option<Policy> {
-    let text = std::fs::read_to_string(path_in(repo_dir)).ok()?;
+    let text = crate::autonomy::on_origin(repo_dir, ".agentos/routing.json")
+        .or_else(|| std::fs::read_to_string(path_in(repo_dir)).ok())?;
     parse(&text).ok()
 }
 
@@ -249,6 +254,22 @@ mod tests {
         assert!(load(d.path()).is_none());
         assert!(defaults_for(d.path(), "implementer").is_none());
         assert!(!merge_allowed(d.path()));
+        // Origin wins over the checkout: a stale local file does not hide a merged opt-in.
+        let repo = tempfile::tempdir().unwrap();
+        let g = |args: &[&str]| crate::fleet::git(repo.path(), args);
+        g(&["init", "-q", "-b", "main"]);
+        g(&["config", "user.email", "t@example.com"]);
+        g(&["config", "user.name", "t"]);
+        std::fs::create_dir_all(repo.path().join(".agentos")).unwrap();
+        std::fs::write(path_in(repo.path()), r#"{"allow_merge":true}"#).unwrap();
+        g(&["add", "."]);
+        g(&["commit", "-q", "-m", "opt in"]);
+        g(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
+        std::fs::write(path_in(repo.path()), r#"{"allow_merge":false}"#).unwrap();
+        assert!(
+            merge_allowed(repo.path()),
+            "the merged policy on origin decides"
+        );
     }
 
     #[test]

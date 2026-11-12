@@ -528,7 +528,7 @@ fn default_branch(dir: &Path) -> String {
 }
 
 /// A file as it is on origin's default branch, never the working copy.
-fn on_origin(dir: &Path, rel: &str) -> Option<String> {
+pub(crate) fn on_origin(dir: &Path, rel: &str) -> Option<String> {
     let b = default_branch(dir);
     let out = crate::fleet::git(dir, &["show", &format!("origin/{b}:{rel}")]);
     (!out.trim().is_empty()).then_some(out)
