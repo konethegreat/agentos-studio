@@ -8,6 +8,7 @@ export type RailView =
   | "goals"
   | "projects"
   | "prompts"
+  | "autonomy"
   | "mission"
   | "fleet"
   | "agents"

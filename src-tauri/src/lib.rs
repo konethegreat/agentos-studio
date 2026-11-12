@@ -8,6 +8,7 @@ pub mod agents;
 pub mod ask;
 pub mod assign;
 pub mod automation;
+pub mod autonomy;
 pub mod boot;
 pub mod bootstrapper;
 pub mod broadcast;
@@ -195,6 +196,19 @@ pub fn run_gui() {
                     std::thread::sleep(Duration::from_secs(300));
                 }
             });
+            // Autonomous repositories: every 10 minutes, start the next goal for each opted-in
+            // repository with nothing in flight (off until the owner turns it on).
+            let av = root.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(120));
+                loop {
+                    let v = crate::vault::Vault::new(&av);
+                    if let Err(e) = crate::autonomy::pass(&v) {
+                        eprintln!("autonomy: {e:#}");
+                    }
+                    std::thread::sleep(Duration::from_secs(600));
+                }
+            });
             // Update checks: shortly after start, then every 6 hours. New versions raise an
             // in-app event and, once per version, an OS notification.
             let upd = app.handle().clone();
@@ -248,6 +262,12 @@ pub fn run_gui() {
             commands::prompt_ai,
             commands::prompt_deliver,
             commands::prompt_sessions,
+            commands::autonomy_status,
+            commands::autonomy_settings,
+            commands::autonomy_set,
+            commands::autonomy_opt_in,
+            commands::autonomy_pause_repo,
+            commands::autonomy_run_now,
             commands::provider_fix,
             commands::client_connect,
             commands::client_disconnect,
