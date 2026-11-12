@@ -380,13 +380,48 @@ pub fn max_active(c: &rusqlite::Connection) -> usize {
         .unwrap_or(DEFAULT_MAX_ACTIVE)
 }
 
-pub fn config_of(dir: &Path) -> Config {
-    std::fs::read_to_string(crate::routing::path_in(dir))
+/// The `autonomy` block of a routing.json text. Pure.
+pub fn config_in(text: &str) -> Config {
+    serde_json::from_str::<serde_json::Value>(text)
         .ok()
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
         .and_then(|v| v.get("autonomy").cloned())
         .and_then(|a| serde_json::from_value(a).ok())
         .unwrap_or_default()
+}
+
+/// The opt-in as committed on origin's default branch (where Opt in merges it), else the local
+/// copy for a repository without a remote.
+pub fn config_of(dir: &Path) -> Config {
+    on_origin(dir, ".agentos/routing.json")
+        .or_else(|| std::fs::read_to_string(crate::routing::path_in(dir)).ok())
+        .map(|t| config_in(&t))
+        .unwrap_or_default()
+}
+
+/// Bring the owner's checkout up to origin when it is safe: on the default branch, nothing
+/// uncommitted, and a fast-forward only. The merge gate reads `allow_merge` from the checkout, so
+/// an opt-in merged on GitHub must reach it; a checkout on another branch or with changes is left
+/// alone. Returns whether it moved.
+pub fn sync_checkout(dir: &Path) -> bool {
+    let base = default_branch(dir);
+    let here = crate::fleet::git(dir, &["branch", "--show-current"]);
+    let dirty = !crate::fleet::git(dir, &["status", "--porcelain"])
+        .trim()
+        .is_empty();
+    if !may_fast_forward(&here, &base, dirty) {
+        return false;
+    }
+    let before = crate::fleet::git(dir, &["rev-parse", "HEAD"]);
+    let _ = crate::fleet::git(
+        dir,
+        &["merge", "--ff-only", "-q", &format!("origin/{base}")],
+    );
+    crate::fleet::git(dir, &["rev-parse", "HEAD"]) != before
+}
+
+/// Only a clean checkout of the default branch is fast-forwarded. Pure.
+pub fn may_fast_forward(current: &str, base: &str, dirty: bool) -> bool {
+    !dirty && !current.trim().is_empty() && current.trim() == base
 }
 
 /// The default branch on origin (origin/HEAD, else main, else master).
@@ -491,6 +526,9 @@ fn status_for(
 ) -> (RepoStatus, RepoState, Action) {
     if fetch {
         let _ = crate::fleet::git(dir, &["fetch", "-q", "origin"]);
+        if config_of(dir).enabled {
+            sync_checkout(dir);
+        }
     }
     let cfg = config_of(dir);
     let allow = crate::routing::merge_allowed(dir);
@@ -807,6 +845,8 @@ pub fn opt_in(slug: &str, dir: &Path, level_wanted: &str) -> Result<String> {
     })();
     let _ = ok(&["worktree", "remove", "--force", &wts], dir);
     let _ = crate::fleet::git(dir, &["branch", "-D", &branch]);
+    let _ = crate::fleet::git(dir, &["fetch", "-q", "origin"]);
+    sync_checkout(dir);
     let c = store::open()?;
     let mut st = load_state(&c, slug);
     let text = match &result {
@@ -1011,6 +1051,26 @@ mod tests {
         assert!(all
             .iter()
             .any(|s| s.slug == "agentos-studio" && s.hermes_project));
+    }
+
+    #[test]
+    fn the_opt_in_is_read_from_routing_text_and_only_clean_default_checkouts_move() {
+        assert!(config_in(r#"{"autonomy":{"enabled":true,"level":"full"}}"#).enabled);
+        assert!(!config_in(r#"{"allow_merge":true}"#).enabled);
+        assert!(!config_in("not json").enabled);
+        assert!(may_fast_forward("main", "main", false));
+        assert!(
+            !may_fast_forward("main", "main", true),
+            "uncommitted work stays put"
+        );
+        assert!(
+            !may_fast_forward("feature", "main", false),
+            "another branch stays put"
+        );
+        assert!(
+            !may_fast_forward("", "main", false),
+            "a detached head stays put"
+        );
     }
 
     #[test]
