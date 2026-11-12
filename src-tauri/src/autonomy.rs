@@ -77,6 +77,9 @@ pub struct RepoState {
 pub struct RepoStatus {
     pub slug: String,
     pub path: String,
+    /// A Hermes project already; Opt in creates one when it is not (missions need it).
+    #[serde(default)]
+    pub hermes_project: bool,
     pub enabled: bool,
     /// Turned off on this machine only (the committed opt-in stays).
     pub paused_here: bool,
@@ -410,7 +413,52 @@ fn on_origin(dir: &Path, rel: &str) -> Option<String> {
     (!out.trim().is_empty()).then_some(out)
 }
 
-/// Every Hermes project whose folder is a git repository, as (slug, folder).
+fn norm(p: &Path) -> String {
+    let s = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    s.display()
+        .to_string()
+        .trim_start_matches(r"\\?\")
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_lowercase()
+}
+
+/// Every local git repository Studio can see: Hermes projects first (as their slug), then every
+/// repository under the scan roots that no project covers yet (as its folder name). Pure.
+pub fn merge_repos(
+    projects: &[(String, PathBuf)],
+    discovered: &[PathBuf],
+    norm: impl Fn(&Path) -> String,
+) -> Vec<(String, PathBuf, bool)> {
+    let mut out: Vec<(String, PathBuf, bool)> = projects
+        .iter()
+        .map(|(s, d)| (s.clone(), d.clone(), true))
+        .collect();
+    let known: Vec<String> = projects.iter().map(|(_, d)| norm(d)).collect();
+    for d in discovered {
+        if known.contains(&norm(d)) {
+            continue;
+        }
+        let name = d
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if name.is_empty() || out.iter().any(|(s, _, _)| s.eq_ignore_ascii_case(&name)) {
+            continue;
+        }
+        out.push((name, d.clone(), false));
+    }
+    out
+}
+
+/// Hermes projects plus every repository under the scan roots, as (slug, folder, is a project).
+pub fn all_repos() -> Vec<(String, PathBuf, bool)> {
+    let roots = crate::settings::Settings::load().roots();
+    merge_repos(&repos(), &crate::fleet::discover(&roots), norm)
+}
+
+/// Every Hermes project whose folder is a git repository, as (slug, folder). Only these can run
+/// missions, so the pass works from this list; Opt in makes a repository one.
 pub fn repos() -> Vec<(String, PathBuf)> {
     crate::projects::list()
         .unwrap_or_default()
@@ -472,6 +520,7 @@ fn status_for(
     let status = RepoStatus {
         slug: slug.into(),
         path: dir.display().to_string(),
+        hermes_project: true,
         enabled: cfg.enabled,
         paused_here,
         level: level(&cfg, allow),
@@ -486,14 +535,39 @@ fn status_for(
     (status, st, action)
 }
 
-/// Every repository Studio knows, with its autonomy state (no fetch, no changes).
+/// Every repository Studio can see, with its autonomy state (no fetch, no changes).
 pub fn statuses() -> Result<Vec<RepoStatus>> {
     let c = store::open()?;
     let now = store::now();
-    Ok(repos()
+    Ok(all_repos()
         .iter()
-        .map(|(slug, dir)| status_for(&c, slug, dir, false, true, now).0)
+        .map(|(slug, dir, project)| {
+            let mut s = status_for(&c, slug, dir, false, true, now).0;
+            s.hermes_project = *project;
+            s
+        })
         .collect())
+}
+
+/// The Hermes project slug for a folder, creating the project when there is none: missions,
+/// reviews and merges find a repository through its project.
+pub fn ensure_project(name: &str, dir: &Path) -> Result<String> {
+    let find = || {
+        crate::projects::list()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|p| {
+                p.folders
+                    .iter()
+                    .any(|f| norm(Path::new(&f.path)) == norm(dir))
+            })
+            .map(|p| p.slug)
+    };
+    if let Some(s) = find() {
+        return Ok(s);
+    }
+    crate::projects::create(name, &[dir.display().to_string()])?;
+    find().ok_or_else(|| anyhow!("Hermes did not list the new project for {}", dir.display()))
 }
 
 /// What one pass did.
@@ -643,6 +717,7 @@ pub fn opt_in(slug: &str, dir: &Path, level_wanted: &str) -> Result<String> {
     }
     let _ = crate::fleet::git(dir, &["fetch", "-q", "origin"]);
     let base = default_branch(dir);
+    let slug = &ensure_project(slug, dir)?;
     let wt = store::studio_dir().join("autonomy-optin").join(slug);
     let _ = std::fs::remove_dir_all(&wt);
     let _ = crate::fleet::git(dir, &["worktree", "prune"]);
@@ -920,11 +995,49 @@ mod tests {
         store::set_test_db(None);
     }
 
+    /// Live, read-only: every repository the Autonomy screen would list on this machine.
+    /// `cargo test --lib -- --ignored autonomy_live_list --nocapture`
+    #[test]
+    #[ignore]
+    fn autonomy_live_list() {
+        let all = statuses().unwrap();
+        for s in &all {
+            println!(
+                "{:<40} project={} enabled={} plan={} next={}",
+                s.slug, s.hermes_project, s.enabled, s.has_plan, s.next
+            );
+        }
+        println!("{} repositories", all.len());
+        assert!(all
+            .iter()
+            .any(|s| s.slug == "agentos-studio" && s.hermes_project));
+    }
+
+    #[test]
+    fn every_local_repository_is_listed_once() {
+        let n = |p: &Path| p.display().to_string().to_lowercase().replace('\\', "/");
+        let projects = vec![("shop-app".to_string(), PathBuf::from("C:/r/Shop"))];
+        let found = vec![
+            PathBuf::from("c:/r/shop"),
+            PathBuf::from("C:/r/blog"),
+            PathBuf::from("C:/other/blog"),
+        ];
+        let m = merge_repos(&projects, &found, n);
+        assert_eq!(
+            m.iter()
+                .map(|(s, _, p)| (s.as_str(), *p))
+                .collect::<Vec<_>>(),
+            [("shop-app", true), ("blog", false)],
+            "a project folder is not listed twice, and two folders with one name keep the first"
+        );
+    }
+
     #[test]
     fn the_report_names_plan_progress_and_the_log() {
         let s = RepoStatus {
             slug: "shop".into(),
             path: "C:/r/shop".into(),
+            hermes_project: true,
             enabled: true,
             paused_here: false,
             level: "full".into(),

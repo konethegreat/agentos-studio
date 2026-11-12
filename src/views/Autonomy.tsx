@@ -145,7 +145,7 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
       {repos === null ? (
         <div className="text-small text-muted">Reading the repositories...</div>
       ) : shown.length === 0 ? (
-        <Empty icon={<Bot className="size-5" />} title="No repositories here" hint="Repositories are your Hermes projects whose folder is a git repository." />
+        <Empty icon={<Bot className="size-5" />} title="No repositories here" hint="Studio lists every git repository under the scan roots in Settings, plus your Hermes projects." />
       ) : (
         <div className="grid gap-3 xl:grid-cols-2">
           {shown.map((r) => {
@@ -163,7 +163,10 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
                         </span>
                       )}
                     </div>
-                    <div className="truncate text-2xs text-muted">{r.path}</div>
+                    <div className="truncate text-2xs text-muted">
+                      {r.path}
+                      {!r.hermes_project && " . not a Hermes project yet; Opt in makes it one"}
+                    </div>
                   </div>
                   <div className="flex shrink-0 gap-1.5">
                     {!r.enabled ? (
@@ -172,7 +175,7 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
                         variant="primary"
                         busy={busy === `opt:${r.slug}`}
                         onClick={() =>
-                          void act(`opt:${r.slug}`, () => api.autonomyOptIn(r.slug, level), (u) => `Opted in: ${String(u)}`)
+                          void act(`opt:${r.slug}`, () => api.autonomyOptIn(r.slug, r.path, level), (u) => `Opted in: ${String(u)}`)
                         }
                       >
                         Opt in

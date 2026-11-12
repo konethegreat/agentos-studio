@@ -337,10 +337,12 @@ pub async fn autonomy_set(enabled: bool, max_active: usize) -> CmdResult<()> {
 
 /// Opt one repository in through a merged pull request to its routing.json.
 #[tauri::command]
-pub async fn autonomy_opt_in(slug: String, level: String) -> CmdResult<String> {
+pub async fn autonomy_opt_in(slug: String, path: String, level: String) -> CmdResult<String> {
     blocking(move || {
-        let dir = crate::review_agent::project_dir(&slug)
-            .ok_or_else(|| anyhow::anyhow!("'{slug}' has no project folder"))?;
+        let dir = std::path::PathBuf::from(&path);
+        if !dir.join(".git").exists() {
+            anyhow::bail!("{path} is not a git repository");
+        }
         crate::autonomy::opt_in(&slug, &dir, &level)
     })
     .await
