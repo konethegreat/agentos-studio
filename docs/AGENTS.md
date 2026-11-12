@@ -44,7 +44,7 @@ task is closed as handed off (a Hermes kanban task is completed with `--force`),
 logged. Only the agent holding a running mission can hand it off, never to itself or to `human`.
 After a handoff the sender stops; it does not call `complete_task`.
 
-Verified by `tests/live_handoff.rs` (sandbox repository, temporary bus).
+Verified by `tests/live/live_handoff.rs` (sandbox repository, temporary bus).
 
 ## Asking another agent
 
@@ -67,7 +67,7 @@ each other in a loop (MCP clients do not pass their environment to the hub, so t
 Every ask and every answer (or failure) is a row in the exchange log with the duration; a metered
 Hermes answer adds its cost to the mission's spend.
 
-Verified by `tests/live_ask.rs`: Claude Code asks Hermes and Hermes asks Claude Code in the sandbox
+Verified by `tests/live/live_ask.rs`: Claude Code asks Hermes and Hermes asks Claude Code in the sandbox
 repository, and the Hermes sessions the asks created are deleted afterwards.
 
 ## Council for design decisions
@@ -91,7 +91,7 @@ does not create one worker:
 Hermes `kanban swarm` was considered and refused for this: its workers are Hermes profiles, so it
 cannot seat Claude Code or Antigravity, and different providers are the point of a council.
 
-Verified by `tests/live_council.rs` in the sandbox repository.
+Verified by `tests/live/live_council.rs` in the sandbox repository.
 
 ## Quota-aware assignment
 

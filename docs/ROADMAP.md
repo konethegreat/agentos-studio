@@ -236,7 +236,7 @@ Depends on: v0.5 capability metadata, and the cost and outcome data from v0.4.
   `state.db` directly, for the same reason.
 - Limits, stated: tool outputs, reasoning and the system prompt are not copied; each tool call is
   kept as a `[ran tool: name]` line. A resumed fork runs on the active model.
-- Verified by `tests/live_fork.rs` against a real session (fork, read back, compare, delete).
+- Verified by `tests/live/live_fork.rs` against a real session (fork, read back, compare, delete).
 
 ## v0.9.1: contextual guides (shipped)
 
@@ -280,7 +280,7 @@ This completes the design-system bullet listed under v0.4.1, which was never bui
 - Before this, Hermes and Claude Code ran a 0.4.0 hub from the build folder, and Qoder and
   Antigravity still ran the Python `agent_bus_server.py`. The Rust hub provides every tool the
   Python server had, plus recall, remember and project_brief.
-- Verified by `tests/live_hub_cutover.rs` against the real agent configs.
+- Verified by `tests/live/live_hub_cutover.rs` against the real agent configs.
 
 ## v0.12.0: the agents talk to each other (shipped)
 
@@ -316,8 +316,8 @@ User guide: `docs/AGENTS.md`.
 - Also in this release (Phase E, Qoder): the Brain view shows the vault and Hermes memory stores
   side by side (#74), and finished missions write validated lessons, with repeated review
   blockers becoming one convention note per repository (#80).
-- Verified live: `tests/live_handoff.rs`, `tests/live_ask.rs`, `tests/live_council.rs`, and the
-  phase check `tests/live_phase_c_done.rs` against the running 0.12.0 release build (Claude Code
+- Verified live: `tests/live/live_handoff.rs`, `tests/live/live_ask.rs`, `tests/live/live_council.rs`, and the
+  phase check `tests/live/live_phase_c_done.rs` against the running 0.12.0 release build (Claude Code
   asks Hermes, implements, hands off to Hermes, which documents and opens the pull request; a
   reviewer and the gate merge it; the timeline shows both agents, the ask, the answer, the handoff,
   the pull request and the review).
@@ -341,8 +341,8 @@ Phase B of the 2026-11-08 master brief. The bus was wired to four agents but onl
   missing tokens (#70).
 - Event-driven bus: the vault watcher starts new headless work and moves finished work to review
   within seconds; the minute tick is the safety net (#71).
-- Verified live: `tests/live_claude_mission.rs`, `tests/live_agy_mission.rs`,
-  `tests/live_hub_identity.rs`, and the phase check `tests/live_phase_b_done.rs` against the
+- Verified live: `tests/live/live_claude_mission.rs`, `tests/live/live_agy_mission.rs`,
+  `tests/live/live_hub_identity.rs`, and the phase check `tests/live/live_phase_b_done.rs` against the
   running release build.
 
 ## v0.14.0: goal in, finished work out (shipped; both halves of the done check passed)
@@ -361,7 +361,7 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   `mission.after.<id>`), agent `auto`. It runs against a private kanban database so nothing in a
   plan can start as a Hermes worker outside Studio's gate. At Watch the plan waits for Approve
   plan; otherwise the goal runs at once, and the scheduler starts a goal's missions once their
-  dependencies are done (Watch: each waits for Start). Verified live: `tests/live_planner.rs`
+  dependencies are done (Watch: each waits for Start). Verified live: `tests/live/live_planner.rs`
   (2 missions in 39 s, no Hermes board touched).
 - **Automatic review:** a mission entering review gets its reviewer without a click: the first
   installed agent on a different provider family from the implementer (Antigravity for Claude
@@ -369,7 +369,7 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   The reviewer now also sees the CI checks, the `hermes verify` result and the repository's
   conventions from memory. One review per round, one retry after a failure, then the mission is
   blocked with the reason. Goal missions always; standalone missions when Automations are on. The
-  minute pass also runs while a goal is active. Verified live: `tests/live_auto_review.rs`
+  minute pass also runs while a goal is active. Verified live: `tests/live/live_auto_review.rs`
   (Antigravity judged Claude Code's pull request in 43 s).
 - **Automatic merge:** approved work merges without a click when the level allows it (Full
   always, Ask on risk on the repository's merge allow list, Watch never) and every other gate
@@ -410,7 +410,7 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   `fleet.paused`), and Hermes' own `hermes pause` stops its cron, kanban and new gateway work.
   Running work finishes and still reaches review; escalations still expire to their safe answer
   and are applied on resume. Resume reverses both.
-- **Done check, part 1 (passed live, #118):** `tests/live_planner.rs`
+- **Done check, part 1 (passed live, #118):** `tests/live/live_planner.rs`
   `phase_d_done_a_goal_goes_from_one_sentence_to_merged_verified_and_reported` against the running
   release build. The test only creates the goal at Ask on risk from one sentence ("Add a probe()
   function to lib.js that returns { ok: true }, with a test in test.js, and document it in
@@ -456,7 +456,7 @@ graph that work without Studio.
   and a Decision that answers the open escalation through `escalation::answer` (answered by
   `notion`) when the last editor is trusted. Status, checks, missions and merges never come from
   Notion. Synced every 5 minutes once the board exists, and from **Goals board** in Memory.
-  Verified by `tests/live_notion_goals.rs` against the real workspace with a temporary studio.db.
+  Verified by `tests/live/live_notion_goals.rs` against the real workspace with a temporary studio.db.
 - **Publish, do not mirror (F2).** Every board column has one owner (`OWNERS` in `notion_sync.rs`
   and `notion_goals.rs`, unit tested: Studio never writes a value into a Notion-owned column). The
   sync ledger now records the inbound direction too (`in` rows for proposals, Decisions, cancels
@@ -470,7 +470,7 @@ graph that work without Studio.
   graph in JSON Canvas (goal, missions by dependency column, decisions), coloured by status. The
   goal note gains Decisions, Pull requests and Mission graph sections. Regenerated whenever the
   goal note is written; only stale generated files are removed.
-- Evidence: `tests/live_notion_goals.rs` passed twice against the real workspace with a temporary
+- Evidence: `tests/live/live_notion_goals.rs` passed twice against the real workspace with a temporary
   studio.db and vault (board created; unchanged sync free; the open question on the row; an
   untrusted Decision refused and cleared; an untrusted proposal created at Watch with the ID
   written back; a lost write-back repaired without a second goal; a disallowed answer refused; a
@@ -520,8 +520,9 @@ before it. Nothing here is built yet.
 
 - **1.0.x, keep the floor solid.** #117 (fixed): `hermes verify` fell back to the owner's
   checkout when a task worktree was gone, so a verify could pass against the wrong tree; it now
-  verifies the pull request's head in Studio's own worktree, or records "not run". Then #107: merge
-  the top-level test crates so a full `cargo test` links fewer binaries on an 11 GB machine.
+  verifies the pull request's head in Studio's own worktree, or records "not run". #107 (fixed): the 40 `live_*` test files are one
+  binary (`tests/live/main.rs`), so a full `cargo test` links 3 test binaries instead of 42;
+  run one with `cargo test --test live -- live_smoke:: --ignored --nocapture --test-threads 1`.
   Patch releases go out through the in-app updater only.
 - **1.1, a new user is working in minutes (shipped in 1.1.0: #148, #149, #150; also #117 fixed in #146 and the rail badges in #147).** Owner direction 2026-11-11: reduce
   manual setup to the sign-ins only a person can do, and make every count in the app explain
@@ -764,7 +765,7 @@ early in 0.12.0.
 - **When it runs:** `agentos-studio --memory-quality --vault <vault> [--dry-run]`, a weekly cron job
   with no agent turn for the stale half (behind `hermes.cron.change`), and a Brain Quality panel
   that starts a run and shows what changed.
-- `tests/live_memory_quality.rs` (ignored) creates the weekly job on a throwaway profile, finds it in
+- `tests/live/live_memory_quality.rs` (ignored) creates the weekly job on a throwaway profile, finds it in
   `hermes cron list`, and runs the dry run against the real vault with every note's hash unchanged.
   Its first live run found that Hermes only accepts a script file name for `--script`; the weekly
   job now names its script instead of passing an absolute path (#98).
@@ -784,7 +785,7 @@ early in 0.12.0.
 - Brain has the form (repository, file, line); the GitHub diff view blames any new line with a
   hover `why` action against the local clone. A lookup that cannot run (no `gh`, no GitHub remote)
   is reported as a note, not an error.
-- Verified live: `tests/live_provenance.rs`.
+- Verified live: `tests/live/live_provenance.rs`.
 - **Evaluation harness (`eval.rs`):** takes a finished mission, reads its pull request's base
   commit, and replays the same goal and acceptance criteria on another agent or model in a detached
   worktree under `.worktrees/`. The replay never pushes and never opens a pull request.
@@ -799,7 +800,7 @@ early in 0.12.0.
 - **Router rule:** a model may become the router's default only when at least three of its own eval
   notes score better than the mission they replayed. Level or losing replays do not count. Until
   then the router declines and the shadow log says how many improving replays it has.
-- `tests/live_eval.rs` (ignored) replays one finished sandbox mission and asserts the worktree,
+- `tests/live/live_eval.rs` (ignored) replays one finished sandbox mission and asserts the worktree,
   branch and routing policy are unchanged.
 - Studio's own merge keeps the pull request number in the squash subject and refuses a merge it
   cannot attach trailers to (#97).
@@ -808,7 +809,7 @@ early in 0.12.0.
   approval with no human step; the weekly job plus a dry run that changed nothing; a skill created
   from three successes inside a throwaway profile; trailers in a real squash merge that resolve back
   to the mission; one eval replay (75 against the original 75) with nothing left behind. Hermes
-  turns ran on throwaway profiles only (`tests/live_phase_e_done.rs`, `live_memory_quality`,
+  turns ran on throwaway profiles only (`tests/live/live_phase_e_done.rs`, `live_memory_quality`,
   `live_skill_proposals`, `live_eval`, `live_provenance`).
 
 ## v0.10.2: cua-driver stays on the Hermes pin (shipped)
@@ -839,18 +840,18 @@ Principle: Hermes owns execution of Hermes work; Studio owns cross-agent orchest
 Claude Code, Antigravity), the review and merge policy, the vault and visibility. Do not rebuild a
 Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
 
-- ACP spike (done, verdict not yet): `acp.rs` plus `tests/live_acp_spike.rs`. Approvals, cancel and
+- ACP spike (done, verdict not yet): `acp.rs` plus `tests/live/live_acp_spike.rs`. Approvals, cancel and
   resume work; skills preload, creation-time model and checkpoints, the `gui` source tag and
   structured tool cards do not. Chat stays on `hermes chat -q`. See [ACP spike](ACP-SPIKE.md).
 - ACP as the chat transport with chat -q as fallback: deferred until the spike passes.
 - Checkpoints on new Hermes sessions; undo through the Ink TUI `/rollback` (shipped, verified by
-  `tests/live_checkpoints.rs`). Resumed turns no longer send creation flags Hermes refuses, and a
+  `tests/live/live_checkpoints.rs`). Resumed turns no longer send creation flags Hermes refuses, and a
   skill picked mid-chat is invoked as `/<skill>`.
 - Hermes missions through `hermes kanban` on the `agentos-studio` board (shipped). The dispatcher now
   runs inside the Hermes gateway (`hermes kanban daemon` is deprecated), so missions continue with
   Studio closed. Kanban's own review pass is not approval; Studio's reviewer and `merge_blockers`
   stay the only route to a merge. Claude Code and Antigravity missions keep the Agent Bus path.
-  Verified by `tests/live_kanban_mission.rs`.
+  Verified by `tests/live/live_kanban_mission.rs`.
 - Budgets from Hermes usage data, metered providers only (shipped). `--usage-file` only applies to
   `hermes -z`; the reviewer uses `chat --query-file`, so its cost is read from `state.db` by the
   session id Hermes prints. Time caps: `--max-runtime` per Hermes mission (per task, so it does not
@@ -861,20 +862,20 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
   memory ledger records Hermes' `memory` tool as target `hermes`, file MEMORY.md or USER.md.
 - Surface cron, profiles (implementer and reviewer roles), `hermes send` on mission done or failed,
   `hermes security` in Safety and `hermes insights` as a panel (shipped, verified by
-  `tests/live_hermes_surfaces.rs`).
+  `tests/live/live_hermes_surfaces.rs`).
 
 ## v0.10.1: plan mode and the model layer (shipped)
 
 - Plan first in chat (shipped): Hermes `/plan` scoped to the folder, plan shown for approval, run
-  on Approve. Verified by `tests/live_plan_mode.rs`.
+  on Approve. Verified by `tests/live/live_plan_mode.rs`.
 - Fallback chains, credential pools, mixture-of-agents presets and per-folder default models, all
   through Hermes' own commands and config (shipped, Providers > Model layer). Verified by
-  `tests/live_model_layer.rs`, which leaves config.yaml byte-identical.
+  `tests/live/live_model_layer.rs`, which leaves config.yaml byte-identical.
 - New model badges and deprecation warnings (shipped): Studio diffs Hermes' model cache against
   what it saw before; new models are flagged for a week, and a model that left the catalog is a
   warning when a mission, folder default or the fallback chain still pins it.
 - Parallel missions on one repository through kanban worktree workspaces (shipped, MCP and
-  Providers > Hermes). Verified by `tests/live_kanban_mission.rs`: two missions dispatched in one
+  Providers > Hermes). Verified by `tests/live/live_kanban_mission.rs`: two missions dispatched in one
   tick, each in `<repo>/.worktrees/<task>` on its own branch, both to Studio review.
 
 ## v0.10.1: Hermes chat over ACP (shipped)
@@ -882,16 +883,16 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
 - Shipped: ACP is the Hermes chat transport (Providers > Hermes > Chat transport), with sessions
   created through interactive `hermes chat` so model, skills and checkpoints are fixed at
   creation. Approvals in a dialog, Stop as `session/cancel`, reasoning in the Thinking panel,
-  automatic `chat -q` fallback. Verified by `tests/live_acp_chat.rs`.
+  automatic `chat -q` fallback. Verified by `tests/live/live_acp_chat.rs`.
 - Shipped: model aliases (Providers > Model layer), saved to Hermes' `model_aliases`; verified by
-  a real `hermes chat -m <alias>` turn in `tests/live_model_layer.rs`.
+  a real `hermes chat -m <alias>` turn in `tests/live/live_model_layer.rs`.
 - Shipped: the router can pick (opt-in, Missions > Let the router pick) under an evidence rule (5
   decided missions, 5-point lead), after an explicit choice and `routing.json`. Fixed on the way:
   `routing.json` was documented as filling blank missions but was never applied at creation.
 - Shipped: two-way Notion missions board (proposals and cancels in, rows out, ledger); verified
-  against the real workspace by `tests/live_notion_sync.rs`.
+  against the real workspace by `tests/live/live_notion_sync.rs`.
 - Shipped: Computer Use view (Work > Computer Use); verified read-only against the real install by
-  `tests/live_computer_use.rs`.
+  `tests/live/live_computer_use.rs`.
 
 ## Ideas worth considering
 

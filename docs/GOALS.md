@@ -157,4 +157,4 @@ and against each active goal's budget.
 6. Goal completion, report and Notion row.
 7. Digest and phone delivery.
 8. Fleet pause.
-9. The live done check (`tests/live_phase_d_done.rs`) and the release.
+9. The live done check (`tests/live/live_phase_d_done.rs`) and the release.
