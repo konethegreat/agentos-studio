@@ -242,11 +242,22 @@ impl Runner {
     }
 }
 
+/// How long a tool may take to answer `--version` at boot. Hermes is a Python CLI: warm it
+/// answers in about 2 seconds, but on a cold launch next to running agents it passed 4 seconds
+/// and the owner saw a false "did not finish" warning on every start. Pure.
+pub fn tool_timeout(name: &str) -> Duration {
+    if name.eq_ignore_ascii_case("hermes") {
+        Duration::from_secs(15)
+    } else {
+        Duration::from_secs(4)
+    }
+}
+
 fn check_tool(name: &str, args: &[&str]) -> (Status, String) {
     let Some(exe) = procs::find(name) else {
         return (Status::Warn, format!("{name} not on PATH"));
     };
-    match procs::run_with_timeout(name, args, None, None, Duration::from_secs(4)) {
+    match procs::run_with_timeout(name, args, None, None, tool_timeout(name)) {
         Ok((Some(0), out, _)) => {
             let v = out.lines().next().unwrap_or("").trim().to_string();
             (Status::Ok, format!("{} ({})", v, exe.display()))
@@ -716,6 +727,12 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn hermes_gets_time_for_a_cold_start() {
+        assert_eq!(tool_timeout("hermes"), Duration::from_secs(15));
+        assert_eq!(tool_timeout("git"), Duration::from_secs(4));
+    }
 
     #[test]
     fn status_tally_and_problems() {
