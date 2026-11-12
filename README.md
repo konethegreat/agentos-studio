@@ -35,6 +35,10 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.2.5
+
+- **Fix.** A repository's policy (merge allow list, tools, roles) is read from what is merged on GitHub, so an old or diverged local checkout no longer makes an approved pull request wait for you.
+
 ## What is new in 1.2.4
 
 - **Workers can read the facts.** Mission workers may run read-only GitHub queries (repositories, issues, releases, CI runs), and Opt in allows each repository's own build and test commands.
