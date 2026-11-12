@@ -134,7 +134,8 @@ three platforms by [`.github/workflows/release.yml`](.github/workflows/release.y
 New here? [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) goes from download to a finished piece
 of work in ten minutes. [docs/GLOSSARY.md](docs/GLOSSARY.md) explains the words,
 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) covers the logs and common failures, and
-[docs/PRIVACY.md](docs/PRIVACY.md) lists what stays on your machine.
+[docs/PRIVACY.md](docs/PRIVACY.md) lists what stays on your machine, and
+[docs/CONNECTIONS.md](docs/CONNECTIONS.md) explains how Studio keeps your subscriptions working.
 
 ## Build from source
 
