@@ -26,10 +26,10 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
   const [filter, setFilter] = useState<"all" | "in" | "out">("all");
 
   const load = useCallback(async () => {
+    // Settings answer at once; the repository list walks the scan roots and takes seconds.
     try {
-      const [r, s] = await Promise.all([api.autonomyStatus(), api.autonomySettings()]);
-      setRepos(r);
-      setSettings(s);
+      setSettings(await api.autonomySettings());
+      setRepos(await api.autonomyStatus());
     } catch (e) {
       toast("error", errorText(e));
     }
@@ -77,10 +77,10 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
                 label={settings.enabled ? "On" : "Off"}
                 onChange={(on) => void act("switch", () => api.autonomySet(on, settings.max_active))}
               />
-              <label className="flex items-center gap-2 text-small text-slate-300">
+              <label className="flex items-center gap-2 whitespace-nowrap text-small text-slate-300">
                 At once
                 <select
-                  className={`${inputClass} w-20`}
+                  className={`${inputClass} !w-20`}
                   value={settings.max_active}
                   onChange={(e) => void act("max", () => api.autonomySet(settings.enabled, Number(e.target.value)))}
                 >
@@ -123,15 +123,15 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
           <span>
             {optedIn} of {repos?.length ?? 0} repositories opted in.
           </span>
-          <label className="flex items-center gap-2">
+          <label className="flex items-center gap-2 whitespace-nowrap">
             Opt in at
-            <select className={`${inputClass} w-44`} value={level} onChange={(e) => setLevel(e.target.value)}>
+            <select className={`${inputClass} !w-56`} value={level} onChange={(e) => setLevel(e.target.value)}>
               <option value="full">Full: the gate merges</option>
               <option value="ask">Ask on risk</option>
               <option value="watch">Watch: you click each step</option>
             </select>
           </label>
-          <select className={`${inputClass} w-40`} value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>
+          <select className={`${inputClass} !w-48`} value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>
             <option value="all">Every repository</option>
             <option value="in">Opted in</option>
             <option value="out">Not opted in</option>
