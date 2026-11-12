@@ -351,6 +351,37 @@ pub fn opted_in_routing_with(
     allow_merge: bool,
     brief: &str,
 ) -> Result<String> {
+    opted_in_routing_full(existing, level, allow_merge, brief, &[])
+}
+
+/// The tool rules a worker needs to run a repository's own checks (and install its packages
+/// first), from the checks Studio found. Pure.
+pub fn tools_for_checks(checks: &[String], has_package_json: bool) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    if has_package_json {
+        out.push("Bash(npm ci*)".into());
+        out.push("Bash(npm install*)".into());
+    }
+    for c in checks {
+        let c = c.trim().trim_start_matches("cd src-tauri && ");
+        if !c.is_empty() {
+            let rule = format!("Bash({c}*)");
+            if !out.contains(&rule) {
+                out.push(rule);
+            }
+        }
+    }
+    out
+}
+
+/// As `opted_in_routing_with`, also adding tool rules to `allowed_tools` (kept, deduplicated).
+pub fn opted_in_routing_full(
+    existing: &str,
+    level: &str,
+    allow_merge: bool,
+    brief: &str,
+    tools: &[String],
+) -> Result<String> {
     let mut v: serde_json::Value = if existing.trim().is_empty() {
         serde_json::json!({})
     } else {
@@ -379,6 +410,20 @@ pub fn opted_in_routing_with(
         a["brief"] = serde_json::Value::String(brief);
     }
     o.insert("autonomy".into(), a);
+    if !tools.is_empty() {
+        let mut list: Vec<serde_json::Value> = o
+            .get("allowed_tools")
+            .and_then(|t| t.as_array())
+            .cloned()
+            .unwrap_or_default();
+        for t in tools {
+            let v = serde_json::Value::String(t.clone());
+            if !list.contains(&v) {
+                list.push(v);
+            }
+        }
+        o.insert("allowed_tools".into(), serde_json::Value::Array(list));
+    }
     // Validate with the real parser so a broken policy is never committed.
     let text = serde_json::to_string_pretty(&v)? + "\n";
     crate::routing::parse(&text)?;
@@ -830,7 +875,14 @@ pub fn opt_in(slug: &str, dir: &Path, level_wanted: &str, brief: &str) -> Result
     let result = (|| -> Result<String> {
         let rel = ".agentos/routing.json";
         let existing = std::fs::read_to_string(wt.join(rel)).unwrap_or_default();
-        let text = opted_in_routing_with(&existing, level_wanted, level_wanted == "full", brief)?;
+        let tools = tools_for_checks(&checks_of(&wt), wt.join("package.json").exists());
+        let text = opted_in_routing_full(
+            &existing,
+            level_wanted,
+            level_wanted == "full",
+            brief,
+            &tools,
+        )?;
         std::fs::create_dir_all(wt.join(".agentos"))?;
         std::fs::write(wt.join(rel), text)?;
         ok(&["add", rel], &wt)?;
@@ -1046,6 +1098,39 @@ mod tests {
             .get("allow_merge")
             .is_none());
         assert!(opted_in_routing("not json", "ask", false).is_err());
+        let t = tools_for_checks(
+            &[
+                "npm run build".into(),
+                "npm test".into(),
+                "cd src-tauri && cargo test".into(),
+            ],
+            true,
+        );
+        assert_eq!(
+            t,
+            [
+                "Bash(npm ci*)",
+                "Bash(npm install*)",
+                "Bash(npm run build*)",
+                "Bash(npm test*)",
+                "Bash(cargo test*)"
+            ]
+        );
+        let with_tools = opted_in_routing_full(old, "full", true, "", &t).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&with_tools).unwrap();
+        let list: Vec<&str> = v["allowed_tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap())
+            .collect();
+        assert_eq!(list[0], "Bash(npm test*)", "existing rules are kept first");
+        assert_eq!(
+            list.iter().filter(|r| **r == "Bash(npm test*)").count(),
+            1,
+            "no duplicates"
+        );
+        assert!(list.contains(&"Bash(npm ci*)"));
         let with = opted_in_routing_with(old, "full", true, "Keep the design").unwrap();
         assert_eq!(config_in(&with).brief, "Keep the design");
         let again = opted_in_routing_with(&with, "full", true, "").unwrap();
