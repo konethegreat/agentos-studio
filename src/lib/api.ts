@@ -91,6 +91,7 @@ export interface AutonomyRepo {
   enabled: boolean;
   paused_here: boolean;
   level: string;
+  brief: string;
   allow_merge: boolean;
   has_plan: boolean;
   phases: AutonomyPhase[];
@@ -1085,7 +1086,8 @@ export const api = {
   autonomyStatus: () => invoke<AutonomyRepo[]>("autonomy_status"),
   autonomySettings: () => invoke<AutonomySettings>("autonomy_settings"),
   autonomySet: (enabled: boolean, maxActive: number) => invoke<void>("autonomy_set", { enabled, maxActive }),
-  autonomyOptIn: (slug: string, path: string, level: string) => invoke<string>("autonomy_opt_in", { slug, path, level }),
+  autonomyOptIn: (slug: string, path: string, level: string, brief?: string) =>
+    invoke<string>("autonomy_opt_in", { slug, path, level, brief }),
   autonomyPauseRepo: (slug: string, paused: boolean) => invoke<void>("autonomy_pause_repo", { slug, paused }),
   autonomyRunNow: () => invoke<{ considered: number; started: string[]; finished: string[] }>("autonomy_run_now"),
   promptsList: (project?: string, query?: string) => invoke<SavedPrompt[]>("prompts_list", { project, query }),

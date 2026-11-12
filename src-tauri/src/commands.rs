@@ -337,13 +337,18 @@ pub async fn autonomy_set(enabled: bool, max_active: usize) -> CmdResult<()> {
 
 /// Opt one repository in through a merged pull request to its routing.json.
 #[tauri::command]
-pub async fn autonomy_opt_in(slug: String, path: String, level: String) -> CmdResult<String> {
+pub async fn autonomy_opt_in(
+    slug: String,
+    path: String,
+    level: String,
+    brief: Option<String>,
+) -> CmdResult<String> {
     blocking(move || {
         let dir = std::path::PathBuf::from(&path);
         if !dir.join(".git").exists() {
             anyhow::bail!("{path} is not a git repository");
         }
-        crate::autonomy::opt_in(&slug, &dir, &level)
+        crate::autonomy::opt_in(&slug, &dir, &level, brief.as_deref().unwrap_or(""))
     })
     .await
 }

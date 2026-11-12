@@ -44,6 +44,10 @@ pub struct Config {
     /// Metered budget per goal in USD (0 for flat subscriptions).
     #[serde(default)]
     pub budget_usd: f64,
+    /// The owner's standing direction for this repository ("keep the design, update the
+    /// content"). Added to every goal, so the planner, the workers and the reviewer all see it.
+    #[serde(default)]
+    pub brief: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -84,6 +88,9 @@ pub struct RepoStatus {
     /// Turned off on this machine only (the committed opt-in stays).
     pub paused_here: bool,
     pub level: String,
+    /// The owner's direction for the repository, from the committed opt-in.
+    #[serde(default)]
+    pub brief: String,
     pub allow_merge: bool,
     pub has_plan: bool,
     pub phases: Vec<Phase>,
@@ -321,7 +328,29 @@ pub fn report_note(s: &RepoStatus, st: &RepoState) -> String {
 }
 
 /// Merge the opt-in into an existing routing.json value, keeping every other field. Pure.
+/// A goal's text with the owner's direction for the repository, which wins over anything else in
+/// the goal. Pure.
+pub fn with_direction(outcome: &str, brief: &str) -> String {
+    let b = brief.trim();
+    if b.is_empty() {
+        return outcome.to_string();
+    }
+    format!(
+        "{outcome}\n\nThe owner's standing direction for this repository, which overrides anything above it and which the reviewer must enforce (request changes on any pull request that breaks it):\n{b}"
+    )
+}
+
 pub fn opted_in_routing(existing: &str, level: &str, allow_merge: bool) -> Result<String> {
+    opted_in_routing_with(existing, level, allow_merge, "")
+}
+
+/// As `opted_in_routing`, also setting the direction; an empty one keeps any existing direction.
+pub fn opted_in_routing_with(
+    existing: &str,
+    level: &str,
+    allow_merge: bool,
+    brief: &str,
+) -> Result<String> {
     let mut v: serde_json::Value = if existing.trim().is_empty() {
         serde_json::json!({})
     } else {
@@ -334,10 +363,22 @@ pub fn opted_in_routing(existing: &str, level: &str, allow_merge: bool) -> Resul
     if allow_merge {
         o.insert("allow_merge".into(), serde_json::Value::Bool(true));
     }
-    o.insert(
-        "autonomy".into(),
-        serde_json::json!({ "enabled": true, "level": level }),
-    );
+    let kept = o
+        .get("autonomy")
+        .and_then(|a| a.get("brief"))
+        .and_then(|b| b.as_str())
+        .unwrap_or("")
+        .to_string();
+    let brief = if brief.trim().is_empty() {
+        kept
+    } else {
+        brief.trim().to_string()
+    };
+    let mut a = serde_json::json!({ "enabled": true, "level": level });
+    if !brief.is_empty() {
+        a["brief"] = serde_json::Value::String(brief);
+    }
+    o.insert("autonomy".into(), a);
     // Validate with the real parser so a broken policy is never committed.
     let text = serde_json::to_string_pretty(&v)? + "\n";
     crate::routing::parse(&text)?;
@@ -562,6 +603,7 @@ fn status_for(
         enabled: cfg.enabled,
         paused_here,
         level: level(&cfg, allow),
+        brief: cfg.brief.clone(),
         allow_merge: allow,
         has_plan,
         phases,
@@ -729,7 +771,7 @@ fn start_goal(
 ) -> Result<String> {
     let cfg = config_of(dir);
     let g = goals::create(&NewGoal {
-        outcome: outcome.into(),
+        outcome: with_direction(outcome, &cfg.brief),
         repos: vec![slug.into()],
         checks: vec![done_check(kind, &checks_of(dir))],
         budget_usd: cfg.budget_usd.max(0.0),
@@ -749,7 +791,7 @@ pub fn set_paused_here(slug: &str, paused: bool) -> Result<()> {
 /// Opt a repository in: a pull request that adds the `autonomy` block (and `allow_merge` when
 /// the level is full) to `.agentos/routing.json`, made in Studio's own worktree from origin's
 /// default branch, then merged. Returns the pull request URL. The owner's checkout is untouched.
-pub fn opt_in(slug: &str, dir: &Path, level_wanted: &str) -> Result<String> {
+pub fn opt_in(slug: &str, dir: &Path, level_wanted: &str, brief: &str) -> Result<String> {
     if !goals::LEVELS.contains(&level_wanted) {
         bail!("level must be watch, ask or full");
     }
@@ -788,7 +830,7 @@ pub fn opt_in(slug: &str, dir: &Path, level_wanted: &str) -> Result<String> {
     let result = (|| -> Result<String> {
         let rel = ".agentos/routing.json";
         let existing = std::fs::read_to_string(wt.join(rel)).unwrap_or_default();
-        let text = opted_in_routing(&existing, level_wanted, level_wanted == "full")?;
+        let text = opted_in_routing_with(&existing, level_wanted, level_wanted == "full", brief)?;
         std::fs::create_dir_all(wt.join(".agentos"))?;
         std::fs::write(wt.join(rel), text)?;
         ok(&["add", rel], &wt)?;
@@ -892,6 +934,7 @@ mod tests {
             enabled: true,
             level: l.into(),
             budget_usd: 0.0,
+            brief: String::new(),
         };
         assert_eq!(level(&c("full"), true), "full");
         assert_eq!(level(&c("full"), false), "ask");
@@ -1003,6 +1046,21 @@ mod tests {
             .get("allow_merge")
             .is_none());
         assert!(opted_in_routing("not json", "ask", false).is_err());
+        let with = opted_in_routing_with(old, "full", true, "Keep the design").unwrap();
+        assert_eq!(config_in(&with).brief, "Keep the design");
+        let again = opted_in_routing_with(&with, "full", true, "").unwrap();
+        assert_eq!(
+            config_in(&again).brief,
+            "Keep the design",
+            "an empty direction keeps the old one"
+        );
+        let o = with_direction("Finish phase 1.", "Change content only.");
+        assert!(
+            o.starts_with("Finish phase 1.")
+                && o.ends_with("Change content only.")
+                && o.contains("reviewer must enforce")
+        );
+        assert_eq!(with_direction("Finish.", "  "), "Finish.");
         assert!(
             opted_in_routing(r#"{"roles":{"wizard":{"provider":"x"}}}"#, "ask", false).is_err(),
             "a broken policy is never committed"
@@ -1101,6 +1159,7 @@ mod tests {
             enabled: true,
             paused_here: false,
             level: "full".into(),
+            brief: String::new(),
             allow_merge: true,
             has_plan: true,
             phases: parse_tasks(TASKS_MD),
