@@ -25,8 +25,6 @@ use crate::vault::{Doc, Vault};
 const REPLAY_LIMIT: Duration = Duration::from_secs(1800);
 const REVIEW_LIMIT: Duration = Duration::from_secs(600);
 const TEST_LIMIT: Duration = Duration::from_secs(1800);
-/// The reviewer never sees more than this much diff, the same bound `review_agent` uses.
-const MAX_DIFF: usize = 12_000;
 const MAX_TURNS: &str = "24";
 const DETAIL_CHARS: usize = 500;
 
@@ -678,8 +676,8 @@ pub fn run(v: &Vault, mission_id: &str, agent: &str, model: Option<&str>) -> Res
     let (diff, changed_files) = replay_diff(&wt)?;
     let deps_installed = install_deps(&wt);
     let tests = run_tests(&wt);
-    let review_prompt =
-        crate::review_agent::prompt(&m, &diff.chars().take(MAX_DIFF).collect::<String>());
+    // The prompt fits the diff itself (`review_agent::fit_diff`), the same way a real review does.
+    let review_prompt = crate::review_agent::prompt(&m, &diff);
     let (text, review_session) = if reviewer == "claude-code" {
         claude_turn(&wt, &review_prompt, "", false, REVIEW_LIMIT)?
     } else {

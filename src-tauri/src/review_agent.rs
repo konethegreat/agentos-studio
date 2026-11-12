@@ -14,7 +14,217 @@ use crate::procs;
 use crate::projects;
 use crate::vault::Vault;
 
-const MAX_DIFF: usize = 12_000;
+/// The most diff, in characters, the reviewer is shown. Every reviewer reads its prompt from a file
+/// or stdin, never from the command line, and all of them run on models with large context, so the
+/// bound only keeps a huge pull request (a vendored folder, a lockfile rewrite) from flooding the
+/// turn. Above it the diff is fitted per file by `fit_diff`, never cut at the tail.
+pub const MAX_DIFF: usize = 60_000;
+
+/// What every file keeps when a diff is fitted, however little budget is left: its header and its
+/// first lines, so no changed file disappears from the prompt.
+const FILE_FLOOR: usize = 600;
+
+/// One file's section of a unified diff, from its `diff --git` line to the next one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileDiff {
+    pub path: String,
+    pub text: String,
+    pub added: usize,
+    pub deleted: usize,
+}
+
+/// Split a unified diff (`gh pr diff`, `git diff`) at its `diff --git` lines and count each
+/// file's added and deleted lines. Text before the first header is kept as its own section, so
+/// nothing is lost. Pure.
+pub fn split_diff(diff: &str) -> Vec<FileDiff> {
+    let mut sections: Vec<String> = Vec::new();
+    for line in diff.split_inclusive('\n') {
+        if line.starts_with("diff --git ") || sections.is_empty() {
+            sections.push(String::new());
+        }
+        if let Some(cur) = sections.last_mut() {
+            cur.push_str(line);
+        }
+    }
+    sections
+        .into_iter()
+        .filter(|t| !t.trim().is_empty())
+        .map(|text| {
+            let (mut added, mut deleted, mut in_hunk) = (0, 0, false);
+            for l in text.lines() {
+                if l.starts_with("@@") {
+                    in_hunk = true;
+                } else if in_hunk && l.starts_with('+') {
+                    added += 1;
+                } else if in_hunk && l.starts_with('-') {
+                    deleted += 1;
+                }
+            }
+            FileDiff {
+                path: diff_path(&text),
+                text,
+                added,
+                deleted,
+            }
+        })
+        .collect()
+}
+
+/// The file a diff section is about: the `+++ b/` path, else the `--- a/` path for a deletion,
+/// else the `b/` side of the `diff --git` line. Pure.
+fn diff_path(section: &str) -> String {
+    let clean = |p: &str| {
+        p.trim_end_matches('\t')
+            .trim()
+            .trim_matches('"')
+            .to_string()
+    };
+    let mut old_side = None;
+    for l in section.lines() {
+        if l.starts_with("@@") {
+            break;
+        }
+        if let Some(p) = l.strip_prefix("+++ ") {
+            if p.trim() != "/dev/null" {
+                return clean(p.strip_prefix("b/").unwrap_or(p));
+            }
+        }
+        if let Some(p) = l.strip_prefix("--- ") {
+            if p.trim() != "/dev/null" {
+                old_side = Some(clean(p.strip_prefix("a/").unwrap_or(p)));
+            }
+        }
+    }
+    if let Some(p) = old_side {
+        return p;
+    }
+    let first = section.lines().next().unwrap_or("");
+    match first.strip_prefix("diff --git ") {
+        Some(rest) => match rest.rfind(" b/") {
+            Some(i) => clean(&rest[i + 3..]),
+            None => clean(rest),
+        },
+        None => "(diff preamble)".to_string(),
+    }
+}
+
+/// How early a file is shown when a diff must be fitted: code, configuration and tests first (0),
+/// documentation next (1), generated lockfiles last (2). Pure.
+pub fn diff_rank(path: &str) -> u8 {
+    let lower = path.to_ascii_lowercase();
+    let name = lower.rsplit('/').next().unwrap_or(&lower);
+    const LOCKFILES: [&str; 11] = [
+        "cargo.lock",
+        "package-lock.json",
+        "npm-shrinkwrap.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "bun.lock",
+        "poetry.lock",
+        "uv.lock",
+        "go.sum",
+        "composer.lock",
+        "gemfile.lock",
+    ];
+    if LOCKFILES.contains(&name) {
+        return 2;
+    }
+    const DOCS: [&str; 5] = [".md", ".markdown", ".mdx", ".rst", ".adoc"];
+    if DOCS.iter().any(|ext| name.ends_with(ext)) {
+        return 1;
+    }
+    0
+}
+
+/// Fit a diff into `budget` characters for the reviewer. A diff within the budget is returned
+/// unchanged with an empty note. A larger one is split per file and ordered by `diff_rank` (stable
+/// within a rank). Every file keeps at least `FILE_FLOOR` characters, the rest of the budget goes
+/// to the higher ranks first, and inside a rank small files are shown whole before large ones are
+/// cut, each at a line boundary with a marker. The note lists every changed file with its added
+/// and deleted lines and which were clipped, so a reviewer never mistakes a clipped file for a
+/// missing change. Markers and the note are outside the budget. Pure.
+pub fn fit_diff(diff: &str, budget: usize) -> (String, String) {
+    if diff.chars().count() <= budget {
+        return (diff.to_string(), String::new());
+    }
+    let mut files = split_diff(diff);
+    files.sort_by_key(|f| diff_rank(&f.path));
+    let sizes: Vec<usize> = files.iter().map(|f| f.text.chars().count()).collect();
+    let floor = FILE_FLOOR.min(budget / files.len().max(1));
+    let mut alloc: Vec<usize> = sizes.iter().map(|s| (*s).min(floor)).collect();
+    let mut left = budget.saturating_sub(alloc.iter().sum());
+    for rank in 0..=2u8 {
+        // Max-min fair share inside the rank: the smallest needs are met in full first.
+        let mut idx: Vec<usize> = (0..files.len())
+            .filter(|i| diff_rank(&files[*i].path) == rank)
+            .collect();
+        idx.sort_by_key(|i| sizes[*i] - alloc[*i]);
+        let mut remaining = idx.len();
+        for i in idx {
+            let share = left / remaining.max(1);
+            let extra = (sizes[i] - alloc[i]).min(share);
+            alloc[i] += extra;
+            left -= extra;
+            remaining -= 1;
+        }
+    }
+    let mut shown = String::new();
+    let mut listing = Vec::new();
+    let mut clipped_any = false;
+    for (i, f) in files.iter().enumerate() {
+        if alloc[i] >= sizes[i] {
+            shown.push_str(&f.text);
+            listing.push(format!("- {}: +{} -{}", f.path, f.added, f.deleted));
+            continue;
+        }
+        clipped_any = true;
+        let total = f.text.lines().count();
+        let cut = clip_at_line(&f.text, alloc[i]);
+        let kept = cut.lines().count();
+        shown.push_str(cut);
+        if !cut.is_empty() && !cut.ends_with('\n') {
+            shown.push('\n');
+        }
+        shown.push_str(&format!(
+            "... clipped for this prompt: {kept} of {total} lines of {} shown, the rest is in the pull request\n",
+            f.path
+        ));
+        listing.push(format!(
+            "- {}: +{} -{} (clipped: {kept} of {total} diff lines shown)",
+            f.path, f.added, f.deleted
+        ));
+    }
+    if !clipped_any {
+        return (shown, String::new());
+    }
+    let note = format!(
+        "About the diff: it is larger than the {budget} characters a review prompt carries, so it \
+was fitted per file. Code, configuration and tests come first, documentation after, and the \
+largest files were clipped, never dropped. Every file the pull request changes, with its added \
+and deleted lines:\n{}\n\
+A clipped file is in the pull request in full; only this prompt leaves lines out. Do not reject \
+only because a file is clipped or because the diff looks incomplete. Judge each criterion on what \
+is shown and on the line counts above, and if a criterion can only be checked in clipped lines, \
+name that file in your note.",
+        listing.join("\n")
+    );
+    (shown, note)
+}
+
+/// The longest prefix of `text` within `max` characters that ends at a line break, or the first
+/// line cut at `max` characters when even that line is longer. Pure.
+fn clip_at_line(text: &str, max: usize) -> &str {
+    let end = text
+        .char_indices()
+        .nth(max)
+        .map(|(b, _)| b)
+        .unwrap_or(text.len());
+    let head = &text[..end];
+    match head.rfind('\n') {
+        Some(nl) => &text[..=nl],
+        None => head,
+    }
+}
 
 pub fn prompt(m: &Mission, diff: &str) -> String {
     prompt_full(m, diff, "", "", "")
@@ -48,16 +258,22 @@ pub fn prompt_full(
             conventions.trim()
         ));
     }
+    // A diff over the budget is fitted per file, and the note then lists every changed file.
+    let (diff, diff_note) = fit_diff(diff, MAX_DIFF);
+    let diff_note = if diff_note.is_empty() {
+        diff_note
+    } else {
+        format!("{diff_note}\n\n")
+    };
     format!(
         "You are the reviewer for a mission. You did not write this code. Judge only what is below.\n\n\
 Goal:\n{goal}\n\nAcceptance criteria:\n{acceptance}\n\n{evidence}The pull request diff:\n```diff\n{diff}\n```\n\n\
-Reply with a single JSON object and nothing else:\n\
+{diff_note}Reply with a single JSON object and nothing else:\n\
 {{\"verdict\":\"approve\" or \"reject\",\"note\":\"one or two sentences a developer can act on\"}}\n\
 Approve only if the diff satisfies every acceptance criterion. If tests are missing or the diff \
 touches unrelated files, reject.",
         goal = m.goal,
         acceptance = m.acceptance,
-        diff = diff
     )
 }
 
@@ -206,7 +422,6 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
         });
         return missions::review(id, crate::constitution_gate::REVIEWER, "reject", &note);
     }
-    let diff: String = diff.chars().take(MAX_DIFF).collect();
     // The evidence the reviewer judges with, besides the diff. Each part is best effort: a missing
     // part is left out of the prompt, never invented.
     let checks = crate::github::name_with_owner(&m.repo)
@@ -244,7 +459,9 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
     std::fs::write(&qpath, &prompt_text)?;
 
     let (bin, args): (&str, Vec<String>) = if reviewer.eq_ignore_ascii_case("claude-code") {
-        ("claude", vec!["-p".into(), prompt_text.clone()])
+        // The prompt goes on stdin: a diff of tens of kilobytes would pass the Windows command
+        // line limit (32,767 characters) as an argument.
+        ("claude", vec!["-p".into()])
     } else {
         // The reviewer profile chosen in MCP and Providers > Hermes, so the review runs with its
         // own model and memory rather than the implementer's.
@@ -268,7 +485,29 @@ pub fn review(v: &Vault, id: &str, reviewer: &str) -> Result<Mission> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(procs::CREATE_NO_WINDOW);
     }
-    let out = cmd.output()?;
+    let out = if bin == "claude" {
+        use std::io::Write;
+        use std::process::Stdio;
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = cmd.spawn()?;
+        // Written from a thread so a child that fills its stdout before reading all of stdin
+        // cannot deadlock against this write.
+        let writer = child.stdin.take().map(|mut stdin| {
+            let text = prompt_text.clone();
+            std::thread::spawn(move || {
+                let _ = stdin.write_all(text.as_bytes());
+            })
+        });
+        let out = child.wait_with_output()?;
+        if let Some(w) = writer {
+            let _ = w.join();
+        }
+        out
+    } else {
+        cmd.output()?
+    };
     let text = String::from_utf8_lossy(&out.stdout).to_string();
     if !out.status.success() && text.trim().is_empty() {
         bail!(
@@ -676,5 +915,237 @@ mod tests {
     #[test]
     fn pr_number_comes_from_the_url() {
         assert_eq!(missions::pr_number(&mission()), Some(42));
+    }
+
+    /// One file's section of a `gh pr diff`: a new file when `old` is empty and `context` too.
+    fn file_diff(path: &str, old: &[&str], new: &[&str], context: &[String]) -> String {
+        let created = old.is_empty() && context.is_empty();
+        let mut s = format!("diff --git a/{path} b/{path}\n");
+        if created {
+            s.push_str("new file mode 100644\nindex 0000000..3f1c2ab\n--- /dev/null\n");
+        } else {
+            s.push_str(&format!("index 9a4c17b..64d41c5 100644\n--- a/{path}\n"));
+        }
+        s.push_str(&format!(
+            "+++ b/{path}\n@@ -{},{} +1,{} @@\n",
+            if created { 0 } else { 1 },
+            old.len() + context.len(),
+            new.len() + context.len()
+        ));
+        for c in context {
+            s.push_str(&format!(" {c}\n"));
+        }
+        for l in old {
+            s.push_str(&format!("-{l}\n"));
+        }
+        for l in new {
+            s.push_str(&format!("+{l}\n"));
+        }
+        s
+    }
+
+    /// The shape of konethegreat/agentos-sandbox-1 PR #23 in `gh pr diff` order: a new 7.4 KB ADR,
+    /// two small docs edits with context lines, then package.json and test.js.
+    fn pr23_shaped() -> (String, String, String) {
+        let adr_lines: Vec<String> = (0..90)
+            .map(|i| format!("ADR line {i:02}: move the sandbox test suite to node:test, record decision text {i:02}."))
+            .collect();
+        let adr_refs: Vec<&str> = adr_lines.iter().map(String::as_str).collect();
+        let adr = file_diff(
+            "docs/adr/0001-move-the-sandbox-test-suite-to-node-test.md",
+            &[],
+            &adr_refs,
+            &[],
+        );
+        let report_ctx: Vec<String> = (0..30)
+            .map(|i| format!("2026-11-{i:02}: an earlier report entry that the diff shows as context, line {i:02}."))
+            .collect();
+        let report = file_diff(
+            "docs/agentos/REPORT.md",
+            &[],
+            &["2026-11-12: test.js moved to node:test; npm test passes and fails on a - b."],
+            &report_ctx,
+        );
+        let tasks_ctx: Vec<String> = (0..22)
+            .map(|i| {
+                format!("- [ ] Phase 2 task {i:02}: a later task listed as context in the diff.")
+            })
+            .collect();
+        let tasks = file_diff(
+            "docs/agentos/TASKS.md",
+            &["- [ ] Phase 2 task 1: rewrite test.js with node:test"],
+            &["- [x] Phase 2 task 1: rewrite test.js with node:test"],
+            &tasks_ctx,
+        );
+        let package = file_diff(
+            "package.json",
+            &["    \"test\": \"node test.js\""],
+            &["    \"test\": \"node --test test.js\""],
+            &["  \"scripts\": {".to_string()],
+        );
+        let test_js = file_diff(
+            "test.js",
+            &[
+                "const assert = require(\"assert\");",
+                "assert.strictEqual(add(2, 3), 5);",
+                "console.log(\"ok\");",
+            ],
+            &[
+                "const { test } = require(\"node:test\");",
+                "const assert = require(\"node:assert/strict\");",
+                "test(\"add sums two numbers\", () => {",
+                "  assert.strictEqual(add(2, 3), 5);",
+                "});",
+            ],
+            &["const { add } = require(\"./lib\");".to_string()],
+        );
+        assert!(
+            (7_000..8_000).contains(&adr.chars().count()),
+            "{}",
+            adr.len()
+        );
+        let diff = format!("{adr}{report}{tasks}{package}{test_js}");
+        (diff, package, test_js)
+    }
+
+    #[test]
+    fn split_diff_finds_every_file_with_its_line_counts() {
+        let deleted = "diff --git a/old.txt b/old.txt\ndeleted file mode 100644\nindex 1111111..0000000\n--- a/old.txt\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-one\n-two\n";
+        // A Markdown list item removed from a file starts with `---` inside the hunk: it is a
+        // deleted line, not a header.
+        let md = "diff --git a/notes.md b/notes.md\nindex 2222222..3333333 100644\n--- a/notes.md\n+++ b/notes.md\n@@ -1,3 +1,3 @@\n # Notes\n--- a list item\n+- a new item\n+++ a bold line\n";
+        let (diff, ..) = pr23_shaped();
+        let all = format!("{diff}{deleted}{md}");
+        let files = split_diff(&all);
+        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "docs/adr/0001-move-the-sandbox-test-suite-to-node-test.md",
+                "docs/agentos/REPORT.md",
+                "docs/agentos/TASKS.md",
+                "package.json",
+                "test.js",
+                "old.txt",
+                "notes.md",
+            ]
+        );
+        let counts: Vec<(usize, usize)> = files.iter().map(|f| (f.added, f.deleted)).collect();
+        assert_eq!(
+            counts,
+            [(90, 0), (1, 0), (1, 1), (1, 1), (5, 3), (0, 2), (2, 1)]
+        );
+        // Splitting loses nothing.
+        assert_eq!(
+            files.iter().map(|f| f.text.as_str()).collect::<String>(),
+            all
+        );
+    }
+
+    #[test]
+    fn code_ranks_before_docs_and_lockfiles_come_last() {
+        assert_eq!(diff_rank("package.json"), 0);
+        assert_eq!(diff_rank("test.js"), 0);
+        assert_eq!(diff_rank("src-tauri/src/review_agent.rs"), 0);
+        assert_eq!(diff_rank(".github/workflows/ci.yml"), 0);
+        assert_eq!(diff_rank("requirements.txt"), 0);
+        assert_eq!(diff_rank("docs/adr/0001-x.md"), 1);
+        assert_eq!(diff_rank("README.MD"), 1);
+        assert_eq!(diff_rank("site/page.mdx"), 1);
+        assert_eq!(diff_rank("package-lock.json"), 2);
+        assert_eq!(diff_rank("src-tauri/Cargo.lock"), 2);
+    }
+
+    #[test]
+    fn a_diff_within_the_budget_is_unchanged_and_carries_no_note() {
+        let (diff, ..) = pr23_shaped();
+        let (shown, note) = fit_diff(&diff, MAX_DIFF);
+        assert_eq!(shown, diff);
+        assert!(note.is_empty());
+        let p = prompt(&mission(), &diff);
+        assert!(p.contains(&diff));
+        assert!(!p.contains("About the diff"));
+    }
+
+    #[test]
+    fn a_pr23_shaped_diff_keeps_package_json_and_test_js_whole() {
+        let (diff, package, test_js) = pr23_shaped();
+        let size = diff.chars().count();
+        assert!(
+            size > 12_000,
+            "the fixture must exceed the old cap, it is {size}"
+        );
+        // The old tail cut lost both code files.
+        let old: String = diff.chars().take(12_000).collect();
+        assert!(!old.contains(&test_js));
+
+        let (shown, note) = fit_diff(&diff, 12_000);
+        assert!(
+            shown.contains(&package),
+            "package.json is not whole:\n{shown}"
+        );
+        assert!(shown.contains(&test_js), "test.js is not whole:\n{shown}");
+        // Code is shown before the docs.
+        let at = |needle: &str| shown.find(needle).unwrap();
+        assert!(at("diff --git a/package.json") < at("diff --git a/docs/adr/"));
+        assert!(at("diff --git a/test.js") < at("diff --git a/docs/agentos/REPORT.md"));
+        // Every file is still there, the large ADR is the one clipped, and the bound holds apart
+        // from the marker line.
+        for f in split_diff(&diff) {
+            assert!(shown.contains(&format!("diff --git a/{0} b/{0}", f.path)));
+        }
+        assert!(shown.contains("... clipped for this prompt: "));
+        assert!(shown.chars().count() < 12_000 + 300);
+
+        assert!(note.contains(
+            "- docs/adr/0001-move-the-sandbox-test-suite-to-node-test.md: +90 -0 (clipped: "
+        ));
+        assert!(note.contains("- package.json: +1 -1\n"));
+        assert!(note.contains("- test.js: +5 -3\n"));
+        assert!(note.contains("- docs/agentos/TASKS.md: +1 -1"));
+        assert!(note.contains("- docs/agentos/REPORT.md: +1 -0"));
+        assert!(note.contains("Do not reject only because a file is clipped"));
+    }
+
+    #[test]
+    fn the_prompt_carries_the_note_when_the_diff_is_fitted() {
+        let (small, package, test_js) = pr23_shaped();
+        // A 900-line design doc in front pushes the diff past MAX_DIFF.
+        let big_doc: String = (0..900)
+            .map(|i| format!("+A long design note line {i:03} that a docs-heavy pull request adds to the repo.\n"))
+            .collect();
+        let diff = format!(
+            "diff --git a/docs/DESIGN.md b/docs/DESIGN.md\nnew file mode 100644\n--- /dev/null\n+++ b/docs/DESIGN.md\n@@ -0,0 +1,900 @@\n{big_doc}{small}"
+        );
+        assert!(diff.chars().count() > MAX_DIFF);
+        let p = prompt(&mission(), &diff);
+        assert!(p.contains(&package) && p.contains(&test_js));
+        assert!(p.contains("About the diff"));
+        assert!(p.contains("- docs/DESIGN.md: +900 -0 (clipped: "));
+        // The note sits after the diff block and before the verdict instructions.
+        let fence_end = p.rfind("```").unwrap();
+        assert!(p.find("About the diff").unwrap() > fence_end);
+        assert!(p.find("About the diff").unwrap() < p.find("Reply with a single JSON").unwrap());
+    }
+
+    #[test]
+    fn a_tiny_budget_still_names_every_file_and_cuts_on_char_boundaries() {
+        let files: String = (0..40)
+            .map(|i| {
+                let lines: Vec<String> = (0..50).map(|j| format!("é{i}{j} ünïcödé line")).collect();
+                let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+                file_diff(&format!("src/f{i:02}.rs"), &[], &refs, &[])
+            })
+            .collect();
+        let (shown, note) = fit_diff(&files, 2_000);
+        for i in 0..40 {
+            assert!(note.contains(&format!("- src/f{i:02}.rs: +50 -0 (clipped: ")));
+            assert!(shown.contains(&format!("of src/f{i:02}.rs shown")));
+        }
+        // Cuts count characters, not bytes, and end at a line break when one fits.
+        assert_eq!(clip_at_line("éé\nüü\nöö", 4), "éé\n");
+        assert_eq!(clip_at_line("éé\nüü\nöö", 6), "éé\nüü\n");
+        assert_eq!(clip_at_line("ééééé", 3), "ééé");
+        assert_eq!(clip_at_line("ab\n", 50), "ab\n");
     }
 }

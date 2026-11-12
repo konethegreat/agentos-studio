@@ -64,7 +64,9 @@ all missions done -> definition-of-done checks -> report
 3. **Automatic review.** A mission entering review is judged by a reviewer on a different provider
    family from the implementer (Claude Code and Hermes on the Claude subscription are one family;
    Antigravity is another). The reviewer gets the diff, the CI checks and the `hermes verify`
-   result, the acceptance criteria and the repository's conventions from memory. Before the
+   result, the acceptance criteria and the repository's conventions from memory. A diff over
+   60,000 characters is fitted per file, code before docs, with a note listing every changed file
+   and which were clipped (see [AUTOMATIONS.md](AUTOMATIONS.md), Review gate). Before the
    reviewer runs, the constitution gate judges the lines the pull request adds (dashes,
    placeholder tags, hidden Unicode, credentials, docs changed with code under `src/`); any
    finding sends the mission back to its implementer as a reject from `constitution-gate`.
