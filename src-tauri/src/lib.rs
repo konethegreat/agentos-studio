@@ -66,6 +66,7 @@ pub mod plans;
 pub mod policy;
 pub mod procs;
 pub mod projects;
+pub mod prompts;
 pub mod provenance;
 pub mod provider_health;
 pub mod pty;
@@ -237,6 +238,16 @@ pub fn run_gui() {
             commands::notices_list,
             commands::notices_read,
             commands::provider_health,
+            commands::prompts_list,
+            commands::prompt_get,
+            commands::prompt_save,
+            commands::prompt_delete,
+            commands::prompt_compose,
+            commands::prompt_refresh,
+            commands::prompt_lint,
+            commands::prompt_ai,
+            commands::prompt_deliver,
+            commands::prompt_sessions,
             commands::provider_fix,
             commands::client_connect,
             commands::client_disconnect,

@@ -7,6 +7,7 @@ export type RailView =
   | "chat"
   | "goals"
   | "projects"
+  | "prompts"
   | "mission"
   | "fleet"
   | "agents"

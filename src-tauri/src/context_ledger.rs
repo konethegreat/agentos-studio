@@ -656,7 +656,7 @@ pub struct Found {
     pub tokens_after: Option<i64>,
 }
 
-fn parse_calls(raw: Option<String>) -> Vec<(String, String)> {
+pub fn parse_calls(raw: Option<String>) -> Vec<(String, String)> {
     let Some(raw) = raw.filter(|s| !s.trim().is_empty()) else {
         return vec![];
     };

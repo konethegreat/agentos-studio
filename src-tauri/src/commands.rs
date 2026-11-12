@@ -110,6 +110,184 @@ pub async fn check_full_stack_status(
     blocking(move || Ok(bootstrapper::check_full_stack_status(&v))).await
 }
 
+#[derive(serde::Serialize)]
+pub struct PromptDetail {
+    pub prompt: crate::prompts::Prompt,
+    pub versions: Vec<crate::prompts::Version>,
+    pub handoffs: Vec<crate::prompts::Handoff>,
+}
+
+/// Saved prompts, newest first, optionally for one project and matching a search.
+#[tauri::command]
+pub async fn prompts_list(
+    project: Option<String>,
+    query: Option<String>,
+) -> CmdResult<Vec<crate::prompts::Prompt>> {
+    blocking(move || {
+        let c = crate::store::open()?;
+        crate::prompts::list_in(&c, project.as_deref(), query.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn prompt_get(id: i64) -> CmdResult<PromptDetail> {
+    blocking(move || {
+        let c = crate::store::open()?;
+        let prompt =
+            crate::prompts::get_in(&c, id)?.ok_or_else(|| anyhow::anyhow!("no prompt {id}"))?;
+        Ok(PromptDetail {
+            versions: crate::prompts::versions_in(&c, id)?,
+            handoffs: crate::prompts::handoffs_in(&c, id)?,
+            prompt,
+        })
+    })
+    .await
+}
+
+/// Save a prompt (id 0 creates one); a changed body adds a version. Mirrored to the vault.
+#[tauri::command]
+pub async fn prompt_save(
+    state: State<'_, AppState>,
+    prompt: crate::prompts::Prompt,
+    note: Option<String>,
+) -> CmdResult<crate::prompts::Prompt> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let c = crate::store::open()?;
+        let saved = crate::prompts::save_in(&c, &prompt, note.as_deref().unwrap_or(""))?;
+        let _ = crate::prompts::mirror(&v, &saved);
+        Ok(saved)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn prompt_delete(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let c = crate::store::open()?;
+        if let Some(p) = crate::prompts::get_in(&c, id)? {
+            crate::prompts::unmirror(&v, &p);
+        }
+        crate::prompts::delete_in(&c, id)
+    })
+    .await
+}
+
+/// A first draft from what Studio knows about the project (and a previous session, if chosen).
+#[tauri::command]
+pub async fn prompt_compose(
+    state: State<'_, AppState>,
+    project: String,
+    kind: String,
+    target: String,
+    ask: String,
+    session: Option<String>,
+) -> CmdResult<String> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let ctx = crate::prompts::gather(&v, &project);
+        let brief = match session.filter(|s| !s.is_empty()) {
+            Some(id) => Some(crate::prompts::session_brief(&id)?),
+            None => None,
+        };
+        Ok(crate::prompts::compose(
+            &kind,
+            &target,
+            &ask,
+            &ctx,
+            brief.as_ref(),
+        ))
+    })
+    .await
+}
+
+/// Rewrite only the context block with today's facts.
+#[tauri::command]
+pub async fn prompt_refresh(
+    state: State<'_, AppState>,
+    project: String,
+    body: String,
+) -> CmdResult<String> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let ctx = crate::prompts::gather(&v, &project);
+        Ok(crate::prompts::refresh_block(
+            &body,
+            &crate::prompts::context_block(&ctx, None),
+        ))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn prompt_lint(
+    project: String,
+    target: String,
+    body: String,
+) -> CmdResult<Vec<crate::prompts::Finding>> {
+    blocking(move || {
+        let dir = crate::prompts::project_path(&project);
+        Ok(crate::prompts::lint(&body, &target, |rel| {
+            dir.as_ref().map_or(true, |d| d.join(rel).exists())
+        }))
+    })
+    .await
+}
+
+/// `sharpen` rewrites the prompt; `questions` reads it as the recipient and lists what is unclear.
+#[tauri::command]
+pub async fn prompt_ai(
+    project: String,
+    target: String,
+    mode: String,
+    body: String,
+) -> CmdResult<String> {
+    blocking(move || {
+        let dir = crate::prompts::project_path(&project);
+        crate::prompts::ai_pass(&mode, &body, &target, dir.as_deref())
+    })
+    .await
+}
+
+/// Hand a saved prompt over: `clipboard` (the UI copies the returned text, this records it),
+/// `file` (writes it into the project's .agentos/handoff/), or `bus:<agent>` (a task for that agent).
+#[tauri::command]
+pub async fn prompt_deliver(state: State<'_, AppState>, id: i64, via: String) -> CmdResult<String> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let c = crate::store::open()?;
+        let p = crate::prompts::get_in(&c, id)?.ok_or_else(|| anyhow::anyhow!("no prompt {id}"))?;
+        let detail = if via == "clipboard" {
+            crate::prompts::clean(&p.body)
+        } else if via == "file" {
+            crate::prompts::write_into_project(&p)?
+                .display()
+                .to_string()
+        } else if let Some(agent) = via.strip_prefix("bus:") {
+            crate::prompts::put_on_bus(&v, &p, agent)?
+        } else {
+            anyhow::bail!("unknown delivery '{via}'")
+        };
+        let logged = if via == "clipboard" {
+            String::new()
+        } else {
+            detail.clone()
+        };
+        let kind = via.split(':').next().unwrap_or(&via).to_string();
+        crate::prompts::record_use_in(&c, id, &kind, &logged)?;
+        Ok(detail)
+    })
+    .await
+}
+
+/// Recent Hermes sessions with real work, to carry one forward.
+#[tauri::command]
+pub async fn prompt_sessions() -> CmdResult<Vec<crate::prompts::SessionRow>> {
+    blocking(|| crate::prompts::sessions(30)).await
+}
+
 /// Connection health of every subscription and key Hermes runs on; `fresh` checks now.
 #[tauri::command]
 pub async fn provider_health(fresh: bool) -> CmdResult<crate::provider_health::Report> {

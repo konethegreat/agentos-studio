@@ -545,20 +545,33 @@ before it. Nothing here is built yet.
     Windows notifications for the same events with a switch to turn them off.
   - Alongside: the download site redesign with UI Vault components and setup guides for each
     platform (agentos-studio-website).
-- **1.2, the fleet maintains itself.** Turn the 25 to 30 local repositories into standing goals
-  that need no prompting: each repository opts in with `.agentos/routing.json` (`allow_merge`,
-  roles), and a weekly maintenance goal per opted-in repository covers dependency updates, red CI
-  and stale docs. All of it goes through the existing review and merge gate, with a machine-wide
-  cap on concurrent workers sized to this laptop (two cargo builds never overlap). Depends on: goals
-  (v0.14), merge policy and budgets (Phase G). Done when: one week passes with every opted-in
-  repository's main green, no owner clicks beyond escalations, and $0 metered spend outside the
-  set budget.
-- **1.3, intervene without stopping.** A real pause for a running mission (today Stop cancels the
+- **1.2, prompts that hand work on (owner direction 2026-11-12).** Studio does not replace
+  Claude Code, Antigravity, Qoder or Claude Desktop, so handing work to them must be easy and
+  good. Work, Prompts: saved prompts that know their project (every version kept, mirrored to
+  the vault), drafted from the repository, open tasks and phases, missions, pull requests,
+  AGENTS.md, the project note and, for a session handoff, a Hermes session read read-only; a
+  context block that refreshes in place; rule checks (goal, finish line, constraints, secrets,
+  dashes, size per receiver, missing paths); Sharpen and What is unclear? as one quiet Hermes
+  turn each; and handoff by copy, a file in the repository, or a bus task. Design:
+  `docs/PROMPTS.md`. Depends on: the context ledger (G10) and the bus.
+- **1.3, every repository keeps itself busy (owner direction 2026-11-12: 33 repositories, too
+  many to watch one by one).** Each opted-in repository gets `docs/agentos/PHASES.md` and
+  `docs/agentos/TASKS.md`, written by a planning agent from the code and kept current; Studio
+  takes the next open task as a mission, the agent opens the pull request and ticks the task in
+  it, the existing review and merge gate merges it, and a report lands in the repository and the
+  vault. When a repository's tasks run out, the planner writes the next phase. All of it goes
+  through the review gate (reviewer different from the implementer, CI green, budget intact,
+  `allow_merge` on), with a machine-wide cap on concurrent workers sized to this laptop.
+  Opt-in is `.agentos/routing.json` (`autonomy`). Design: `docs/AUTONOMOUS-REPOS.md`. Depends on:
+  goals (v0.14), merge policy and budgets (Phase G), 1.2 prompts (the task prompts). Done when:
+  one week passes with every opted-in repository's main green and tasks merging, no owner clicks
+  beyond escalations, and $0 metered spend outside the set budget.
+- **1.4, intervene without stopping.** A real pause for a running mission (today Stop cancels the
   turn), plus a run export: one mission's prompt, tool calls and results as a Markdown report in
-  the vault. Depends on: the run timeline (v0.12) and the context ledger (G10).
-- **1.4, scorecards that move defaults.** Per-model scorecards from real missions (PARITY says
+  the vault. Depends on: the run timeline (v0.12) and the context ledger (G10). (Was 1.3.)
+- **1.5, scorecards that move defaults.** Per-model scorecards from real missions (PARITY says
   part) feed the shadow router. A default moves only after the evaluation replays (v0.13) beat it,
-  never silently. Depends on: 1.2, because it needs enough missions to score.
+  never silently. Depends on: 1.3, because it needs enough missions to score. (Was 1.4.)
 - **When Hermes ships them:** outbound network rules and an OS keychain for unattended workers.
   Safety already shows both as waiting on Hermes; Studio wires them up when Hermes provides the
   surface, and does not build its own proxy or vault.
