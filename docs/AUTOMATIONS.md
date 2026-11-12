@@ -52,7 +52,16 @@ A mission is the only thing that can authorise a merge. A chat never can.
 
 **Review gate.** The reviewer is a different agent from the implementer, on a different provider
 where possible. It reads the diff, the test output and the mission acceptance criteria, and returns
-`approve` or `reject` with a note. Auto-merge is allowed only when all of these hold:
+`approve` or `reject` with a note. The prompt carries up to 60,000 characters of diff, and every
+reviewer reads it from a file or stdin (Hermes `--query-file`, `claude -p` on stdin, `agy` input),
+so no command line limit applies. A larger
+diff is fitted per file (`review_agent::fit_diff`), never cut at the tail: code, configuration and
+tests come first, Markdown and other docs next, lockfiles last; every file keeps its header and
+first lines, and the largest files are clipped at a line boundary with a marker. A note after the
+diff then lists every changed file with its added and deleted lines, marks the clipped ones, and
+tells the reviewer not to reject only because a file was clipped. Before this, a 12,000-character
+tail cut hid small code files sorted after a large docs file, and the reviewer rejected correct
+work as "missing" them. Auto-merge is allowed only when all of these hold:
 
 1. mission status is `review`,
 2. the review verdict is `approve`,
