@@ -1,6 +1,6 @@
 [package]
 name = "agentos-studio"
-version = "1.2.2"
+version = "1.2.3"
 description = "Native control plane and Rust MCP bus for multi-agent engineering fleets"
 authors = ["Kone Tshivhinda", "K-ONE IT SOLUTIONS"]
 license = "MIT"
