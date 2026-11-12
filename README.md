@@ -35,6 +35,12 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.1.1
+
+- **Connections that stay working.** Setup shows whether each subscription Hermes runs on can run right now (signed in, plugin on, usage limit with its reset time, recent failures, a fallback chain), with the one command that fixes it; a provider in use that stops raises a bell item and a Windows notification. See [docs/CONNECTIONS.md](docs/CONNECTIONS.md).
+- **Updates you do not miss.** Hermes plugins (the Claude and Antigravity providers) are checked with Hermes, Claude Code and Studio; checks run every 3 hours and retry in 15 minutes when a source was unreachable.
+- **Fix.** A signed-out Claude no longer reads as connected.
+
 ## What is new in 1.1.0
 
 - **Set up everything.** One button on Setup installs every missing tool after a single admin prompt (winget on Windows, Homebrew on macOS, pkexec on Linux), then Hermes, the vault and the hub, then opens the sign-ins. See [docs/ONE-CLICK-SETUP.md](docs/ONE-CLICK-SETUP.md).
