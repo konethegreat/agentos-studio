@@ -35,6 +35,11 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.2.3
+
+- **A direction per repository.** Opt in with a standing direction ("keep the design, update the content"); every goal carries it and the reviewer enforces it.
+- **Fix.** The reviewer saw only the first 12,000 characters of a diff, so on a pull request with a large doc first, it rejected correct code it never saw. Diffs are now fitted per file with code first, and every changed file is listed.
+
 ## What is new in 1.2.2
 
 - **Opt-in that sticks.** Autonomy reads a repository's opt-in from GitHub, where Opt in merges it, and keeps a clean checkout of the default branch current so the merge gate sees it.
