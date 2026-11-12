@@ -72,6 +72,49 @@ export interface SetupPlan {
   apps: string[];
 }
 
+/** A saved prompt (prompts.rs); every changed body is a new version. */
+export interface SavedPrompt {
+  id: number;
+  title: string;
+  project: string;
+  kind: "continue" | "new_session" | "review" | "fix" | "custom";
+  target: string;
+  body: string;
+  version: number;
+  uses: number;
+  created_at: number;
+  updated_at: number;
+}
+export interface PromptVersion {
+  version: number;
+  body: string;
+  note: string;
+  at: number;
+}
+export interface PromptHandoff {
+  id: number;
+  prompt_id: number;
+  version: number;
+  via: string;
+  detail: string;
+  at: number;
+}
+export interface PromptDetail {
+  prompt: SavedPrompt;
+  versions: PromptVersion[];
+  handoffs: PromptHandoff[];
+}
+export interface PromptFinding {
+  level: "error" | "warn" | "info";
+  text: string;
+}
+export interface PromptSession {
+  id: string;
+  title: string;
+  messages: number;
+  at: number;
+}
+
 /** One subscription or key Hermes runs on, as Hermes reports it (docs/CONNECTIONS.md). */
 export interface ProviderHealth {
   id: string;
@@ -1005,6 +1048,18 @@ export const api = {
   setupPlan: () => invoke<SetupPlan>("setup_plan"),
   clientsList: () => invoke<HubClient[]>("clients_list"),
   notices: () => invoke<Notice[]>("notices_list"),
+  promptsList: (project?: string, query?: string) => invoke<SavedPrompt[]>("prompts_list", { project, query }),
+  promptGet: (id: number) => invoke<PromptDetail>("prompt_get", { id }),
+  promptSave: (prompt: SavedPrompt, note?: string) => invoke<SavedPrompt>("prompt_save", { prompt, note }),
+  promptDelete: (id: number) => invoke<void>("prompt_delete", { id }),
+  promptCompose: (project: string, kind: string, target: string, ask: string, session?: string) =>
+    invoke<string>("prompt_compose", { project, kind, target, ask, session }),
+  promptRefresh: (project: string, body: string) => invoke<string>("prompt_refresh", { project, body }),
+  promptLint: (project: string, target: string, body: string) => invoke<PromptFinding[]>("prompt_lint", { project, target, body }),
+  promptAi: (project: string, target: string, mode: "sharpen" | "questions", body: string) =>
+    invoke<string>("prompt_ai", { project, target, mode, body }),
+  promptDeliver: (id: number, via: string) => invoke<string>("prompt_deliver", { id, via }),
+  promptSessions: () => invoke<PromptSession[]>("prompt_sessions"),
   providerHealth: (fresh: boolean) => invoke<ProviderHealthReport>("provider_health", { fresh }),
   providerFix: (provider: string, action: string) => invoke<void>("provider_fix", { provider, action }),
   noticesRead: () => invoke<void>("notices_read"),

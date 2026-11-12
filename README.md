@@ -141,7 +141,8 @@ New here? [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) goes from download 
 of work in ten minutes. [docs/GLOSSARY.md](docs/GLOSSARY.md) explains the words,
 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) covers the logs and common failures, and
 [docs/PRIVACY.md](docs/PRIVACY.md) lists what stays on your machine, and
-[docs/CONNECTIONS.md](docs/CONNECTIONS.md) explains how Studio keeps your subscriptions working.
+[docs/CONNECTIONS.md](docs/CONNECTIONS.md) explains how Studio keeps your subscriptions working, and
+[docs/PROMPTS.md](docs/PROMPTS.md) how to hand work to another agent or app with a saved prompt.
 
 ## Build from source
 

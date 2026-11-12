@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 11;
+const SCHEMA_VERSION: i64 = 12;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -198,6 +198,40 @@ ALTER TABLE missions ADD COLUMN kind TEXT NOT NULL DEFAULT 'work';
 /// that are the only questions Studio asks the owner, and the goal a mission belongs to. Additive:
 /// a 0.13 build still opens the database.
 /// Phase G 10: one immutable row per context compaction an agent recorded. Additive.
+/// Schema 12: the prompt workbench (prompts.rs). Every version of a prompt is kept, and every time
+/// one leaves Studio is recorded.
+const MIGRATION_12: &str = "
+CREATE TABLE IF NOT EXISTS prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    project TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL,
+    target TEXT NOT NULL,
+    body TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    uses INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS prompts_project ON prompts(project);
+CREATE TABLE IF NOT EXISTS prompt_versions (
+    prompt_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    at INTEGER NOT NULL,
+    PRIMARY KEY (prompt_id, version)
+);
+CREATE TABLE IF NOT EXISTS prompt_handoffs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    via TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    at INTEGER NOT NULL
+);
+";
+
 const MIGRATION_11: &str = "
 CREATE TABLE IF NOT EXISTS context_events (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -346,6 +380,9 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     if v < 11 {
         c.execute_batch(MIGRATION_11)?;
+    }
+    if v < 12 {
+        c.execute_batch(MIGRATION_12)?;
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;

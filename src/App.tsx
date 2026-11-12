@@ -59,13 +59,14 @@ import { SetupWizard } from "./views/SetupWizard";
 import { Skills } from "./views/Skills";
 import { Capabilities } from "./views/Capabilities";
 import { ContextLedger } from "./views/ContextLedger";
+import { Prompts } from "./views/Prompts";
 import { Today } from "./views/Today";
 import { UpdateCenter } from "./views/UpdateCenter";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 const ComputerUse = lazy(() => import("./views/ComputerUse").then((m) => ({ default: m.ComputerUse })));
 
-const VIEWS = ["today", "chat", "goals", "projects", "skills", "capabilities", "memory", "context", "help", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
+const VIEWS = ["today", "chat", "goals", "projects", "prompts", "skills", "capabilities", "memory", "context", "help", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
 type View = (typeof VIEWS)[number];
 const isView = (v: string): v is View => (VIEWS as readonly string[]).includes(v);
 
@@ -92,6 +93,7 @@ const GROUPS: RailGroup[] = [
     tabs: [
       { id: "goals", label: "Goals", hint: "One sentence in, finished work out: outcomes, done checks, autonomy and the missions each goal created" },
       { id: "projects", label: "Projects", hint: "Hermes projects, their folders, and the chats that ran inside them" },
+      { id: "prompts", label: "Prompts", hint: "Saved prompts that know their project: draft from the repo, check, sharpen, and hand work to another agent or app" },
       { id: "mission", label: "Mission Control", hint: "The Agent Bus board: dispatch and track tasks" },
       { id: "fleet", label: "Fleet", hint: "Every local repository and its rule-file sync state" },
       { id: "timeline", label: "Run timeline", hint: "Who did what on a mission across agents: handoffs, asks, tool calls, approvals, cost and duration, with replay" },
@@ -492,6 +494,7 @@ function Studio() {
             {view === "capabilities" && <Capabilities />}
             {view === "memory" && <Memory />}
             {view === "context" && <ContextLedger />}
+            {view === "prompts" && <Prompts />}
             {view === "help" && <Help doc={helpDoc} />}
           </div>
           <CliDock />
