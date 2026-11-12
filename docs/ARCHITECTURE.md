@@ -496,7 +496,8 @@ command runs next: `npm test` when package.json carries a real script, otherwise
 `go test ./...`, or pytest when a Python project marker exists. A JavaScript worktree gets one quiet
 `npm install` first. The score is 50 for passing tests (0 failing, 25 when the repository has no test
 command) plus 50 for a reviewer approval. The reviewer prompt and answer parser are
-`review_agent::prompt` and `review_agent::parse_verdict`, but never `review_agent::review`: that
+`review_agent::prompt` (which fits the diff per file with `review_agent::fit_diff`, as a real review
+does) and `review_agent::parse_verdict`, but never `review_agent::review`: that
 function takes a mission id and would move a real mission's status. The reviewer is the other agent
 (`hermes` when the replay ran on Claude Code, `claude-code` otherwise), with the reviewer profile
 from `hermes_surfaces` for Hermes.
