@@ -1,7 +1,7 @@
 # ACP spike: Hermes chat over the Agent Client Protocol
 
 Status: spike done 2026-11-07, verdict **not yet**. Superseded 2026-11-08: ACP **is** the Hermes chat
-transport, through the hybrid below (`src-tauri/src/acp_host.rs`, `tests/live_acp_chat.rs`).
+transport, through the hybrid below (`src-tauri/src/acp_host.rs`, `tests/live/live_acp_chat.rs`).
 
 ## 2026-11-08: the hybrid that closed the gaps
 
@@ -37,7 +37,7 @@ A Rust ACP client on `agent-client-protocol = "=5.0.0"` (feature `process`, prot
 config options, streams one prompt turn, answers `session/request_permission` through a channel
 (the same shape the ApprovalProvider modal needs) and cancels a turn with `session/cancel`.
 
-Run it: `cargo test --test live_acp_spike -- --ignored --nocapture --test-threads 1`. Set
+Run it: `cargo test --test live -- live_acp_spike:: --ignored --nocapture --test-threads 1`. Set
 `ACP_DEBUG=1` to print every raw session update. It deletes every session it creates.
 
 ## Results on Hermes v0.23.0 (2bd378ed1b8d)

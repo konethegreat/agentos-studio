@@ -6,7 +6,7 @@
 //! plans), answers `session/request_permission` through a callback that the UI turns into the
 //! approval modal, and cancels a turn on request.
 //!
-//! The spike (this file plus `tests/live_acp_spike.rs`) measures this path against the
+//! The spike (this file plus `tests/live/live_acp_spike.rs`) measures this path against the
 //! `hermes chat -q` transport in `chat_stream.rs`; nothing here replaces it yet.
 
 use agent_client_protocol::schema::ProtocolVersion;

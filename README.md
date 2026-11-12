@@ -513,10 +513,10 @@ cargo clippy --all-targets -- -D warnings
 cargo test                    # unit tests plus the native MCP probe
 
 # Opt-in checks against a real Hermes and Claude Code install on this machine
-cargo test --test live_smoke -- --ignored --nocapture
-cargo test --test live_chat -- --ignored --nocapture
-cargo test --test live_v3 -- --ignored --nocapture --test-threads 1   # PTY, updates, GitHub
-cargo test --test live_fork -- --ignored --nocapture --test-threads 1 # fork a real session, then delete it
+cargo test --test live -- live_smoke:: --ignored --nocapture
+cargo test --test live -- live_chat:: --ignored --nocapture
+cargo test --test live -- live_v3:: --ignored --nocapture --test-threads 1   # PTY, updates, GitHub
+cargo test --test live -- live_fork:: --ignored --nocapture --test-threads 1 # fork a real session, then delete it
 ```
 
 The live tests read your Hermes sessions, providers and MCP servers, run real chat turns on both backends (then delete the session they created), and re-apply your active provider without changing it. `live_v3` runs PowerShell and interactive Hermes inside a real PTY, checks all three update channels against the network, and reads PRs, diffs, branches, commits, runs and issues of this repository through `gh` (read-only).
