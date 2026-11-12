@@ -288,6 +288,79 @@ pub async fn prompt_sessions() -> CmdResult<Vec<crate::prompts::SessionRow>> {
     blocking(|| crate::prompts::sessions(30)).await
 }
 
+#[derive(serde::Serialize)]
+pub struct AutonomySettings {
+    pub enabled: bool,
+    pub max_active: usize,
+    pub automation_on: bool,
+    pub paused: bool,
+}
+
+/// Every repository Studio knows (Hermes projects) and where its autonomous work stands.
+#[tauri::command]
+pub async fn autonomy_status() -> CmdResult<Vec<crate::autonomy::RepoStatus>> {
+    blocking(crate::autonomy::statuses).await
+}
+
+#[tauri::command]
+pub async fn autonomy_settings() -> CmdResult<AutonomySettings> {
+    blocking(|| {
+        let c = crate::store::open()?;
+        Ok(AutonomySettings {
+            enabled: crate::autonomy::enabled_globally(&c),
+            max_active: crate::autonomy::max_active(&c),
+            automation_on: crate::automation::enabled(),
+            paused: crate::pause::paused(),
+        })
+    })
+    .await
+}
+
+/// The machine-wide switch and the limit of repositories working at once.
+#[tauri::command]
+pub async fn autonomy_set(enabled: bool, max_active: usize) -> CmdResult<()> {
+    blocking(move || {
+        let c = crate::store::open()?;
+        crate::store::kv_set(
+            &c,
+            crate::autonomy::KV_ENABLED,
+            if enabled { "1" } else { "0" },
+        )?;
+        crate::store::kv_set(
+            &c,
+            crate::autonomy::KV_MAX_ACTIVE,
+            &max_active.clamp(1, 12).to_string(),
+        )
+    })
+    .await
+}
+
+/// Opt one repository in through a merged pull request to its routing.json.
+#[tauri::command]
+pub async fn autonomy_opt_in(slug: String, level: String) -> CmdResult<String> {
+    blocking(move || {
+        let dir = crate::review_agent::project_dir(&slug)
+            .ok_or_else(|| anyhow::anyhow!("'{slug}' has no project folder"))?;
+        crate::autonomy::opt_in(&slug, &dir, &level)
+    })
+    .await
+}
+
+/// Pause or resume one repository on this machine only.
+#[tauri::command]
+pub async fn autonomy_pause_repo(slug: String, paused: bool) -> CmdResult<()> {
+    blocking(move || crate::autonomy::set_paused_here(&slug, paused)).await
+}
+
+/// Run one pass now instead of waiting for the next ten-minute tick.
+#[tauri::command]
+pub async fn autonomy_run_now(
+    state: State<'_, AppState>,
+) -> CmdResult<crate::autonomy::PassReport> {
+    let v = current_vault(&state);
+    blocking(move || crate::autonomy::pass(&v)).await
+}
+
 /// Connection health of every subscription and key Hermes runs on; `fresh` checks now.
 #[tauri::command]
 pub async fn provider_health(fresh: bool) -> CmdResult<crate::provider_health::Report> {

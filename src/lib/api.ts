@@ -72,6 +72,39 @@ export interface SetupPlan {
   apps: string[];
 }
 
+/** One repository's autonomous work (autonomy.rs, docs/AUTONOMOUS-REPOS.md). */
+export interface AutonomyPhase {
+  title: string;
+  open: string[];
+  done: number;
+}
+export interface AutonomyEvent {
+  at: number;
+  kind: string;
+  goal: string | null;
+  text: string;
+}
+export interface AutonomyRepo {
+  slug: string;
+  path: string;
+  enabled: boolean;
+  paused_here: boolean;
+  level: string;
+  allow_merge: boolean;
+  has_plan: boolean;
+  phases: AutonomyPhase[];
+  goal: string | null;
+  goal_status: string | null;
+  next: string;
+  log: AutonomyEvent[];
+}
+export interface AutonomySettings {
+  enabled: boolean;
+  max_active: number;
+  automation_on: boolean;
+  paused: boolean;
+}
+
 /** A saved prompt (prompts.rs); every changed body is a new version. */
 export interface SavedPrompt {
   id: number;
@@ -1048,6 +1081,12 @@ export const api = {
   setupPlan: () => invoke<SetupPlan>("setup_plan"),
   clientsList: () => invoke<HubClient[]>("clients_list"),
   notices: () => invoke<Notice[]>("notices_list"),
+  autonomyStatus: () => invoke<AutonomyRepo[]>("autonomy_status"),
+  autonomySettings: () => invoke<AutonomySettings>("autonomy_settings"),
+  autonomySet: (enabled: boolean, maxActive: number) => invoke<void>("autonomy_set", { enabled, maxActive }),
+  autonomyOptIn: (slug: string, level: string) => invoke<string>("autonomy_opt_in", { slug, level }),
+  autonomyPauseRepo: (slug: string, paused: boolean) => invoke<void>("autonomy_pause_repo", { slug, paused }),
+  autonomyRunNow: () => invoke<{ considered: number; started: string[]; finished: string[] }>("autonomy_run_now"),
   promptsList: (project?: string, query?: string) => invoke<SavedPrompt[]>("prompts_list", { project, query }),
   promptGet: (id: number) => invoke<PromptDetail>("prompt_get", { id }),
   promptSave: (prompt: SavedPrompt, note?: string) => invoke<SavedPrompt>("prompt_save", { prompt, note }),

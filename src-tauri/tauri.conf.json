@@ -56,7 +56,8 @@
       "../docs/COMPUTER-USE.md": "docs/COMPUTER-USE.md",
       "../docs/CAPABILITIES.md": "docs/CAPABILITIES.md",
       "../docs/CONNECTIONS.md": "docs/CONNECTIONS.md",
-      "../docs/PROMPTS.md": "docs/PROMPTS.md"
+      "../docs/PROMPTS.md": "docs/PROMPTS.md",
+      "../docs/AUTONOMOUS-REPOS.md": "docs/AUTONOMOUS-REPOS.md"
     }
   },
   "plugins": {

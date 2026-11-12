@@ -143,6 +143,7 @@ of work in ten minutes. [docs/GLOSSARY.md](docs/GLOSSARY.md) explains the words,
 [docs/PRIVACY.md](docs/PRIVACY.md) lists what stays on your machine, and
 [docs/CONNECTIONS.md](docs/CONNECTIONS.md) explains how Studio keeps your subscriptions working, and
 [docs/PROMPTS.md](docs/PROMPTS.md) how to hand work to another agent or app with a saved prompt.
+[docs/AUTONOMOUS-REPOS.md](docs/AUTONOMOUS-REPOS.md) explains how opted-in repositories keep themselves busy.
 
 ## Build from source
 
