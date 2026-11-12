@@ -524,6 +524,9 @@ before it. Nothing here is built yet.
   binary (`tests/live/main.rs`), so a full `cargo test` links 3 test binaries instead of 42;
   run one with `cargo test --test live -- live_smoke:: --ignored --nocapture --test-threads 1`.
   Patch releases go out through the in-app updater only.
+- **1.1.1, connections and updates you can rely on (shipped):** connection health for the
+  Claude subscription, Antigravity and OpenRouter, Hermes plugin updates, faster update retries,
+  and the signed-out Claude fix (#152), plus one live test binary (#107, #153).
 - **1.1, a new user is working in minutes (shipped in 1.1.0: #148, #149, #150; also #117 fixed in #146 and the rail badges in #147).** Owner direction 2026-11-11: reduce
   manual setup to the sign-ins only a person can do, and make every count in the app explain
   itself. Three parts, each its own PR:
