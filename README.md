@@ -35,6 +35,10 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.2.1
+
+- **Every repository, not only projects.** Work, Autonomy lists every git repository under the scan roots, and Opt in makes it a Hermes project first.
+
 ## What is new in 1.2.0
 
 - **Prompts that hand work on.** Work, Prompts writes a prompt from what Studio knows about a project (commits, open tasks and phases, missions, pull requests, AGENTS.md, the project note, or a Hermes session to carry forward), checks it, sharpens it, and hands it to Claude Code, Antigravity, Qoder, Cursor, Claude Desktop or any chat app. Every prompt is saved with its project and every version is kept. See [docs/PROMPTS.md](docs/PROMPTS.md).
