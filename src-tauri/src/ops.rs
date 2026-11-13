@@ -926,3 +926,81 @@ pub async fn approval_timeout() -> CmdResult<u64> {
 pub async fn set_approval_timeout(secs: u64) -> CmdResult<u64> {
     blocking(move || crate::chat_stream::set_approval_timeout_secs(secs)).await
 }
+
+// ------------------------------------------------------------------ explorer
+
+fn explorer_root(state: &State<'_, AppState>, root: &str) -> CmdResult<std::path::PathBuf> {
+    let allowed = state.settings.lock().map(|s| s.roots()).unwrap_or_default();
+    crate::explorer::check_root(root, &allowed).map_err(err)
+}
+
+/// The repository and its worktrees (one per mission attempt).
+#[tauri::command]
+pub async fn explorer_checkouts(
+    state: State<'_, AppState>,
+    root: String,
+) -> CmdResult<Vec<crate::explorer::Checkout>> {
+    let r = explorer_root(&state, &root)?;
+    blocking(move || crate::explorer::checkouts(&r)).await
+}
+
+#[tauri::command]
+pub async fn explorer_files(
+    state: State<'_, AppState>,
+    root: String,
+) -> CmdResult<crate::explorer::FileList> {
+    let r = explorer_root(&state, &root)?;
+    blocking(move || crate::explorer::files(&r)).await
+}
+
+#[tauri::command]
+pub async fn explorer_read(
+    state: State<'_, AppState>,
+    root: String,
+    path: String,
+) -> CmdResult<crate::explorer::FileView> {
+    let r = explorer_root(&state, &root)?;
+    blocking(move || crate::explorer::read(&r, &path)).await
+}
+
+#[tauri::command]
+pub async fn explorer_status(
+    state: State<'_, AppState>,
+    root: String,
+) -> CmdResult<Vec<crate::explorer::Change>> {
+    let r = explorer_root(&state, &root)?;
+    blocking(move || crate::explorer::status(&r)).await
+}
+
+#[tauri::command]
+pub async fn explorer_diff(
+    state: State<'_, AppState>,
+    root: String,
+    path: String,
+) -> CmdResult<String> {
+    let r = explorer_root(&state, &root)?;
+    blocking(move || crate::explorer::diff(&r, &path)).await
+}
+
+#[tauri::command]
+pub async fn explorer_search(
+    state: State<'_, AppState>,
+    root: String,
+    query: String,
+    case_sensitive: Option<bool>,
+) -> CmdResult<Vec<crate::explorer::Hit>> {
+    let r = explorer_root(&state, &root)?;
+    blocking(move || crate::explorer::search(&r, &query, case_sensitive.unwrap_or(false))).await
+}
+
+/// Open the checkout, or one file at a line, in VS Code.
+#[tauri::command]
+pub async fn explorer_open_editor(
+    state: State<'_, AppState>,
+    root: String,
+    path: Option<String>,
+    line: Option<u32>,
+) -> CmdResult<()> {
+    let r = explorer_root(&state, &root)?;
+    blocking(move || crate::explorer::open_in_editor(&r, path.as_deref(), line)).await
+}

@@ -30,6 +30,7 @@ pub mod council;
 pub mod digest;
 pub mod escalation;
 pub mod eval;
+pub mod explorer;
 pub mod extension_runtime;
 pub mod fleet;
 pub mod fork;
@@ -371,6 +372,13 @@ pub fn run_gui() {
             ops::list_audit,
             ops::open_external,
             ops::reveal_path,
+            ops::explorer_checkouts,
+            ops::explorer_files,
+            ops::explorer_read,
+            ops::explorer_status,
+            ops::explorer_diff,
+            ops::explorer_search,
+            ops::explorer_open_editor,
             ops::hermes_memory_view,
             ops::hermes_journey_delete,
             ops::hermes_insights,

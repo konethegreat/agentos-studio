@@ -19,6 +19,7 @@ export type RailView =
   | "skills"
   | "capabilities"
   | "constitution"
+  | "explorer"
   | "github"
   | "control"
   | "updates"

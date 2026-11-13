@@ -63,11 +63,13 @@ import { Prompts } from "./views/Prompts";
 import { Autonomy } from "./views/Autonomy";
 import { Today } from "./views/Today";
 import { UpdateCenter } from "./views/UpdateCenter";
+import type { ExploreIntent } from "./views/Explorer";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 const ComputerUse = lazy(() => import("./views/ComputerUse").then((m) => ({ default: m.ComputerUse })));
+const Explorer = lazy(() => import("./views/Explorer").then((m) => ({ default: m.Explorer })));
 
-const VIEWS = ["today", "chat", "goals", "autonomy", "projects", "prompts", "skills", "capabilities", "memory", "context", "help", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
+const VIEWS = ["today", "chat", "goals", "autonomy", "projects", "prompts", "skills", "capabilities", "memory", "context", "help", "explorer", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
 type View = (typeof VIEWS)[number];
 const isView = (v: string): v is View => (VIEWS as readonly string[]).includes(v);
 
@@ -120,8 +122,11 @@ const GROUPS: RailGroup[] = [
     id: "code",
     label: "Code",
     icon: <GitPullRequest className="size-4" />,
-    defaultView: "github",
-    tabs: [{ id: "github", label: "GitHub", hint: "Pull requests, issues, Actions, branches and commits through gh" }],
+    defaultView: "explorer",
+    tabs: [
+      { id: "explorer", label: "Explorer", hint: "Browse a repository or an agent's worktree: files, code, search and the working changes, read only, with Ask in Chat and Open in VS Code" },
+      { id: "github", label: "GitHub", hint: "Pull requests, issues, Actions, branches and commits through gh" },
+    ],
   },
   {
     id: "system",
@@ -174,6 +179,7 @@ function Studio() {
   const [visited, setVisited] = useState<Set<View>>(() => new Set<View>(["today"]));
   const [incoming, setIncoming] = useState<{ text: string; cwd?: string; nonce: number } | null>(null);
   const [chatIntent, setChatIntent] = useState<ChatIntent | null>(null);
+  const [exploreIntent, setExploreIntent] = useState<ExploreIntent | null>(null);
   const [palette, setPalette] = useState(false);
   const [bootSteps, setBootSteps] = useState<BootStep[]>([]);
   const [bootReport, setBootReport] = useState<BootReport | null>(null);
@@ -210,6 +216,18 @@ function Studio() {
     };
     window.addEventListener("agentos:go", onGo);
     return () => window.removeEventListener("agentos:go", onGo);
+  }, [go]);
+
+  // Any screen can open a folder (and a file in it) in the Explorer.
+  useEffect(() => {
+    const onExplore = (e: Event) => {
+      const d = (e as CustomEvent<{ root: string; path?: string }>).detail;
+      if (!d?.root) return;
+      setExploreIntent({ root: d.root, path: d.path, nonce: Date.now() });
+      go("explorer");
+    };
+    window.addEventListener("agentos:explore", onExplore);
+    return () => window.removeEventListener("agentos:explore", onExplore);
   }, [go]);
 
   const openControl = useCallback(
@@ -456,6 +474,13 @@ function Studio() {
             {visited.has("chat") && (
               <div className={view === "chat" ? "h-full" : "hidden"}>
                 <ChatStudio repos={repos} hermes={hermes} home={home} intent={chatIntent} onStatusChanged={() => void loadHermes()} onOpenControl={openControl} incoming={incoming} active={view === "chat"} />
+              </div>
+            )}
+            {visited.has("explorer") && (
+              <div className={view === "explorer" ? "h-full" : "hidden"}>
+                <Suspense fallback={null}>
+                  <Explorer repos={repos} intent={exploreIntent} active={view === "explorer"} onAskHermes={askHermes} />
+                </Suspense>
               </div>
             )}
             {visited.has("github") && (
