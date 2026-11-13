@@ -459,6 +459,49 @@ pub fn best_headless(exclude: &str, available: impl Fn(&str) -> bool) -> Option<
         .find(|a| *a != exclude && available(a))
 }
 
+pub const AGY_MODEL_KEY: &str = "agents.antigravity.model";
+
+/// The model Antigravity workers, reviewers and asks run on when a task names none (kv
+/// `agents.antigravity.model`, set on Work, Agents). Without it `agy` uses its own default, and
+/// when that model's quota is spent every Antigravity run fails.
+pub fn agy_model() -> Option<String> {
+    if cfg!(test) {
+        return None;
+    }
+    let c = crate::store::open().ok()?;
+    crate::store::kv_get(&c, AGY_MODEL_KEY)
+        .ok()
+        .flatten()
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+}
+
+/// The models `agy models` lists, as (id, label). Empty when agy is missing or offline.
+pub fn agy_models() -> Vec<(String, String)> {
+    match procs::run_with_timeout(
+        "agy",
+        &["models"],
+        None,
+        None,
+        std::time::Duration::from_secs(30),
+    ) {
+        Ok((Some(0), out, _)) => parse_agy_models(&out),
+        _ => Vec::new(),
+    }
+}
+
+/// `id<TAB>label` lines from `agy models`. Pure.
+pub fn parse_agy_models(out: &str) -> Vec<(String, String)> {
+    out.lines()
+        .filter_map(|l| {
+            let (id, label) = l.split_once('\t')?;
+            let id = id.trim();
+            (!id.is_empty() && !id.contains(' '))
+                .then(|| (id.to_string(), label.trim().to_string()))
+        })
+        .collect()
+}
+
 /// `agy` arguments for a headless mission worker: one stream-json turn read from stdin, the
 /// allowlist as session-only settings (a file), never skipping permissions. Pure.
 pub fn agy_args(settings_file: &Path, model: Option<&str>) -> Vec<String> {
@@ -664,7 +707,10 @@ pub fn spawn_worker(
             fs::write(&sf, agy_settings(&allow))?;
             (
                 "agy",
-                agy_args(&sf, model_from_body(&task.body).as_deref()),
+                agy_args(
+                    &sf,
+                    model_from_body(&task.body).or_else(agy_model).as_deref(),
+                ),
                 Some(agy_input(&prompt)),
             )
         }
@@ -1143,6 +1189,24 @@ mod tests {
         assert_eq!(best_headless("qoder", |a| a == "hermes"), Some("hermes"));
         assert_eq!(best_headless("qoder", |_| false), None);
         assert!(is_headless("antigravity") && !is_headless("qoder"));
+    }
+
+    #[test]
+    fn agy_models_are_parsed_from_the_cli_list() {
+        let out = "Fetching available models...\ngemini-4-argon-medium\tGemini 4 Argon (Medium)\ngemini-4-hydrogen-medium\tGemini 4 Hydrogen (Medium)\n";
+        let m = parse_agy_models(out);
+        assert_eq!(m.len(), 2);
+        assert_eq!(
+            m[1],
+            (
+                "gemini-4-hydrogen-medium".into(),
+                "Gemini 4 Hydrogen (Medium)".into()
+            )
+        );
+        let a = agy_args(Path::new("s.json"), Some("gemini-4-hydrogen-medium"));
+        assert!(a
+            .windows(2)
+            .any(|w| w[0] == "--model" && w[1] == "gemini-4-hydrogen-medium"));
     }
 
     #[test]

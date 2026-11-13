@@ -479,6 +479,8 @@ pub fn run_gui() {
             commands::mission_pins,
             commands::agent_cards,
             commands::set_agent_strengths,
+            commands::agy_model_get,
+            commands::agy_model_set,
             commands::agent_events,
             commands::mission_kinds,
             commands::set_mission_kind,

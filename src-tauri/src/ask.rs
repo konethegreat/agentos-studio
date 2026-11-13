@@ -243,7 +243,7 @@ pub fn run_turn(
             let sf = qdir.join(format!("{stamp}.agy-settings.json"));
             let allow = crate::routing::agy_allow_rules(&["mcp__agentos-hub".to_string()]);
             std::fs::write(&sf, crate::bus::agy_settings(&allow))?;
-            let args = crate::bus::agy_args(&sf, None);
+            let args = crate::bus::agy_args(&sf, crate::bus::agy_model().as_deref());
             let argv: Vec<&str> = args.iter().map(String::as_str).collect();
             let r = crate::procs::run_with_timeout(
                 "agy",

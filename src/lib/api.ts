@@ -1364,6 +1364,8 @@ export const api = {
 
   agentCards: (refresh = false) => invoke<AgentCard[]>("agent_cards", { refresh }),
   setAgentStrengths: (agent: string, strengths: string[]) => invoke<void>("set_agent_strengths", { agent, strengths }),
+  agyModel: () => invoke<[string | null, [string, string][]]>("agy_model_get"),
+  setAgyModel: (model: string) => invoke<void>("agy_model_set", { model }),
   agentEvents: (missionId?: string, limit = 200) =>
     invoke<AgentEvent[]>("agent_events", { missionId: missionId ?? null, limit }),
 

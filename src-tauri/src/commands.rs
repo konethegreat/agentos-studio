@@ -1835,6 +1835,27 @@ pub async fn agent_cards(refresh: Option<bool>) -> CmdResult<Vec<crate::agents::
     blocking(move || Ok(crate::agents::cards(refresh.unwrap_or(false)))).await
 }
 
+/// The model Antigravity runs on (empty = agy's own default) and the models agy offers.
+#[tauri::command]
+pub async fn agy_model_get() -> CmdResult<(Option<String>, Vec<(String, String)>)> {
+    blocking(move || Ok((crate::bus::agy_model(), crate::bus::agy_models()))).await
+}
+
+#[tauri::command]
+pub async fn agy_model_set(model: String) -> CmdResult<()> {
+    blocking(move || {
+        let c = crate::store::open()?;
+        let m = model.trim();
+        if m.is_empty() {
+            crate::store::kv_delete(&c, crate::bus::AGY_MODEL_KEY)?;
+        } else {
+            crate::store::kv_set(&c, crate::bus::AGY_MODEL_KEY, m)?;
+        }
+        Ok(())
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn set_agent_strengths(agent: String, strengths: Vec<String>) -> CmdResult<()> {
     blocking(move || crate::agents::set_strengths(&agent, &strengths)).await

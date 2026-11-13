@@ -43,6 +43,15 @@ Each fix opens its own window, because sign-ins and pickers need a person:
 A usage limit on a flat subscription is not a fault Studio can clear: the provider resets it.
 The fallback chain is what keeps work moving until then.
 
+## Antigravity's model
+
+Each Gemini model on the Antigravity plan has its own quota. Studio's Antigravity workers,
+reviews and asks run on the model chosen on Work, Agents (the Antigravity card), and on
+Antigravity's own default when none is chosen. When a model's quota runs out, the worker log
+says so ("Individual quota reached ... Resets in 53h"); Studio marks Antigravity limited until
+that reset and sends its work to another agent. Picking a model that still has quota on the card
+brings it back at once.
+
 ## Updates that keep connections working
 
 The Claude and Antigravity providers are Hermes plugins, so Updates also watches them
