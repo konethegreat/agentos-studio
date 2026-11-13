@@ -261,7 +261,7 @@ function ProviderCard({ p, onChanged, onReload }: { p: ProviderView; onChanged: 
         <Button size="sm" busy={busy === "test"} disabled={!model.trim() || busy !== null} onClick={() => void runTest()} icon={<Activity className="size-3.5" />}>
           Test connection
         </Button>
-        {(p.kind === "subscription" || p.kind === "oauth") && (
+        {(p.kind === "subscription" || p.kind === "oauth" || p.kind === "antigravity") && (
           <Button size="sm" variant="ghost" busy={busy === "login"} disabled={busy !== null} onClick={() => void login()} icon={<LogIn className="size-3.5" />}>
             Sign in
           </Button>

@@ -105,8 +105,8 @@ export function ProviderSwitcher({
         <ChevronDown className="size-3.5 shrink-0 text-slate-500" />
       </button>
       {open && (
-        <div className="absolute left-0 top-10 z-50 flex w-[44rem] overflow-hidden rounded-2xl border border-line bg-card shadow-2xl">
-          <div className="w-56 shrink-0 border-r border-line p-2">
+        <div className="absolute right-0 top-10 z-50 flex w-[44rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-line bg-card shadow-2xl">
+          <div className="w-60 shrink-0 border-r border-line p-2">
             <div className="px-2 pb-1.5 pt-1 text-caption font-semibold uppercase tracking-wide text-slate-500">Provider</div>
             {!cfg && <Loader2 className="m-3 size-4 animate-spin text-slate-500" />}
             {cfg?.providers.map((p) => (
@@ -116,8 +116,8 @@ export function ProviderSwitcher({
                 className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs ${provider === p.id ? "bg-white/[0.07] text-slate-100" : "text-slate-400 hover:bg-white/[0.03]"}`}
               >
                 <span className={`size-1.5 shrink-0 rounded-full ${p.ready ? "bg-emerald-400" : "bg-slate-600"}`} />
-                <span className="min-w-0 flex-1 truncate">{p.label}</span>
-                {p.active && <Check className="size-3.5 text-emerald-300" />}
+                <span className="min-w-0 flex-1 leading-snug">{p.label}</span>
+                {p.active && <Check className="size-3.5 shrink-0 text-emerald-300" />}
               </button>
             ))}
             <button onClick={onOpenControl} className="mt-2 w-full rounded-lg px-2 py-1.5 text-left text-label text-emerald-300 hover:bg-white/[0.03]">
@@ -125,9 +125,20 @@ export function ProviderSwitcher({
             </button>
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="border-b border-line p-2">
-              {current && !current.ready && (
-                <div className="mb-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-label text-amber-200 ring-1 ring-amber-500/25">{current.detail}</div>
+            <div className="border-b border-line p-2.5">
+              {current && (
+                <div className="mb-2 space-y-1">
+                  <p className="whitespace-normal text-label leading-relaxed text-slate-300">{current.blurb}</p>
+                  <div
+                    className={`rounded-lg px-2.5 py-1.5 text-label leading-relaxed ring-1 ${
+                      current.ready
+                        ? "bg-emerald-500/10 text-emerald-200 ring-emerald-500/25"
+                        : "bg-amber-500/10 text-amber-200 ring-amber-500/25"
+                    }`}
+                  >
+                    {current.detail}
+                  </div>
+                </div>
               )}
               <div className="flex items-center gap-2 rounded-lg bg-canvas px-2 ring-1 ring-line">
                 <Search className="size-3.5 text-slate-500" />
