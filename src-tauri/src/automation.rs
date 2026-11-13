@@ -99,7 +99,7 @@ fn no_pr_retry(m: &Mission) -> anyhow::Result<String> {
             m.id
         ));
     }
-    let to = crate::bus::best_headless(&from, crate::bus::headless_available).unwrap_or("hermes");
+    let to = crate::bus::best_headless(&from, crate::agent_limits::usable).unwrap_or("hermes");
     missions::block(
         &m.id,
         &format!("{from} finished without a pull request"),
@@ -212,6 +212,8 @@ pub struct TickReport {
     pub fix_missions: Vec<String>,
     /// The fleet pause switch is on: nothing new starts or merges this pass.
     pub paused: bool,
+    /// The network is unreachable: nothing new starts this pass, and silence is not judged stuck.
+    pub offline: bool,
     /// The global metered budget is spent: metered missions neither start nor keep running.
     pub budget_stopped: bool,
     pub kept_awake: bool,
@@ -432,7 +434,14 @@ pub fn tick(v: &Vault) -> TickReport {
                 }
             })
             .collect();
-        let queued: Vec<&Mission> = if report.paused { Vec::new() } else { queued };
+        // No network: nothing new starts (every agent needs a provider); work resumes when it is back.
+        let offline = !queued.is_empty() && !crate::agent_limits::online();
+        report.offline = offline;
+        let queued: Vec<&Mission> = if report.paused || offline {
+            Vec::new()
+        } else {
+            queued
+        };
         for id in startable(
             &queued,
             &running,

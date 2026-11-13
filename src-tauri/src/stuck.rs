@@ -156,6 +156,20 @@ pub fn check_bus(v: &Vault, m: &Mission, task: &str, now: i64) -> Option<String>
         // An IDE agent that claimed the task: its activity is all there is to watch.
         true
     };
+    // No network: silence is expected. Judge again once it returns.
+    if !crate::agent_limits::online() {
+        kv_put(&format!("{KV_BEAT}{}", m.id), &now.to_string());
+        return None;
+    }
+    // The worker stopped because its plan's limit was reached: hand the work to another agent at
+    // once, without spending the retry or asking the owner.
+    if headless && !alive {
+        let log = crate::agent_limits::tail(&v.worker_logs().join(format!("{task}.log")));
+        if crate::agent_limits::limit_in_log(crate::agent_limits::latest_run(&log)) {
+            crate::agent_limits::mark(&agent, now + crate::agent_limits::DEFAULT_LIMIT_SECS);
+            return Some(limit_handoff(v, m, task, &agent, now));
+        }
+    }
     let last = bus_last(v, m, task);
     match judge(alive, last, now, retries(&m.id)) {
         Verdict::Healthy => None,
@@ -164,12 +178,22 @@ pub fn check_bus(v: &Vault, m: &Mission, task: &str, now: i64) -> Option<String>
             let quiet = (now - last) / 60;
             if headless {
                 crate::bus::stop_task_worker(task);
+                // A worker that went quiet usually means its provider is in trouble: the retry
+                // goes to another agent when one is usable, else to the same one.
+                let to = crate::bus::best_headless(&agent, crate::agent_limits::usable)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| agent.clone());
                 let note = format!(
-                    "no heartbeat for {quiet} min (worker {}); retrying once",
+                    "no heartbeat for {quiet} min (worker {}); retrying once with {to}",
                     if alive { "silent" } else { "gone" }
                 );
                 let _ = v.log_activity(task, &note);
-                if let Err(e) = crate::bus::start_worker(v, task, &agent) {
+                if to != agent {
+                    let _ = v.move_task(task, State::Pending, "agentos-studio");
+                    let _ = v.claim_task(task, &to);
+                    let _ = missions::reassign(&m.id, &to, &note);
+                }
+                if let Err(e) = crate::bus::start_worker(v, task, &to) {
                     let _ = v.log_activity(task, &format!("retry did not start: {e:#}"));
                 }
                 Some(format!("{}: {note}", m.id))
@@ -202,6 +226,29 @@ pub fn check_bus(v: &Vault, m: &Mission, task: &str, now: i64) -> Option<String>
             Some(format!("{}: blocked", m.id))
         }
     }
+}
+
+/// Move a mission whose agent hit its usage limit to another usable agent. When none is usable,
+/// the mission waits (its heartbeat is refreshed) instead of being retried into the same limit.
+fn limit_handoff(v: &Vault, m: &Mission, task: &str, agent: &str, now: i64) -> String {
+    crate::bus::stop_task_worker(task);
+    let Some(to) = crate::bus::best_headless(agent, crate::agent_limits::usable) else {
+        kv_put(&format!("{KV_BEAT}{}", m.id), &now.to_string());
+        let note = format!("{agent} hit its usage limit and no other agent is free; waiting");
+        let _ = v.log_activity(task, &note);
+        return format!("{}: {note}", m.id);
+    };
+    let note = format!("{agent} hit its usage limit; handed to {to}");
+    let _ = v.move_task(task, State::Pending, "agentos-studio");
+    if v.claim_task(task, to).is_ok() {
+        let _ = v.log_activity(task, &note);
+        let _ = missions::reassign(&m.id, to, &note);
+        if let Err(e) = crate::bus::start_worker(v, task, to) {
+            let _ = v.log_activity(task, &format!("no worker started: {e:#}"));
+        }
+    }
+    reset(&m.id);
+    format!("{}: {note}", m.id)
 }
 
 /// Judge a running Hermes kanban mission. `view` is the current `kanban show`.

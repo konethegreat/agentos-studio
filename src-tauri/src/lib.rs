@@ -2,6 +2,7 @@
 
 pub mod acp;
 pub mod acp_host;
+pub mod agent_limits;
 pub mod agent_log;
 pub mod agent_packs;
 pub mod agents;
