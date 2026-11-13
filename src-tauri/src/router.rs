@@ -54,7 +54,39 @@ pub struct Verdict {
     pub decline: Option<String>,
 }
 
-/// The router's current decision for every role that has Hermes history. Pure.
+/// The router's current decision for every role that has Hermes history, gated by eval replays.
+pub fn verdicts_from_with_evals(
+    all: &[missions::Mission],
+    evals: &[EvalSummary],
+    now: i64,
+) -> Vec<Verdict> {
+    let mut roles: Vec<String> = all
+        .iter()
+        .filter(|m| m.agent == "hermes")
+        .map(|m| m.role.clone())
+        .collect();
+    roles.sort();
+    roles.dedup();
+    roles
+        .into_iter()
+        .map(
+            |role| match pick(all, &role, now).and_then(|s| with_eval_evidence(s, evals)) {
+                Ok(s) => Verdict {
+                    role,
+                    pick: Some(s),
+                    decline: None,
+                },
+                Err(why) => Verdict {
+                    role,
+                    pick: None,
+                    decline: Some(why),
+                },
+            },
+        )
+        .collect()
+}
+
+/// The router's current decision for every role that has Hermes history (missions only). Pure.
 pub fn verdicts_from(all: &[missions::Mission], now: i64) -> Vec<Verdict> {
     let mut roles: Vec<String> = all
         .iter()
@@ -81,8 +113,88 @@ pub fn verdicts_from(all: &[missions::Mission], now: i64) -> Vec<Verdict> {
 }
 
 pub fn verdicts() -> Result<Vec<Verdict>> {
-    Ok(verdicts_from(
+    Ok(verdicts_from_with_evals(
         &missions::list(500)?,
+        &eval_notes(),
+        chrono::Utc::now().timestamp(),
+    ))
+}
+
+/// Per-model scorecard built from real missions and evaluation replays.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Scorecard {
+    pub role: String,
+    pub provider: String,
+    pub model: String,
+    pub attempts: usize,
+    pub approvals: usize,
+    pub approval_rate: f64,
+    pub avg_cost_usd: f64,
+    pub score: f64,
+    pub eval_total: usize,
+    pub eval_improving: usize,
+    pub ready_for_default: bool,
+    pub reason: String,
+}
+
+/// Compute per-model scorecards from real missions and eval replay notes. Pure.
+pub fn scorecards_from(
+    all: &[missions::Mission],
+    evals: &[EvalSummary],
+    now: i64,
+) -> Vec<Scorecard> {
+    let verdicts = verdicts_from_with_evals(all, evals, now);
+    suggestions_from(all)
+        .into_iter()
+        .map(|s| {
+            let eval_total = evals
+                .iter()
+                .filter(|e| e.model.trim() == s.model.trim())
+                .count();
+            let eval_improving = improving_replays(&s.model, evals);
+            let ready_for_default = verdicts.iter().any(|v| {
+                v.role == s.role
+                    && v.pick
+                        .as_ref()
+                        .is_some_and(|p| p.provider == s.provider && p.model == s.model)
+            });
+            let approval_rate = if s.attempts > 0 {
+                ((s.approvals as f64 / s.attempts as f64) * 1000.0).round() / 10.0
+            } else {
+                0.0
+            };
+            let reason = if ready_for_default {
+                format!("ready ({eval_improving}/{MIN_EVAL_REPLAYS} improving evals)")
+            } else if eval_improving < MIN_EVAL_REPLAYS {
+                format!(
+                    "{}, {eval_improving}/{MIN_EVAL_REPLAYS} improving evals",
+                    s.reason
+                )
+            } else {
+                s.reason.clone()
+            };
+            Scorecard {
+                role: s.role,
+                provider: s.provider,
+                model: s.model,
+                attempts: s.attempts,
+                approvals: s.approvals,
+                approval_rate,
+                avg_cost_usd: s.avg_cost_usd,
+                score: s.score,
+                eval_total,
+                eval_improving,
+                ready_for_default,
+                reason,
+            }
+        })
+        .collect()
+}
+
+pub fn scorecards() -> Result<Vec<Scorecard>> {
+    Ok(scorecards_from(
+        &missions::list(500)?,
+        &eval_notes(),
         chrono::Utc::now().timestamp(),
     ))
 }
@@ -426,6 +538,65 @@ mod tests {
         let dear = score(3, 4, 50.0);
         assert!(dear < cheap);
         assert!(dear > 50.0, "cost must not erase a good approval rate");
+    }
+
+    #[test]
+    fn scorecards_require_three_improving_evals_before_ready() {
+        let ms = (0..5)
+            .map(|i| {
+                m(
+                    &format!("M-{i}"),
+                    "implementer",
+                    "hermes",
+                    "anthropic",
+                    "sonnet",
+                    "approve",
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut two_evals = vec![];
+        for i in 0..2 {
+            two_evals.push(EvalSummary {
+                file: format!("e{i}.md"),
+                date: "2026-11-13".into(),
+                mission: format!("M-{i}"),
+                repo: "r".into(),
+                agent: "hermes".into(),
+                model: "sonnet".into(),
+                reviewer: "codex".into(),
+                score: 90,
+                original_score: 75,
+                verdict: "approve".into(),
+                tests: "pass".into(),
+                cost_usd: 0.0,
+                duration_s: 10,
+                comparison: "better".into(),
+            });
+        }
+        let cards_hold = scorecards_from(&ms, &two_evals, NOW);
+        assert_eq!(cards_hold.len(), 1);
+        assert!(!cards_hold[0].ready_for_default);
+        assert_eq!(cards_hold[0].eval_improving, 2);
+
+        two_evals.push(EvalSummary {
+            file: "e2.md".into(),
+            date: "2026-11-13".into(),
+            mission: "M-2".into(),
+            repo: "r".into(),
+            agent: "hermes".into(),
+            model: "sonnet".into(),
+            reviewer: "codex".into(),
+            score: 85,
+            original_score: 75,
+            verdict: "approve".into(),
+            tests: "pass".into(),
+            cost_usd: 0.0,
+            duration_s: 10,
+            comparison: "better".into(),
+        });
+        let cards_ready = scorecards_from(&ms, &two_evals, NOW);
+        assert!(cards_ready[0].ready_for_default);
+        assert_eq!(cards_ready[0].eval_improving, 3);
     }
 
     fn m(

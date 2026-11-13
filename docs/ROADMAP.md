@@ -566,12 +566,14 @@ before it. Nothing here is built yet.
   goals (v0.14), merge policy and budgets (Phase G), 1.2 prompts (the task prompts). Done when:
   one week passes with every opted-in repository's main green and tasks merging, no owner clicks
   beyond escalations, and $0 metered spend outside the set budget.
-- **1.4, intervene without stopping.** A real pause for a running mission (today Stop cancels the
-  turn), plus a run export: one mission's prompt, tool calls and results as a Markdown report in
-  the vault. Depends on: the run timeline (v0.12) and the context ledger (G10). (Was 1.3.)
-- **1.5, scorecards that move defaults.** Per-model scorecards from real missions (PARITY says
-  part) feed the shadow router. A default moves only after the evaluation replays (v0.13) beat it,
-  never silently. Depends on: 1.3, because it needs enough missions to score. (Was 1.4.)
+- **1.4, intervene without stopping (done).** Running missions pause and resume without cancelling
+  (`missions::pause`, `missions::resume`, halting kanban or stopping the bus worker while keeping
+  the worktree), plus a run export (`timeline::export_markdown` to `04_Agent_Engine/runs/<id>.md`)
+  covering the prompt, acceptance criteria, tool calls, results and redacted details.
+- **1.5, scorecards that move defaults (done).** Per-model scorecards (`router::scorecards_from`)
+  score real missions and evaluation replays, feed the shadow router (`verdicts_from_with_evals`),
+  and allow moving a folder default in Providers > Model layer only after 3 improving eval replays
+  beat the original run, never silently.
 - **When Hermes ships them:** outbound network rules and an OS keychain for unattended workers.
   Safety already shows both as waiting on Hermes; Studio wires them up when Hermes provides the
   surface, and does not build its own proxy or vault.

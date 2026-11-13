@@ -21,7 +21,9 @@ use serde::Serialize;
 use crate::store;
 
 pub const ROLES: [&str; 5] = ["planner", "implementer", "reviewer", "gatekeeper", "memory"];
-pub const STATUSES: [&str; 6] = ["queued", "running", "review", "blocked", "done", "failed"];
+pub const STATUSES: [&str; 7] = [
+    "queued", "running", "paused", "review", "blocked", "done", "failed",
+];
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct Mission {
@@ -633,6 +635,36 @@ pub fn cancel(id: &str, reason: &str) -> Result<Mission> {
     get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
 }
 
+/// Pause a running mission without cancelling it: the worker stops and the worktree stays.
+pub fn pause(id: &str, reason: &str) -> Result<Mission> {
+    let c = store::open()?;
+    set_status(&c, id, &["running"], "paused")?;
+    let note = if reason.trim().is_empty() {
+        "Paused by owner"
+    } else {
+        reason.trim()
+    };
+    c.execute(
+        "UPDATE missions SET review_note = ?1, updated_at = ?2 WHERE id = ?3",
+        params![note, now(), id],
+    )?;
+    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+}
+
+/// Resume a paused mission back to `running` (kanban) or `queued` (bus).
+pub fn resume(id: &str, to_status: &str) -> Result<Mission> {
+    if to_status != "running" && to_status != "queued" {
+        bail!("resume target must be running or queued, got '{to_status}'");
+    }
+    let c = store::open()?;
+    set_status(&c, id, &["paused"], to_status)?;
+    c.execute(
+        "UPDATE missions SET review_note = NULL, updated_at = ?1 WHERE id = ?2",
+        params![now(), id],
+    )?;
+    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+}
+
 /// Blocked and failed are the two states a human has to resolve.
 pub fn block(id: &str, reason: &str, failed: bool) -> Result<Mission> {
     let c = store::open()?;
@@ -688,6 +720,30 @@ mod tests {
         let out = f();
         crate::store::set_test_db(None);
         out
+    }
+
+    #[test]
+    fn pause_and_resume_round_trip() {
+        with_db(|| {
+            let m = create(
+                "r",
+                "goal",
+                "tests pass",
+                "implementer",
+                "hermes",
+                "anthropic",
+                "claude",
+                0.0,
+            )
+            .unwrap();
+            dispatch(&m.id, "kanban:t_1").unwrap();
+            let paused = pause(&m.id, "Need to check diff").unwrap();
+            assert_eq!(paused.status, "paused");
+            assert_eq!(paused.review_note.as_deref(), Some("Need to check diff"));
+            let resumed = resume(&m.id, "running").unwrap();
+            assert_eq!(resumed.status, "running");
+            assert!(resumed.review_note.is_none());
+        });
     }
 
     #[test]

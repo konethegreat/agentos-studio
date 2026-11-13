@@ -313,6 +313,11 @@ pub fn halt(task_id: &str, reason: &str) -> Result<()> {
     block().map(|_| ())
 }
 
+/// Return a paused/blocked kanban task to ready so the dispatcher resumes it in its worktree.
+pub fn unblock(task_id: &str) -> Result<()> {
+    hermes(&board_args(&["unblock", strip(task_id)])).map(|_| ())
+}
+
 /// One dispatcher pass on the board, for a ready task nobody has picked up.
 /// Close a kanban task Studio no longer follows (its mission was handed to another agent).
 pub fn complete(task_id: &str, summary: &str) -> Result<()> {

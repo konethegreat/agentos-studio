@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, AtSign, FolderOpen, KeyRound, Layers, Loader2, Plus, RotateCcw, Route as RouteIcon, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, AtSign, BarChart3, FolderOpen, KeyRound, Layers, Loader2, Plus, RotateCcw, Route as RouteIcon, Trash2 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
@@ -30,6 +30,7 @@ export function ModelLayer() {
         <AliasesCard catalog={catalog} />
         <CredentialsCard />
         <MoaCard />
+        <ScorecardsCard />
       </div>
     </div>
   );
@@ -272,6 +273,68 @@ function CredentialsCard() {
           </div>
         );
       })}
+    </Section>
+  );
+}
+
+function ScorecardsCard() {
+  const toast = useToast();
+  const [cards, setCards] = useState<Awaited<ReturnType<typeof api.routerScorecards>> | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = useCallback(() => {
+    void api.routerScorecards().then(setCards).catch((e) => toast("error", errorText(e)));
+  }, [toast]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  async function promote(provider: string, model: string) {
+    const folder = await openDialog({ directory: true, title: "Folder to move default for" });
+    if (typeof folder !== "string" || !folder) return;
+    setBusy(`${provider}:${model}`);
+    try {
+      const list = await studio.models.folderModels();
+      const next = [...list.filter((f) => f.folder !== folder), { folder, provider, model }];
+      await studio.models.setFolderModels(next);
+      toast("ok", `Default for ${folder} moved to ${model}`);
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <Section
+      icon={<BarChart3 className="size-4 text-emerald-300" />}
+      title="Model scorecards"
+      hint="Approval rate and cost from real missions, gated by evaluation replays. A default moves only after 3 improving eval replays beat the original run, never silently."
+      actions={<Button size="sm" variant="ghost" icon={<RotateCcw className="size-3.5" />} onClick={load} aria-label="Reload scorecards" />}
+    >
+      {!cards && <Loader2 className="size-4 animate-spin text-slate-500" />}
+      {cards?.length === 0 && <p className="text-small text-slate-500">No decided missions yet.</p>}
+      {cards && cards.length > 0 && (
+        <ul className="divide-y divide-line rounded-lg ring-1 ring-line">
+          {cards.map((c) => (
+            <li key={`${c.role}:${c.provider}:${c.model}`} className="flex flex-wrap items-center gap-2 px-3 py-2 text-small">
+              <Badge className="bg-white/5 text-slate-300 ring-white/10">{c.role}</Badge>
+              <span className="font-mono text-slate-200">{c.model}</span>
+              <span className="text-slate-500">via {c.provider || "default"}</span>
+              <span className="text-slate-400" title={c.reason}>
+                {c.approvals}/{c.attempts} ({c.approval_rate.toFixed(0)}%), ${c.avg_cost_usd.toFixed(2)}, {c.eval_improving}/3 evals
+              </span>
+              <Button
+                size="sm"
+                variant={c.ready_for_default ? "primary" : "ghost"}
+                disabled={!c.ready_for_default || busy !== null}
+                busy={busy === `${c.provider}:${c.model}`}
+                title={c.ready_for_default ? "Move a folder default to this proven model" : c.reason}
+                onClick={() => void promote(c.provider, c.model)}
+              >
+                {c.ready_for_default ? "Move default" : "Held"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
     </Section>
   );
 }

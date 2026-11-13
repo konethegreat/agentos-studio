@@ -1252,6 +1252,11 @@ pub async fn router_verdicts() -> CmdResult<Vec<crate::router::Verdict>> {
 }
 
 #[tauri::command]
+pub async fn router_scorecards() -> CmdResult<Vec<crate::router::Scorecard>> {
+    blocking(crate::router::scorecards).await
+}
+
+#[tauri::command]
 pub fn model_catalog() -> crate::models::Catalog {
     crate::models::catalog()
 }
@@ -1900,6 +1905,74 @@ pub async fn set_mission_kind(id: String, kind: String) -> CmdResult<()> {
 #[tauri::command]
 pub async fn set_mission_urgent(id: String, urgent: bool) -> CmdResult<()> {
     blocking(move || crate::assign::set_urgent(&id, urgent)).await
+}
+
+/// Pause a running mission without cancelling it: halt kanban or stop the bus worker, keeping the worktree.
+#[tauri::command]
+pub async fn pause_mission(
+    id: String,
+    reason: Option<String>,
+) -> CmdResult<crate::missions::Mission> {
+    blocking(move || {
+        let m = crate::missions::get(&id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
+        let why = reason.as_deref().unwrap_or("Paused by owner");
+        if let Some(task) = m.task_id.as_deref() {
+            if crate::kanban::is_kanban(Some(task)) {
+                crate::kanban::halt(task, why)?;
+            } else {
+                crate::bus::stop_task_worker(task);
+            }
+        }
+        let updated = crate::missions::pause(&id, why)?;
+        let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+            mission_id: Some(&id),
+            kind: "note",
+            from_agent: "human",
+            to_agent: &m.agent,
+            summary: "Paused mission",
+            detail: why,
+            ..Default::default()
+        });
+        Ok(updated)
+    })
+    .await
+}
+
+/// Resume a paused mission in its existing worktree.
+#[tauri::command]
+pub async fn resume_mission(id: String) -> CmdResult<crate::missions::Mission> {
+    blocking(move || {
+        let m = crate::missions::get(&id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
+        let to_status = if let Some(task) = m.task_id.as_deref() {
+            if crate::kanban::is_kanban(Some(task)) {
+                crate::kanban::unblock(task)?;
+                "running"
+            } else {
+                "queued"
+            }
+        } else {
+            "queued"
+        };
+        let updated = crate::missions::resume(&id, to_status)?;
+        let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+            mission_id: Some(&id),
+            kind: "note",
+            from_agent: "human",
+            to_agent: &m.agent,
+            summary: "Resumed mission",
+            detail: "Resumed by owner",
+            ..Default::default()
+        });
+        Ok(updated)
+    })
+    .await
+}
+
+/// Export one mission's prompt, tool calls and results as a Markdown report in the vault.
+#[tauri::command]
+pub async fn export_mission_run(state: State<'_, AppState>, id: String) -> CmdResult<String> {
+    let v = current_vault(&state);
+    blocking(move || crate::timeline::export_markdown(&v, &id)).await
 }
 
 /// One mission's run timeline across agents, from creation to merge.
