@@ -320,7 +320,7 @@ export interface ProviderView {
   id: string;
   label: string;
   hermes_provider: string;
-  kind: "subscription" | "api_key" | "oauth" | "local";
+  kind: "subscription" | "api_key" | "oauth" | "local" | "antigravity";
   key_env: string[];
   key_set: boolean;
   ready: boolean;

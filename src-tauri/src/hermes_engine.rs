@@ -126,6 +126,7 @@ pub struct ProviderDef {
 }
 
 pub const SUBSCRIPTION_PLUGIN: &str = "claude-subscription-directsdk-experimental";
+pub const ANTIGRAVITY_PLUGIN: &str = "antigravity-oauth";
 
 pub const PROVIDERS: &[ProviderDef] = &[
     ProviderDef {
@@ -142,6 +143,23 @@ pub const PROVIDERS: &[ProviderDef] = &[
             "claude-haiku-5-5[1m]",
         ],
         blurb: "Runs on your Claude Pro or Max plan through Claude Code. No API key.",
+    },
+    ProviderDef {
+        id: "antigravity-oauth",
+        label: "Antigravity (OAuth)",
+        hermes: ANTIGRAVITY_PLUGIN,
+        kind: "antigravity",
+        key_env: &[],
+        base_url: None,
+        models_dev: "google",
+        defaults: &[
+            "gemini-4-hydrogen-medium",
+            "gemini-4-hydrogen-high",
+            "gemini-3.8-flash-high",
+            "claude-opus-5-5-medium",
+            "claude-sonnet-5-5-medium",
+        ],
+        blurb: "Runs on your Google Antigravity subscription via antigravity-oauth. No API key.",
     },
     ProviderDef {
         id: "openrouter",
@@ -317,6 +335,20 @@ pub fn get_provider_config() -> Result<ProviderConfig> {
                     )
                 }
             }
+            "antigravity" => {
+                let plugin = plugins.iter().any(|x| x == ANTIGRAVITY_PLUGIN);
+                if plugin {
+                    (
+                        true,
+                        "Plugin enabled; uses your Antigravity sign-in".to_string(),
+                    )
+                } else {
+                    (
+                        false,
+                        "Plugin not enabled yet; Activate or Connections enables it".to_string(),
+                    )
+                }
+            }
             "local" => match &ollama {
                 Some(m) if !m.is_empty() => {
                     (true, format!("Ollama running with {} model(s)", m.len()))
@@ -436,6 +468,16 @@ pub fn set_active_provider(
                 log.push(format!("Enabled plugin {SUBSCRIPTION_PLUGIN}"));
             }
         }
+        "antigravity" => {
+            let cfg = read_config()?;
+            if !enabled_plugins(&cfg)
+                .iter()
+                .any(|p| p == ANTIGRAVITY_PLUGIN)
+            {
+                hermes_ok(&["plugins", "enable", ANTIGRAVITY_PLUGIN])?;
+                log.push(format!("Enabled plugin {ANTIGRAVITY_PLUGIN}"));
+            }
+        }
         _ => {}
     }
     hermes_ok(&["config", "set", "model.provider", def.hermes])?;
@@ -475,7 +517,7 @@ pub fn login_provider(provider: &str) -> Result<String> {
             procs::spawn_console("claude", &["auth", "login"])?;
             Ok("Opened the Claude sign-in window".into())
         }
-        "oauth" => {
+        "oauth" | "antigravity" => {
             procs::spawn_console("hermes", &["auth", "add", def.hermes])?;
             Ok(format!("Opened the {} sign-in window", def.label))
         }
