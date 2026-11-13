@@ -485,7 +485,7 @@ export interface Mission {
   acceptance: string;
   role: string;
   agent: string;
-  status: "queued" | "running" | "review" | "blocked" | "done" | "failed";
+  status: "queued" | "running" | "paused" | "review" | "blocked" | "done" | "failed";
   provider: string;
   model: string;
   budget_usd: number;
@@ -1266,6 +1266,24 @@ export const api = {
     invoke<{ role: string; pick: { provider: string; model: string; score: number; reason: string } | null; decline: string | null }[]>("router_verdicts"),
   routerSuggestions: () =>
     invoke<{ role: string; provider: string; model: string; attempts: number; approvals: number; score: number; avg_cost_usd: number; reason: string }[]>("router_suggestions"),
+  routerScorecards: () =>
+    invoke<{
+      role: string;
+      provider: string;
+      model: string;
+      attempts: number;
+      approvals: number;
+      approval_rate: number;
+      avg_cost_usd: number;
+      score: number;
+      eval_total: number;
+      eval_improving: number;
+      ready_for_default: boolean;
+      reason: string;
+    }[]>("router_scorecards"),
+  pauseMission: (id: string, reason?: string) => invoke<Mission>("pause_mission", { id, reason: reason ?? null }),
+  resumeMission: (id: string) => invoke<Mission>("resume_mission", { id }),
+  exportMissionRun: (id: string) => invoke<string>("export_mission_run", { id }),
 
   modelCatalog: () =>
     invoke<{

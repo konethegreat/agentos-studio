@@ -58,7 +58,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Per-workspace model defaults | yes | a folder pins a model for new Hermes chats; the deepest folder wins | |
 | Automatic model selection | yes | opt-in per install: the router pins new Hermes missions with no explicit model or policy, only with 5 decided missions and a 5-point lead | |
 | Cost guardrails and budgets | yes | per-mission budgets from Hermes usage data, metered providers only; time caps | |
-| Per-model scorecards from real sessions | part | approval rate and cost per role, provider and model from missions | |
+| Per-model scorecards from real sessions | yes | approval rate, cost and eval replays per role, provider and model (`router::scorecards_from`); defaults move only after 3 improving evals | |
 
 ## Memory and knowledge
 
@@ -92,7 +92,7 @@ Status legend: **yes** shipped, **part** partial, **plan** on the roadmap, **no*
 | Live tool timeline | yes | cards plus worker and PTY output | |
 | Reasoning panel | yes | ACP thought chunks in the collapsible Thinking panel | |
 | Token and cost per turn | part | usage strip: context, session spend, compactions, credits | |
-| Pause, stop, intervene | part | stop cancels the turn and approvals let you intervene; there is no pause | |
+| Pause, stop, intervene | yes | pause and resume running missions without cancelling (`missions::pause`, `missions::resume`), stop cancels, approvals let you intervene, and run timelines export to the vault | |
 | Router decision explanation | yes | the reason (or why it declined) is shown on each mission it pinned | |
 
 ## Where we deliberately differ

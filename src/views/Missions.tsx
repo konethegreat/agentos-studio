@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, ClipboardCheck, GitMerge, Play, Plus, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { ChevronDown, ChevronRight, ClipboardCheck, GitMerge, Pause, Play, Plus, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { api, errorText, type AutomationStatus, type BudgetStatus, type InstalledAgent, type Mission } from "../lib/api";
 import { useToast } from "../components/Toasts";
@@ -9,6 +9,7 @@ import { missionGuides } from "../lib/guides";
 const STATUS_STYLE: Record<string, string> = {
   queued: "bg-slate-500/10 text-slate-300 ring-slate-500/25",
   running: "bg-sky-500/10 text-sky-300 ring-sky-500/25",
+  paused: "bg-amber-500/10 text-amber-200 ring-amber-500/25",
   review: "bg-amber-500/10 text-amber-300 ring-amber-500/25",
   blocked: "bg-orange-500/10 text-orange-300 ring-orange-500/25",
   done: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25",
@@ -220,6 +221,32 @@ export function Missions({ repos }: { repos: string[] }) {
     try {
       await api.dispatchMission(id);
       toast("ok", "Mission dispatched to the Agent Bus");
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pauseRun(id: string) {
+    setBusy(true);
+    try {
+      await api.pauseMission(id);
+      toast("ok", `${id} paused; worktree kept`);
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resumeRun(id: string) {
+    setBusy(true);
+    try {
+      await api.resumeMission(id);
+      toast("ok", `${id} resumed`);
       await load();
     } catch (e) {
       toast("error", errorText(e));
@@ -645,6 +672,26 @@ export function Missions({ repos }: { repos: string[] }) {
                       </button>
                     )}
                   </>
+                )}
+                {m.status === "running" && (
+                  <button
+                    onClick={() => void pauseRun(m.id)}
+                    disabled={busy}
+                    title="Pause this mission without cancelling it; worktree and progress stay"
+                    className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-amber-200 ring-1 ring-amber-500/25 hover:bg-amber-500/10 disabled:opacity-50"
+                  >
+                    <Pause className="size-3" /> Pause
+                  </button>
+                )}
+                {m.status === "paused" && (
+                  <button
+                    onClick={() => void resumeRun(m.id)}
+                    disabled={busy}
+                    title="Resume this paused mission in its existing worktree"
+                    className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/10 disabled:opacity-50"
+                  >
+                    <Play className="size-3" /> Resume
+                  </button>
                 )}
                 {m.status === "queued" && (
                   <button

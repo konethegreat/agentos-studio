@@ -486,6 +486,132 @@ pub fn summaries(limit: usize) -> Result<Vec<Summary>> {
         .collect())
 }
 
+fn iso(at: i64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp(at, 0)
+        .map(|d| d.to_rfc3339())
+        .unwrap_or_else(|| at.to_string())
+}
+
+/// Render one mission's prompt, acceptance criteria, cost, tool calls and results as Markdown.
+pub fn format_markdown(tl: &Timeline) -> String {
+    let m = &tl.mission;
+    let pr = m.pr_url.as_deref().unwrap_or("");
+    let mut out = format!(
+        "---
+title: Run {id}
+mission: {id}
+repo: {repo}
+role: {role}
+agent: {agent}
+model: {model}
+status: {status}
+cost_usd: {cost:.4}
+duration_s: {dur}
+pr_url: {pr}
+---
+
+# {id}: {goal}
+
+## Prompt & Acceptance
+
+**Goal:** {goal}
+
+**Acceptance criteria:**
+{acc}
+
+## Summary
+
+- Agents: {agents}
+- Handoffs: {handoffs}, Asks: {asks}
+- Duration: {dur}s
+- Metered cost: ${cost:.2}
+",
+        id = m.id,
+        repo = m.repo,
+        role = m.role,
+        agent = m.agent,
+        model = if m.model.is_empty() {
+            "inherit"
+        } else {
+            &m.model
+        },
+        status = m.status,
+        cost = tl.total_cost_usd,
+        dur = tl.duration_s.max(0),
+        goal = crate::constitution_gate::redact(&m.goal),
+        acc = crate::constitution_gate::redact(&m.acceptance),
+        agents = if tl.agents.is_empty() {
+            m.agent.clone()
+        } else {
+            tl.agents.join(", ")
+        },
+        handoffs = tl.handoffs,
+        asks = tl.asks,
+    );
+    if let (Some(rv), Some(verdict)) = (&m.reviewer, &m.review_verdict) {
+        out.push_str(&format!(
+            "- Review: {verdict} by {rv}
+"
+        ));
+    }
+    out.push_str(
+        "
+## Timeline
+
+",
+    );
+    for s in &tl.steps {
+        let mut meta = vec![s.agent.clone(), s.kind.clone()];
+        if let Some(ms) = s.duration_ms {
+            meta.push(format!("{:.1}s", ms as f64 / 1000.0));
+        }
+        if let Some(c) = s.cost_usd.filter(|c| *c > 0.0) {
+            meta.push(format!("${c:.3}"));
+        }
+        meta.push(s.source.clone());
+        out.push_str(&format!(
+            "- **{}** [{}]: {}
+",
+            iso(s.at),
+            meta.join(", "),
+            crate::constitution_gate::redact(&s.title)
+        ));
+        if !s.detail.trim().is_empty() {
+            let safe = crate::constitution_gate::redact(s.detail.trim());
+            out.push_str(
+                "
+```text
+",
+            );
+            out.push_str(&safe);
+            out.push_str(
+                "
+```
+
+",
+            );
+        }
+    }
+    out
+}
+
+/// Export one mission's prompt, tool calls and results to `04_Agent_Engine/runs/<id>.md` in the vault.
+pub fn export_markdown(v: &Vault, id: &str) -> Result<String> {
+    let tl = mission(v, id)?;
+    let md = format_markdown(&tl);
+    let rel = format!("04_Agent_Engine/runs/{id}.md");
+    let dest = v
+        .root
+        .join("04_Agent_Engine")
+        .join("runs")
+        .join(format!("{id}.md"));
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&dest, md)?;
+    Ok(rel)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,6 +622,42 @@ mod tests {
 - 2026-11-08T10:01:00+02:00 - claude-code worker started from AgentOS Studio (pid 4)\n\
 - 2026-11-08T10:09:00+02:00 - completed by claude-code\n\n\
 ## Completion summary\n> [!success] Completed by **claude-code** at 2026-11-08T10:09:00+02:00\n\nOpened https://github.com/o/r/pull/5\n";
+
+    #[test]
+    fn format_markdown_includes_prompt_steps_and_redacts() {
+        let m = Mission {
+            id: "M-099".into(),
+            repo: "r".into(),
+            goal: "Export run sk-ant-api03-secretvalue1234567890".into(),
+            acceptance: "Tests pass".into(),
+            role: "implementer".into(),
+            agent: "hermes".into(),
+            status: "done".into(),
+            ..Default::default()
+        };
+        let tl = Timeline {
+            mission: m,
+            steps: vec![step(
+                1_800_000_000,
+                "hermes",
+                "tool",
+                "Bash",
+                "npm test",
+                "state.db",
+            )],
+            agents: vec!["hermes".into()],
+            handoffs: 0,
+            asks: 0,
+            total_cost_usd: 0.12,
+            duration_s: 42,
+        };
+        let md = format_markdown(&tl);
+        assert!(md.contains("## Prompt & Acceptance"));
+        assert!(md.contains("Tests pass"));
+        assert!(md.contains("Bash"));
+        assert!(md.contains("npm test"));
+        assert!(!md.contains("secretvalue1234567890"));
+    }
 
     #[test]
     fn bus_activity_becomes_timed_steps_with_their_actor() {

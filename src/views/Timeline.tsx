@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftRight, ChevronLeft, ChevronRight, GitPullRequest, History, MessageCircleQuestion, Pause, Play, RefreshCw, Users } from "lucide-react";
+import { ArrowLeftRight, ChevronLeft, ChevronRight, Download, GitPullRequest, History, MessageCircleQuestion, Pause, Play, RefreshCw, Users } from "lucide-react";
 import { api, errorText, type MissionTimeline, type TimelineSummary } from "../lib/api";
 import { Badge, Button, Card, Empty } from "../components/ui";
 import { useToast } from "../components/Toasts";
@@ -210,6 +210,18 @@ export function Timeline() {
                     Show all
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  title="Export prompt, tool calls and results to 04_Agent_Engine/runs/ in the vault"
+                  onClick={() =>
+                    void api
+                      .exportMissionRun(tl.mission.id)
+                      .then((rel) => toast("ok", `Saved ${rel}`))
+                      .catch((e) => toast("error", errorText(e)))
+                  }
+                >
+                  <Download className="size-4" /> Export
+                </Button>
               </div>
             </div>
             {cursor !== null && (
