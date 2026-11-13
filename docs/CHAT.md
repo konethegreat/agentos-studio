@@ -9,6 +9,16 @@ A chat runs in a folder. New chats start in the last folder you used, then the a
 root, then your home folder; system folders are refused. Pick a repository in the folder picker
 before the first message so the agent works inside it and the chat is filed under that project.
 
+## Filed by repository
+
+Every Hermes session that worked in a repository is filed under that repository's folder in the
+sidebar, wherever it started: a chat, a mission worker (its `.worktrees/` checkout), a review, a
+Hermes kanban task (its board's project), the CLI or a messaging gateway. The folder is created
+the first time a repository shows up, in the **Repositories** workspace, linked to its Hermes
+project. Sessions that ran outside any repository (your home folder, a scratch or temporary
+folder) stay in Unfiled. A chat you drag somewhere else stays there. Turn filing off with kv
+`org.auto_repo_folders` set to `0`.
+
 ## Context and compaction
 
 The usage strip above the conversation shows the model, how full the context window is, what the

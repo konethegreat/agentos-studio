@@ -4,6 +4,12 @@
 //! is in the folder it was explicitly moved to, otherwise in the folder whose directory is
 //! the longest prefix of the session's working directory (the rule Hermes projects use),
 //! otherwise Unfiled. Folders can be linked to Hermes projects (`hermes project create`).
+//!
+//! Filing by repository (on unless kv `org.auto_repo_folders` is `0`): every session that worked
+//! in a repository gets that repository's folder, created on first sight in the "Repositories"
+//! workspace. A session counts as the repository's when its directory is inside it, inside one of
+//! its `.worktrees/` (a mission), or in a Hermes kanban workspace of the repository's project. A
+//! chat you move by hand stays where you put it.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -263,6 +269,129 @@ pub fn place(
     sessions: Vec<SessionSummary>,
     folders: &[Folder],
 ) -> Result<Vec<PlacedChat>> {
+    place_with(c, sessions, folders, &[])
+}
+
+/// The repository a session worked in, as its folder on disk. Pure over its inputs:
+/// a `.worktrees/<mission>` directory belongs to the repository above it, a Hermes kanban
+/// workspace (`kanban/boards/<board>/workspaces/...`) to the project named by its board, and
+/// anything else to the Hermes project folder or git root that contains it. Scratch and
+/// temporary folders belong to no repository.
+pub fn repo_of(s: &SessionSummary, projects: &[HermesProject]) -> Option<String> {
+    let raw = if s.repo_root.trim().is_empty() {
+        s.cwd.trim()
+    } else {
+        s.repo_root.trim()
+    };
+    if raw.is_empty() {
+        return None;
+    }
+    let n = norm_path(raw);
+    let lower = n.to_lowercase();
+    if let Some(i) = lower.find("/kanban/boards/") {
+        let board = n[i + "/kanban/boards/".len()..]
+            .split('/')
+            .next()
+            .unwrap_or("");
+        return projects
+            .iter()
+            .filter(|p| !p.archived && p.slug.eq_ignore_ascii_case(board))
+            .find_map(|p| {
+                p.primary_path
+                    .clone()
+                    .or_else(|| p.folders.first().cloned())
+            });
+    }
+    let base = match lower.find("/.worktrees/") {
+        Some(i) => &raw[..i],
+        None => raw,
+    };
+    let in_project = projects
+        .iter()
+        .filter(|p| !p.archived)
+        .flat_map(|p| p.primary_path.iter().chain(p.folders.iter()))
+        .filter(|f| path_contains(f, base))
+        .max_by_key(|f| norm_path(f).len())
+        .cloned();
+    if in_project.is_some() {
+        return in_project;
+    }
+    // Outside every project: a git root counts, unless it is a scratch or temporary folder.
+    let throwaway = lower.contains("/appdata/local/temp/")
+        || lower.contains("/hermes/cache/")
+        || lower.ends_with("/windows/system32");
+    (!throwaway && !s.repo_root.trim().is_empty()).then(|| base.to_string())
+}
+
+pub const REPO_WORKSPACE: &str = "Repositories";
+
+/// Make sure every repository a session worked in has a folder (in the Repositories workspace,
+/// unless a folder for that path already exists anywhere). Returns how many folders it created.
+pub fn file_by_repo(
+    c: &Connection,
+    sessions: &[SessionSummary],
+    projects: &[HermesProject],
+) -> Result<usize> {
+    if store::kv_get(c, "org.auto_repo_folders")?.as_deref() == Some("0") {
+        return Ok(0);
+    }
+    let mut known: BTreeSet<String> = folders(c)?
+        .iter()
+        .filter_map(|f| f.path.as_deref().map(norm_path))
+        .collect();
+    let mut ws: Option<String> = None;
+    let mut made = 0;
+    for s in sessions {
+        let Some(repo) = repo_of(s, projects) else {
+            continue;
+        };
+        if known.contains(&norm_path(&repo)) || !Path::new(&repo).is_dir() {
+            continue;
+        }
+        let ws_id = match &ws {
+            Some(id) => id.clone(),
+            None => {
+                let id = match workspaces(c)?
+                    .into_iter()
+                    .find(|w| w.name == REPO_WORKSPACE)
+                {
+                    Some(w) => w.id,
+                    None => create_workspace(c, REPO_WORKSPACE)?.id,
+                };
+                ws = Some(id.clone());
+                id
+            }
+        };
+        let project = projects.iter().find(|p| {
+            p.primary_path
+                .iter()
+                .chain(p.folders.iter())
+                .any(|f| norm_path(f) == norm_path(&repo))
+        });
+        let name = Path::new(&repo)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| repo.clone());
+        let id = create_folder(c, &ws_id, None, &name, Some(&repo))?;
+        if let Some(p) = project {
+            c.execute(
+                "UPDATE folders SET project_slug = ?1 WHERE id = ?2",
+                params![p.slug, id],
+            )?;
+        }
+        known.insert(norm_path(&repo));
+        made += 1;
+    }
+    Ok(made)
+}
+
+/// As `place`, also filing kanban and mission sessions under their repository's folder.
+pub fn place_with(
+    c: &Connection,
+    sessions: Vec<SessionSummary>,
+    folders: &[Folder],
+    projects: &[HermesProject],
+) -> Result<Vec<PlacedChat>> {
     let meta = chat_meta(c)?;
     let tags = tags_for(c, "chat")?;
     let by_id: HashMap<&str, &Folder> = folders.iter().map(|f| (f.id.as_str(), f)).collect();
@@ -275,7 +404,9 @@ pub fn place(
                 .filter(|id| by_id.contains_key(id.as_str()));
             let (folder_id, auto) = match explicit {
                 Some(id) => (Some(id), false),
-                None => match auto_folder(folders, &s.cwd) {
+                None => match auto_folder(folders, &s.cwd)
+                    .or_else(|| repo_of(&s, projects).and_then(|r| auto_folder(folders, &r)))
+                {
                     Some(f) if m.and_then(|m| m.workspace_id.as_ref()).is_none() => {
                         (Some(f.id.clone()), true)
                     }
@@ -356,8 +487,9 @@ pub fn snapshot_in(
     sessions: Vec<SessionSummary>,
     projects: Vec<HermesProject>,
 ) -> Result<OrgSnapshot> {
+    let _ = file_by_repo(c, &sessions, &projects);
     let folders = folders(c)?;
-    let chats = place(c, sessions, &folders)?;
+    let chats = place_with(c, sessions, &folders, &projects)?;
     Ok(OrgSnapshot {
         workspaces: workspaces(c)?,
         attachments: attachments(c)?,
@@ -896,6 +1028,76 @@ mod tests {
             "parent in another workspace"
         );
         assert!(create_folder(&c, &ws.id, None, "  ", None).is_err());
+    }
+
+    #[test]
+    fn sessions_are_filed_under_their_repository() {
+        let c = store::test_conn();
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("site");
+        std::fs::create_dir_all(repo.join(".worktrees").join("m-1-2")).unwrap();
+        let repo_s = repo.to_str().unwrap().to_string();
+        let projects = vec![HermesProject {
+            id: "p".into(),
+            slug: "site".into(),
+            name: "site".into(),
+            primary_path: Some(repo_s.clone()),
+            archived: false,
+            folders: vec![repo_s.clone()],
+        }];
+        let kanban = SessionSummary {
+            id: "k".into(),
+            cwd: "C:/Users/x/AppData/Local/hermes/kanban/boards/site/workspaces/t_1".into(),
+            ..Default::default()
+        };
+        let worktree = session("w", &format!("{repo_s}/.worktrees/m-1-2"));
+        let scratch = session("t", "C:/Users/x/AppData/Local/Temp/probe");
+        let gateway = session("g", "C:/Windows/System32");
+        assert_eq!(
+            repo_of(&kanban, &projects).as_deref(),
+            Some(repo_s.as_str())
+        );
+        assert_eq!(
+            repo_of(&worktree, &projects).as_deref(),
+            Some(repo_s.as_str())
+        );
+        assert_eq!(repo_of(&scratch, &projects), None);
+        assert_eq!(repo_of(&gateway, &projects), None);
+        let sessions = vec![kanban, worktree, scratch, gateway];
+        assert_eq!(file_by_repo(&c, &sessions, &projects).unwrap(), 1);
+        assert_eq!(file_by_repo(&c, &sessions, &projects).unwrap(), 0, "once");
+        let fs = folders(&c).unwrap();
+        assert_eq!(fs.len(), 1);
+        assert_eq!(fs[0].project_slug.as_deref(), Some("site"));
+        assert_eq!(
+            workspaces(&c)
+                .unwrap()
+                .iter()
+                .find(|w| w.id == fs[0].workspace_id)
+                .unwrap()
+                .name,
+            REPO_WORKSPACE
+        );
+        let placed = place_with(&c, sessions, &fs, &projects).unwrap();
+        let at = |id: &str| {
+            placed
+                .iter()
+                .find(|p| p.session.id == id)
+                .unwrap()
+                .folder_id
+                .clone()
+        };
+        assert_eq!(at("k").as_deref(), Some(fs[0].id.as_str()));
+        assert_eq!(at("w").as_deref(), Some(fs[0].id.as_str()));
+        assert_eq!(at("t"), None);
+        assert_eq!(at("g"), None);
+        store::kv_set(&c, "org.auto_repo_folders", "0").unwrap();
+        let other = session("o", dir.path().to_str().unwrap());
+        assert_eq!(
+            file_by_repo(&c, &[other], &projects).unwrap(),
+            0,
+            "switched off"
+        );
     }
 
     #[test]
