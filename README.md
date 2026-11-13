@@ -35,6 +35,12 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.2.7
+
+- **Sessions filed by repository.** Every Hermes session that worked in a repository (a chat, a mission, a review, a kanban task, the CLI) is filed under that repository's folder in the sidebar, created on first sight in a Repositories workspace.
+- **Antigravity's model.** Pick the Gemini model Antigravity workers and reviewers run on (Work, Agents). Each model has its own quota, so when one runs out another keeps working.
+- **Real reset times.** When a provider says when a limit resets, Studio waits exactly that long before sending work back.
+
 ## What is new in 1.2.6
 
 - **Usage limits do not stop the fleet.** When an agent hits its plan's limit (Claude's 5-hour window, for example), its mission goes to the next free agent at once, and new work goes elsewhere until the limit resets. A worker that goes quiet is retried on a different agent.
