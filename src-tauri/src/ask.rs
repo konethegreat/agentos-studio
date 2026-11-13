@@ -76,6 +76,29 @@ Rules for this turn: do not edit, create or delete files, do not commit or push,
     p
 }
 
+/// Read-only commands an asked or reviewing Antigravity may run, in Claude's rule syntax. A review
+/// reads the pull request and the history; headless Antigravity cannot prompt, so anything not on
+/// this list is denied and the turn ends with no answer (the M-077 review). Nothing here writes.
+pub const AGY_READ_COMMANDS: [&str; 9] = [
+    "Bash(git diff*)",
+    "Bash(git log*)",
+    "Bash(git show*)",
+    "Bash(git status*)",
+    "Bash(git branch*)",
+    "Bash(gh pr view*)",
+    "Bash(gh pr diff*)",
+    "Bash(gh pr checks*)",
+    "Bash(gh repo view*)",
+];
+
+/// The Antigravity allow rules for a headless ask or review turn: the hub and the read-only
+/// commands. Pure.
+pub fn agy_turn_rules() -> Vec<String> {
+    let mut claude: Vec<String> = vec!["mcp__agentos-hub".to_string()];
+    claude.extend(AGY_READ_COMMANDS.iter().map(|s| s.to_string()));
+    crate::routing::agy_allow_rules(&claude)
+}
+
 /// The text of an Antigravity stream-json run: `result.response` when present, else the
 /// streamed `text_delta` of every agent response step (they arrive while ACTIVE and on DONE). Pure.
 pub fn agy_answer(stdout: &str) -> String {
@@ -241,7 +264,7 @@ pub fn run_turn(
         }
         "antigravity" => {
             let sf = qdir.join(format!("{stamp}.agy-settings.json"));
-            let allow = crate::routing::agy_allow_rules(&["mcp__agentos-hub".to_string()]);
+            let allow = agy_turn_rules();
             std::fs::write(&sf, crate::bus::agy_settings(&allow))?;
             let args = crate::bus::agy_args(&sf, crate::bus::agy_model().as_deref());
             let argv: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -363,6 +386,32 @@ pub fn ask(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn antigravity_may_read_the_pull_request_but_never_write() {
+        let rules = agy_turn_rules();
+        assert!(
+            rules.contains(&"mcp(agentos-hub/*)".to_string()),
+            "{rules:?}"
+        );
+        for needed in ["git diff", "git log", "gh pr diff", "gh pr view"] {
+            assert!(
+                rules
+                    .iter()
+                    .any(|r| r.starts_with(&format!("command(regex:{}", regex::escape(needed)))),
+                "{needed} missing from {rules:?}"
+            );
+        }
+        for r in &rules {
+            for write in [
+                "push", "commit", "merge", "reset", "checkout", "rm ", "close", "edit",
+            ] {
+                assert!(!r.contains(write), "{r} could write");
+            }
+            assert!(!r.contains("dangerously"));
+            assert_ne!(r, "command(regex:.*)");
+        }
+    }
 
     #[test]
     fn only_another_installed_headless_agent_can_be_asked() {
