@@ -28,6 +28,7 @@ export function Agents() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<AgentCard | null>(null);
   const [draft, setDraft] = useState("");
+  const [agy, setAgy] = useState<{ model: string; models: [string, string][] } | null>(null);
 
   async function load(refresh = false) {
     setBusy(true);
@@ -37,6 +38,23 @@ export function Agents() {
       toast("error", errorText(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    void api
+      .agyModel()
+      .then(([model, models]) => setAgy({ model: model ?? "", models }))
+      .catch(() => undefined);
+  }, []);
+
+  async function saveAgyModel(model: string) {
+    try {
+      await api.setAgyModel(model);
+      setAgy((a) => (a ? { ...a, model } : a));
+      toast("ok", model ? `Antigravity now runs on ${model}` : "Antigravity uses its own default model");
+    } catch (e) {
+      toast("error", errorText(e));
     }
   }
 
@@ -124,6 +142,26 @@ export function Agents() {
                   )}
                 </div>
               </div>
+
+              {c.name === "antigravity" && agy && (
+                <label className="block text-xs">
+                  <span className="text-slate-500">Model for workers, reviews and asks</span>
+                  <select
+                    className={`${inputClass} mt-1`}
+                    value={agy.model}
+                    onChange={(e) => void saveAgyModel(e.target.value)}
+                    title="Each Gemini model has its own quota. When one runs out, pick another here."
+                  >
+                    <option value="">Antigravity's own default</option>
+                    {agy.model && !agy.models.some(([id]) => id === agy.model) && <option value={agy.model}>{agy.model}</option>}
+                    {agy.models.map(([id, label]) => (
+                      <option key={id} value={id}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <div className="text-xs">
                 <div className="flex items-center justify-between text-slate-500">

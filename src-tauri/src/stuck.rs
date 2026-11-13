@@ -166,7 +166,10 @@ pub fn check_bus(v: &Vault, m: &Mission, task: &str, now: i64) -> Option<String>
     if headless && !alive {
         let log = crate::agent_limits::tail(&v.worker_logs().join(format!("{task}.log")));
         if crate::agent_limits::limit_in_log(crate::agent_limits::latest_run(&log)) {
-            crate::agent_limits::mark(&agent, now + crate::agent_limits::DEFAULT_LIMIT_SECS);
+            let run = crate::agent_limits::latest_run(&log);
+            let secs = crate::agent_limits::reset_secs(run)
+                .unwrap_or(crate::agent_limits::DEFAULT_LIMIT_SECS);
+            crate::agent_limits::mark(&agent, now + secs);
             return Some(limit_handoff(v, m, task, &agent, now));
         }
     }

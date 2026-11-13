@@ -46,6 +46,34 @@ pub fn tail(path: &Path) -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
+/// Seconds until the limit resets, when the log says so ("Resets in 53h17m43s", "resets in
+/// 45m"). Pure.
+pub fn reset_secs(text: &str) -> Option<i64> {
+    let t = text.to_lowercase();
+    let i = t.rfind("resets in ")? + "resets in ".len();
+    let mut total = 0i64;
+    let mut num = String::new();
+    let mut any = false;
+    for ch in t[i..].chars() {
+        match ch {
+            '0'..='9' => num.push(ch),
+            'd' | 'h' | 'm' | 's' if !num.is_empty() => {
+                let n: i64 = num.parse().ok()?;
+                total += n * match ch {
+                    'd' => 86_400,
+                    'h' => 3_600,
+                    'm' => 60,
+                    _ => 1,
+                };
+                num.clear();
+                any = true;
+            }
+            _ => break,
+        }
+    }
+    (any && total > 0).then_some(total)
+}
+
 /// The part of a task log written by its latest worker: after the last `worker started` marker,
 /// so a limit an earlier agent hit is not blamed on the agent that took over. Pure.
 pub fn latest_run(log: &str) -> &str {
@@ -119,6 +147,18 @@ mod tests {
             "the old agent's limit is not the new one's"
         );
         assert!(limit_in_log(latest_run("no marker usage_limit_reached")));
+    }
+
+    #[test]
+    fn the_reset_time_is_read_when_given() {
+        let agy = r#"AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Resets in 53h17m43s."}"#;
+        assert_eq!(reset_secs(agy), Some(53 * 3600 + 17 * 60 + 43));
+        assert_eq!(reset_secs("limit reached, resets in 45m"), Some(45 * 60));
+        assert_eq!(
+            reset_secs("You've hit your 5-hour limit · resets 2:40am"),
+            None
+        );
+        assert!(limit_in_log(agy));
     }
 
     #[test]
