@@ -116,6 +116,80 @@ fn no_pr_retry(m: &Mission) -> anyhow::Result<String> {
     ))
 }
 
+/// Automatic fresh attempts for a mission whose Hermes worker stopped because of its model, not
+/// its work.
+pub const MODEL_RETRIES: u32 = 2;
+
+pub fn model_retry_key(id: &str) -> String {
+    format!("mission.modelfail.{id}")
+}
+
+/// A Hermes worker that stopped because its model failed: the plan's usage or rate limit, or a
+/// fallback model that stopped replying or sent a broken tool call. The work itself is not at
+/// fault, so it deserves a fresh attempt rather than the owner's attention. Pure.
+pub fn model_failure(reason: &str) -> bool {
+    let r = reason.to_lowercase();
+    [
+        "no reply:",
+        "didn't produce a reply",
+        "did not produce a reply",
+        "improperly formatted function call",
+        "usage_limit_reached",
+        "hit your 5-hour limit",
+        "rate limit",
+        "http 429",
+        "quota reached",
+    ]
+    .iter()
+    .any(|p| r.contains(p))
+}
+
+/// What to do with the next model failure, given the fresh attempts already spent. Pure.
+pub fn model_failure_step(attempts: u32) -> &'static str {
+    if attempts < MODEL_RETRIES {
+        "retry"
+    } else {
+        "block"
+    }
+}
+
+/// Queue the mission again for a fresh Hermes attempt (a new kanban task, which starts on the
+/// primary model again), at most `MODEL_RETRIES` times; after that it is blocked with the reason.
+fn model_failure_retry(m: &Mission, reason: &str) -> anyhow::Result<String> {
+    let attempts: u32 = kv(&model_retry_key(&m.id))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let short: String = reason.chars().take(300).collect();
+    if model_failure_step(attempts) == "block" {
+        missions::block(
+            &m.id,
+            &format!(
+                "The model failed {} times in a row, so this needs a look: {short}",
+                attempts + 1
+            ),
+            false,
+        )?;
+        return Ok(format!(
+            "{}: the model failed again after {attempts} fresh attempts; blocked",
+            m.id
+        ));
+    }
+    kv_set(&model_retry_key(&m.id), &(attempts + 1).to_string());
+    missions::block(&m.id, &format!("Hermes kanban: {short}"), false)?;
+    missions::unblock(
+        &m.id,
+        &format!(
+            "The model stopped, not the work (attempt {} of {MODEL_RETRIES}); queued again: {short}",
+            attempts + 1
+        ),
+    )?;
+    crate::stuck::reset(&m.id);
+    Ok(format!(
+        "{}: the model stopped replying; queued again for a fresh attempt",
+        m.id
+    ))
+}
+
 fn kv(key: &str) -> Option<String> {
     let c = store::open().ok()?;
     store::kv_get(&c, key).ok().flatten()
@@ -506,6 +580,9 @@ fn advance_kanban(m: &Mission, task: &str, global_stop: bool) -> anyhow::Result<
             )
         }
         Next::Block(reason) => {
+            if model_failure(&reason) {
+                return model_failure_retry(m, &reason).map(Advance::Stuck);
+            }
             missions::block(&m.id, &format!("Hermes kanban: {reason}"), false)?;
             Ok(Advance::Nothing)
         }
@@ -801,6 +878,64 @@ mod tests {
         assert_eq!(no_pr_step(1), "block");
         assert_eq!(no_pr_step(5), "block");
         assert_eq!(no_pr_key("M-7"), "mission.nopr.M-7");
+    }
+
+    #[test]
+    fn a_model_that_stopped_replying_is_recognised_and_not_the_work() {
+        // The real M-062 block: Claude's 5-hour limit, then the Gemini fallbacks gave no reply.
+        let real = "worker exited cleanly (rc=0) without kanban_complete, kanban_block or kanban_request_review. Worker's last output: \"No reply: gemini-4-hydrogen-high didn't produce a reply this time, even after retries.\"";
+        assert!(model_failure(real));
+        assert!(model_failure(
+            "Antigravity model error: Your previous response contained an improperly formatted function call"
+        ));
+        assert!(model_failure("You've hit your 5-hour limit, resets 3:50pm"));
+        assert!(model_failure("Individual quota reached. Resets in 53h"));
+        assert!(!model_failure("waiting for approval of rm -rf build"));
+        assert!(!model_failure("npm test failed: 3 tests failed"));
+        assert_eq!(model_failure_step(0), "retry");
+        assert_eq!(model_failure_step(1), "retry");
+        assert_eq!(model_failure_step(2), "block");
+        assert_eq!(model_retry_key("M-62"), "mission.modelfail.M-62");
+    }
+
+    #[test]
+    fn a_model_failure_queues_the_mission_again_twice_then_blocks_it() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let mission = missions::create(
+            "repo",
+            "goal",
+            "acceptance",
+            "implementer",
+            "hermes",
+            "claude-subscription",
+            "",
+            0.0,
+        )
+        .unwrap();
+        let reason = "No reply: gemini-4-hydrogen-high didn't produce a reply this time";
+        for attempt in 1..=MODEL_RETRIES {
+            missions::dispatch(&mission.id, "kanban:t_test").unwrap();
+            model_failure_retry(&mission, reason).unwrap();
+            let after = missions::get(&mission.id).unwrap().unwrap();
+            assert_eq!(after.status, "queued", "attempt {attempt} is queued again");
+            assert!(after
+                .review_note
+                .as_deref()
+                .unwrap_or("")
+                .contains("The model stopped, not the work"));
+        }
+        missions::dispatch(&mission.id, "kanban:t_test").unwrap();
+        model_failure_retry(&mission, reason).unwrap();
+        let after = missions::get(&mission.id).unwrap().unwrap();
+        assert_eq!(after.status, "blocked", "the third failure asks the owner");
+        assert!(after
+            .review_note
+            .as_deref()
+            .unwrap_or("")
+            .contains("The model failed 3 times in a row"));
+        crate::store::set_test_db(None);
     }
 
     #[test]
