@@ -35,6 +35,10 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.2.8
+
+- **Antigravity (OAuth) in Chat and full provider descriptions.** Pick your Antigravity subscription directly in the Chat provider switcher (no API key needed), and read full provider descriptions without clipping.
+
 ## What is new in 1.2.7
 
 - **Sessions filed by repository.** Every Hermes session that worked in a repository (a chat, a mission, a review, a kanban task, the CLI) is filed under that repository's folder in the sidebar, created on first sight in a Repositories workspace.
