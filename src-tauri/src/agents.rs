@@ -467,6 +467,18 @@ pub fn cards(refresh: bool) -> Vec<AgentCard> {
             let installed = agent_installed(a);
             let quota = match *a {
                 _ if !installed => none_quota("not installed"),
+                // A worker reported this agent's plan limit: no headroom until it resets.
+                _ if crate::agent_limits::limited(a) => Quota {
+                    source: "worker log".into(),
+                    headroom_pct: Some(0.0),
+                    resets_at: crate::agent_limits::limited_until(a).and_then(|t| {
+                        chrono::DateTime::from_timestamp(t, 0).map(|d| d.to_rfc3339())
+                    }),
+                    summary: "hit its usage limit; new work goes to another agent until it resets"
+                        .into(),
+                    fetched_at: store::now(),
+                    ..Default::default()
+                },
                 "claude-code" => quota_for(CLAUDE_PROVIDER, refresh),
                 "hermes" if !hp.is_empty() => quota_for(&hp, refresh),
                 _ => none_quota("this agent reports no quota to Studio"),

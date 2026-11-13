@@ -64,6 +64,20 @@ reviewer requests changes on any pull request that breaks it.
 **Pause here** stops one repository on this machine only; the committed opt-in stays, so another
 machine running Studio keeps working on it.
 
+## When something goes wrong
+
+- **An agent hits its plan's limit.** When a worker's log shows the provider's usage limit (Claude
+  Code's "You've hit your 5-hour limit", HTTP 429), Studio marks that agent limited for an hour
+  and hands the mission to the next free agent (Claude Code, then Antigravity, then Hermes) at
+  once. Assignment treats a limited agent as out of headroom, so new work goes elsewhere too. If
+  no agent is free, the mission waits instead of being retried into the same limit.
+- **A worker goes quiet.** Its one automatic retry goes to a different agent when one is free.
+- **The network is gone.** Nothing new starts and nothing is marked stuck; work resumes when the
+  network returns. The status bar shows Offline.
+- **A goal fails anyway.** The next pass starts a fresh goal for the same phase (its finished
+  tasks are already ticked in the repository), at most twice a day per repository; after that
+  the repository waits for you. Pause here stops it for good.
+
 ## Reports
 
 - In the repository: `docs/agentos/REPORT.md`, one line per merged task.

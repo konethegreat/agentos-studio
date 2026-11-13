@@ -63,11 +63,11 @@ pub fn status() -> OfflineStatus {
         (true, true) => "Online. No local runtime is running.".into(),
         (true, false) => format!("Online. {} local model(s) available.", models.len()),
         (false, false) => format!(
-            "Offline. {} local model(s) can still run; pin one in Providers before the next task.",
+            "Offline. Missions wait and resume when the network returns; {} local model(s) can still run if you pin one in Providers.",
             models.len()
         ),
         (false, true) => {
-            "Offline and no local runtime. Cloud models will fail until the network returns.".into()
+            "Offline. Missions wait and resume when the network returns; nothing is marked stuck meanwhile.".into()
         }
     };
     OfflineStatus {

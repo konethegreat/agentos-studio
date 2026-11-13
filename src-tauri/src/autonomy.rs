@@ -74,6 +74,17 @@ pub struct RepoState {
     pub last_next_phase: i64,
     pub goals_done: usize,
     pub log: Vec<Event>,
+    /// When a failed goal was followed by a fresh one (unix seconds), for the daily cap.
+    #[serde(default)]
+    pub restarts: Vec<i64>,
+}
+
+/// Failed goals restarted per repository per day before Studio stops and waits for the owner.
+pub const MAX_RESTARTS_PER_DAY: usize = 2;
+
+/// Restarts in the last 24 hours. Pure.
+pub fn recent_restarts(st: &RepoState, now: i64) -> usize {
+    st.restarts.iter().filter(|t| now - **t < 24 * 3600).count()
 }
 
 /// What the Autonomy screen shows for one repository.
@@ -227,7 +238,12 @@ pub fn decide(
     if !enabled {
         return Action::Off("not opted in".into());
     }
-    if let Some((id, status)) = active {
+    // A failed goal (a worker out of quota, a stopped retry) is followed by a fresh goal for the
+    // same phase: the repository's task list still holds what is left. Twice a day at most, so a
+    // goal that keeps failing waits for the owner. Pausing the repository stops this.
+    let restart = active.is_some_and(|(_, s)| s == "failed")
+        && recent_restarts(st, now) < MAX_RESTARTS_PER_DAY;
+    if let Some((id, status)) = active.filter(|_| !restart) {
         return match status {
             "failed" | "paused" => Action::Wait(format!(
                 "{id} is {status}: it needs you before more work starts"
@@ -748,6 +764,8 @@ pub fn pass(v: &Vault) -> Result<PassReport> {
                 );
                 save_state(&c, slug, &st)?;
             }
+            // A failed goal holds no worker; its repository restarts it below.
+            Some(s) if s == "failed" => {}
             Some(_) => active += 1,
         }
     }
@@ -762,6 +780,20 @@ pub fn pass(v: &Vault) -> Result<PassReport> {
         if let Action::Start(kind, outcome) = action {
             match start_goal(v, slug, &kind, &outcome, &status, dir) {
                 Ok(id) => {
+                    if status.goal_status.as_deref() == Some("failed") {
+                        st.restarts.retain(|t| now - *t < 24 * 3600);
+                        st.restarts.push(now);
+                        push_event(
+                            &mut st,
+                            Event {
+                                at: now,
+                                kind: "restarted".into(),
+                                goal: status.goal.clone(),
+                                text: "the goal failed; starting a fresh goal for what is left"
+                                    .into(),
+                            },
+                        );
+                    }
                     st.goal = Some(id.clone());
                     st.goal_kind = kind.clone();
                     st.last_start = now;
@@ -1048,8 +1080,37 @@ mod tests {
         assert!(
             matches!(decide("shop", true, true, &phases, Some(("G-001", "running")), &st, true, &[], now), Action::Wait(r) if r.contains("G-001"))
         );
+        // A failed goal is followed by a fresh one for the same phase, twice a day at most.
         assert!(
-            matches!(decide("shop", true, true, &phases, Some(("G-002", "failed")), &st, true, &[], now), Action::Wait(r) if r.contains("needs you"))
+            matches!(decide("shop", true, true, &phases, Some(("G-002", "failed")), &st, true, &[], now), Action::Start(k, _) if k == "phase")
+        );
+        let twice = RepoState {
+            restarts: vec![now - 3600, now - 7200],
+            ..Default::default()
+        };
+        assert!(
+            matches!(decide("shop", true, true, &phases, Some(("G-002", "failed")), &twice, true, &[], now), Action::Wait(r) if r.contains("needs you"))
+        );
+        let yesterday = RepoState {
+            restarts: vec![now - 25 * 3600, now - 26 * 3600],
+            ..Default::default()
+        };
+        assert!(matches!(
+            decide(
+                "shop",
+                true,
+                true,
+                &phases,
+                Some(("G-002", "failed")),
+                &yesterday,
+                true,
+                &[],
+                now
+            ),
+            Action::Start(..)
+        ));
+        assert!(
+            matches!(decide("shop", true, true, &phases, Some(("G-002", "paused")), &st, true, &[], now), Action::Wait(r) if r.contains("needs you"))
         );
         let soon = RepoState {
             last_start: now - 60,
