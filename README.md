@@ -35,6 +35,13 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.2.6
+
+- **Usage limits do not stop the fleet.** When an agent hits its plan's limit (Claude's 5-hour window, for example), its mission goes to the next free agent at once, and new work goes elsewhere until the limit resets. A worker that goes quiet is retried on a different agent.
+- **Offline mode.** With no network, nothing new starts and nothing is marked stuck; work resumes when the network returns, and the status bar says so.
+- **Failed goals restart.** An opted-in repository whose goal failed starts a fresh goal for what is left, at most twice a day.
+- **Fix.** No false "Hermes did not finish within 4s" warning at launch.
+
 ## What is new in 1.2.5
 
 - **Fix.** A repository's policy (merge allow list, tools, roles) is read from what is merged on GitHub, so an old or diverged local checkout no longer makes an approved pull request wait for you.
