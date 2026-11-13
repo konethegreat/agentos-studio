@@ -35,6 +35,11 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.2.9
+
+- **Explorer (Code, Explorer).** A read-only window into any repository and the worktree each mission works in: the file tree, a code viewer with syntax highlighting, search, and the working changes with their diffs. Pick lines and ask about them in Chat, or open the file in VS Code at that line. Chat's header has a Files button that opens the chat's folder here.
+- **A model that stops replying no longer blocks work.** When a Hermes worker stops because its model failed (a usage limit, a fallback that sent no reply or a broken tool call), the mission is queued again for a fresh attempt on the primary model, up to twice, before it asks you.
+
 ## What is new in 1.2.8
 
 - **Antigravity (OAuth) in Chat and full provider descriptions.** Pick your Antigravity subscription directly in the Chat provider switcher (no API key needed), and read full provider descriptions without clipping.
