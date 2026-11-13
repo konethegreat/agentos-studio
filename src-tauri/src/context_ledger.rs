@@ -1433,12 +1433,12 @@ mod tests {
 
     #[test]
     fn masking_keeps_exit_codes() {
-        let out = "Compiling agentos-studio v0.15.0\n   Finished in 5m\nerror[E0425]: cannot find value `x` in src/budget.rs\n{\"output\": \"...\", \"exit_code\": 101}\nwrote C:/Users/Konet/agentos-studio/src-tauri/target/debug/app.exe\n".repeat(30);
+        let out = "Compiling agentos-studio v0.15.0\n   Finished in 5m\nerror[E0425]: cannot find value `x` in src/budget.rs\n{\"output\": \"...\", \"exit_code\": 101}\nwrote C:/Users/me/agentos-studio/src-tauri/target/debug/app.exe\n".repeat(30);
         let masked = mask_tool_output("terminal", &out);
         assert!(masked.len() < out.len() / 5, "{}", masked.len());
         assert!(masked.contains("exit 101"), "{masked}");
         assert!(masked.contains("src/budget.rs"), "{masked}");
-        assert!(masked.contains("C:/Users/Konet/agentos-studio/src-tauri/target/debug/app.exe"));
+        assert!(masked.contains("C:/Users/me/agentos-studio/src-tauri/target/debug/app.exe"));
         assert!(masked.contains("error[E0425]"));
         assert!(masked.starts_with("[terminal output masked"));
         assert!(mask_tool_output("t", "done\nexit code: 0").contains("exit 0"));

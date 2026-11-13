@@ -46,12 +46,12 @@ fn projects_list_matches_hermes() {
     }
     // The rule under test is the path matcher, not the number of projects.
     assert!(projects::under(
-        "C:/Users/Konet/agentos-studio/src",
-        "c:/users/konet/agentos-studio"
+        "C:/Users/me/agentos-studio/src",
+        "c:/users/me/agentos-studio"
     ));
     assert!(!projects::under(
-        "C:/Users/Konet/agentos-studio-old",
-        "C:/Users/Konet/agentos-studio"
+        "C:/Users/me/agentos-studio-old",
+        "C:/Users/me/agentos-studio"
     ));
 }
 

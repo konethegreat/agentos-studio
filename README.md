@@ -35,6 +35,13 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.3.0
+
+- **Pause and resume missions without cancelling.** Running missions can be paused (halting kanban or stopping the bus worker while keeping the worktree and progress) and resumed back into work or review.
+- **Markdown run export.** Export any mission's prompt, acceptance criteria, cost, tool calls, and results to `04_Agent_Engine/runs/<id>.md` in the vault, with secrets redacted.
+- **Eval-gated model scorecards (Providers, Model layer).** Scorecards combine real mission approval rate and cost with evaluation replays per role, provider, and model, and gate folder default promotions on at least 3 improving eval replays.
+- **Antigravity reviews with PR context.** Antigravity reviewers can read the pull request diff and history when answering review questions.
+
 ## What is new in 1.2.9
 
 - **Explorer (Code, Explorer).** A read-only window into any repository and the worktree each mission works in: the file tree, a code viewer with syntax highlighting, search, and the working changes with their diffs. Pick lines and ask about them in Chat, or open the file in VS Code at that line. Chat's header has a Files button that opens the chat's folder here.
