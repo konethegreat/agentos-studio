@@ -1,5 +1,5 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { ArrowUp, Brain, ChevronRight, ClipboardList, Cloud, FolderOpen, GitFork, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Undo2, Workflow } from "lucide-react";
+import { ArrowUp, Brain, ChevronRight, ClipboardList, Cloud, Code2, FolderOpen, GitFork, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Undo2, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api, errorText, events, type HermesStatus, type MemoryEntry, type RepoInfo, type Skill } from "../lib/api";
 import { studio, type Folder, type OrgSnapshot, type PermissionOption, type PlacedChat } from "../lib/studio";
@@ -17,6 +17,7 @@ import { useToast } from "../components/Toasts";
 import { Guide, useGuides, useReportGuides } from "../components/Guides";
 import { chatGuides } from "../lib/guides";
 import { goTo } from "../lib/nav";
+import { exploreFolder } from "../lib/explorer";
 
 type Backend = "hermes" | "claude-code";
 
@@ -675,6 +676,15 @@ export function ChatStudio({
               <span className="truncate">{cwd}</span>
             </div>
           </div>
+          <button
+            onClick={() => exploreFolder(cwd)}
+            title="Browse this chat's folder in the Explorer: files, code and what changed"
+            aria-label="Browse files"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-white/[0.04] px-2.5 text-small text-slate-400 ring-1 ring-line hover:text-slate-200"
+          >
+            <Code2 className="size-3.5" />
+            <span className="hidden 2xl:inline">Files</span>
+          </button>
           <button
             onClick={() => {
               setSkillPicker(true);
