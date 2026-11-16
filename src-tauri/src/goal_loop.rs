@@ -135,6 +135,15 @@ pub fn pass(v: &Vault, automation_on: bool) -> Pass {
     if paused {
         return p;
     }
+    for g in goals::list(200)
+        .unwrap_or_default()
+        .iter()
+        .filter(|g| g.status == "planning")
+    {
+        if let Err(e) = replan_step(v, g, now, &mut p) {
+            p.errors.push(format!("{}: {e:#}", g.id));
+        }
+    }
     let all = missions::list(300).unwrap_or_default();
     for m in &all {
         let goal = goals::goal_of(&m.id).and_then(|gid| goals::get(&gid).ok().flatten());
@@ -150,6 +159,100 @@ pub fn pass(v: &Vault, automation_on: bool) -> Pass {
         }
     }
     p
+}
+
+/// Minutes to wait before each automatic replan of a goal whose planner failed. After the last
+/// one the owner is asked once.
+pub const REPLAN_DELAYS_MIN: [i64; 3] = [5, 15, 45];
+
+/// A planning run that has said "planning" this long without finishing died with the app.
+pub const PLANNING_STALE_SECS: i64 = 30 * 60;
+
+pub fn replan_key(goal_id: &str) -> String {
+    format!("goal.replan.{goal_id}")
+}
+
+/// Did the planner give up on this goal? A failure note, or a planning run that never finished
+/// (the app closed while the planner ran). Pure.
+pub fn planner_stalled(note: &str, quiet_secs: i64) -> bool {
+    note.starts_with("The planner failed")
+        || (note.starts_with("Hermes is planning") && quiet_secs >= PLANNING_STALE_SECS)
+}
+
+/// What to do with a stalled plan after `attempts` automatic replans, `waited_secs` after the last
+/// failure: `replan`, `wait` or `escalate`. Pure.
+pub fn replan_decision(attempts: u32, waited_secs: i64) -> &'static str {
+    match REPLAN_DELAYS_MIN.get(attempts as usize) {
+        Some(min) if waited_secs >= min * 60 => "replan",
+        Some(_) => "wait",
+        None => "escalate",
+    }
+}
+
+/// Parse kv `goal.replan.<id>`: `<attempts>:<epoch of the last attempt>`.
+fn replan_state(goal_id: &str) -> (u32, Option<i64>) {
+    let raw = kv_get(&replan_key(goal_id)).unwrap_or_default();
+    let mut parts = raw.splitn(2, ':');
+    let attempts = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let at = parts.next().and_then(|s| s.parse().ok());
+    (attempts, at)
+}
+
+/// A goal left in planning by a failed or interrupted planner is planned again with backoff, so
+/// a passing LLM error never strands a goal. After the last attempt the owner is asked once.
+fn replan_step(v: &Vault, g: &Goal, now: i64, p: &mut Pass) -> Result<()> {
+    if !planner_stalled(&g.note, now - g.updated_at) {
+        return Ok(());
+    }
+    if !goals::missions_of(&g.id)?.is_empty() {
+        return Ok(());
+    }
+    let (attempts, last) = replan_state(&g.id);
+    let since = last.unwrap_or(g.updated_at).max(g.updated_at);
+    match replan_decision(attempts, now - since) {
+        "replan" => {
+            kv_set(&replan_key(&g.id), &format!("{}:{now}", attempts + 1));
+            let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+                kind: "note",
+                from_agent: "agentos-studio",
+                summary: &format!(
+                    "{}: the planner stopped ({}); planning again, attempt {} of {}",
+                    g.id,
+                    g.note.chars().take(160).collect::<String>(),
+                    attempts + 1,
+                    REPLAN_DELAYS_MIN.len()
+                ),
+                ..Default::default()
+            });
+            if !cfg!(test) {
+                crate::planner::plan_in_background(v.root.clone(), g.id.clone());
+            }
+            Ok(())
+        }
+        "escalate" => {
+            if escalation::find_open(Some(&g.id), None, "plan_failed").is_some() {
+                return Ok(());
+            }
+            let e = escalation::raise_and_send(
+                Some(&g.id),
+                None,
+                "plan_failed",
+                &format!(
+                    "{} could not be planned after {} automatic attempts. Last error: {}. Plan it again, or stop it?",
+                    g.id,
+                    REPLAN_DELAYS_MIN.len(),
+                    g.note.chars().take(300).collect::<String>()
+                ),
+                &["retry", "stop"],
+                "stop",
+            )?;
+            if !p.escalated.contains(&e.id) {
+                p.escalated.push(e.id);
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 fn budget_step(g: &Goal, p: &mut Pass) -> Result<()> {
@@ -598,6 +701,13 @@ fn apply(v: &Vault, e: &Escalation) -> Result<()> {
             }
             Ok(())
         }
+        ("plan_failed", "retry") => {
+            // The next pass starts the replan cycle again from the first attempt.
+            if let Some(gid) = e.goal_id.as_deref() {
+                kv_del(&replan_key(gid));
+            }
+            Ok(())
+        }
         ("done_check", "retry") => {
             if let Some(gid) = e.goal_id.as_deref() {
                 crate::completion::retry_after_escalation(v, gid)?;
@@ -611,6 +721,86 @@ fn apply(v: &Vault, e: &Escalation) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_or_interrupted_plan_is_recognised() {
+        let g029 = "The planner failed: hermes kanban decompose failed: {\"task_id\": \"t_46ad1a29\", \"ok\": false, \"reason\": \"LLM error: RuntimeError\"}. Plan again to retry.";
+        assert!(planner_stalled(g029, 0));
+        assert!(!planner_stalled("Hermes is planning this goal", 60));
+        assert!(planner_stalled(
+            "Hermes is planning this goal",
+            PLANNING_STALE_SECS
+        ));
+        assert!(!planner_stalled("Planned 5 missions.", 99_999));
+        assert!(!planner_stalled("", 99_999));
+    }
+
+    #[test]
+    fn a_stalled_plan_is_retried_after_5_15_and_45_minutes_then_escalated() {
+        assert_eq!(replan_decision(0, 4 * 60), "wait");
+        assert_eq!(replan_decision(0, 5 * 60), "replan");
+        assert_eq!(replan_decision(1, 14 * 60), "wait");
+        assert_eq!(replan_decision(1, 15 * 60), "replan");
+        assert_eq!(replan_decision(2, 45 * 60), "replan");
+        assert_eq!(replan_decision(3, 0), "escalate");
+        assert_eq!(replan_key("G-029"), "goal.replan.G-029");
+    }
+
+    #[test]
+    fn a_stalled_goal_is_planned_again_then_the_owner_is_asked_once() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let v = Vault::new(d.path());
+        let g = goals::create(&goals::NewGoal {
+            outcome: "Finish the next phase".into(),
+            repos: vec!["agentos-sandbox-1".into()],
+            checks: vec![goals::Check {
+                kind: "command".into(),
+                target: "npm test".into(),
+                repo: None,
+            }],
+            budget_usd: 0.0,
+            deadline: None,
+            autonomy: Some("full".into()),
+        })
+        .unwrap();
+        goals::set_note(
+            &g.id,
+            "The planner failed: LLM error: RuntimeError. Plan again to retry.",
+        )
+        .unwrap();
+        let g = goals::get(&g.id).unwrap().unwrap();
+        let t0 = g.updated_at;
+        let mut p = Pass::default();
+
+        replan_step(&v, &g, t0 + 60, &mut p).unwrap();
+        assert_eq!(replan_state(&g.id).0, 0, "too early");
+        replan_step(&v, &g, t0 + 5 * 60, &mut p).unwrap();
+        assert_eq!(replan_state(&g.id), (1, Some(t0 + 5 * 60)));
+        replan_step(&v, &g, t0 + 6 * 60, &mut p).unwrap();
+        assert_eq!(
+            replan_state(&g.id).0,
+            1,
+            "waits 15 min after the first replan"
+        );
+        replan_step(&v, &g, t0 + 20 * 60, &mut p).unwrap();
+        replan_step(&v, &g, t0 + 70 * 60, &mut p).unwrap();
+        assert_eq!(replan_state(&g.id).0, 3);
+        assert!(p.escalated.is_empty());
+
+        replan_step(&v, &g, t0 + 200 * 60, &mut p).unwrap();
+        replan_step(&v, &g, t0 + 201 * 60, &mut p).unwrap();
+        assert_eq!(p.escalated.len(), 1, "asked once");
+        let e = escalation::get(&p.escalated[0]).unwrap().unwrap();
+        assert_eq!(e.kind, "plan_failed");
+        assert_eq!(e.goal_id.as_deref(), Some(g.id.as_str()));
+
+        let answered = escalation::answer(&e.id, "retry", "studio").unwrap();
+        apply(&v, &answered).unwrap();
+        assert_eq!(replan_state(&g.id).0, 0, "retry starts the cycle again");
+        crate::store::set_test_db(None);
+    }
 
     #[test]
     fn a_failing_check_is_rerun_once_then_fixed_then_escalated() {

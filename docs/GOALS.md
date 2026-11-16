@@ -91,6 +91,13 @@ Studio asks the owner only for these, and puts everything else in the digest:
 4. Hermes escalates a destructive approval.
 5. A merge is needed outside the allow list (Ask on risk).
 6. A definition-of-done check fails twice.
+7. The planner failed three automatic attempts. A goal left in planning by a planner error (or by
+   a planner run the app was closed during) is planned again on its own after 5, 15 and 45
+   minutes before Studio asks.
+
+A worker that stopped because of its provider or runtime (a usage or rate limit, a fallback out
+of credits or entitlement, a managed worker the gateway lost) is not stuck work: the mission is
+queued again for a fresh attempt, twice, before it can reach item 3.
 
 An escalation is a row in `escalations` (schema 10) with a question, the allowed answers and a
 deadline. It shows in Studio, in the digest and, when a messaging target is set, on the phone

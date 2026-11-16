@@ -1,6 +1,6 @@
 //! Escalations: the only questions Studio asks the owner while a goal runs.
 //!
-//! Six things escalate (`KINDS`); everything else goes into the digest. An escalation has a
+//! Seven things escalate (`KINDS`); everything else goes into the digest. An escalation has a
 //! question, the allowed answers, a safe answer and a deadline. It is answered in Studio, or from
 //! the phone with the escalation id plus a four-digit code that only went to the phone (only the
 //! code's SHA-256 is stored). When the deadline passes with no answer the safe answer is taken,
@@ -14,14 +14,16 @@ use sha2::{Digest, Sha256};
 use crate::store;
 
 /// Budget passed, second reject, blocked or stuck after retry, a destructive approval, a merge
-/// outside the allow list, a done check failing twice.
-pub const KINDS: [&str; 6] = [
+/// outside the allow list, a done check failing twice, a plan that failed three automatic
+/// attempts.
+pub const KINDS: [&str; 7] = [
     "budget",
     "second_reject",
     "stuck",
     "destructive",
     "merge",
     "done_check",
+    "plan_failed",
 ];
 
 const DEFAULT_TIMEOUT_MINUTES: i64 = 60;

@@ -1,0 +1,161 @@
+# Beyond 1.3: the fleet that does not wait
+
+AgentOS Studio 1.3.0 can take a goal, plan it, build it in isolated worktrees, review it with a
+second agent and merge it. This roadmap is what comes after: a fleet that keeps working when the
+owner is away, learns from every run, proves what it did, improves itself and, finally, takes work
+from paying clients.
+
+Owner: Kone Tshivhinda, K-ONE IT SOLUTIONS. Written 2026-11-16 from the live fleet's own records.
+
+## Where 1.3.0 actually stands (evidence, 2026-11-16)
+
+| Measure | Value | Source |
+| --- | --- | --- |
+| Missions run | 97 | `studio.db` missions |
+| Approved by a second agent and merged | 75 | `review_verdict = approve` |
+| Rejected | 1 | `review_verdict = reject` |
+| Failed | 19 | every one `Stopped: E-n stop` |
+| Metered spend | $0.00 | flat subscriptions did all of it |
+| Escalations raised | 16 | `escalations` |
+| Escalations answered by the owner | 13 | `answered_by = studio` |
+| Escalations that expired into "stop" | 2 | `answered_by = timeout` |
+
+The finding that shapes this roadmap: **no mission has failed because the code was wrong.** Every
+failure is an escalation that was answered "stop" or that nobody answered, and each one cancelled
+its whole goal (up to four missions). The owner is the bottleneck, and the questions he is asked
+are mostly about infrastructure (a worker lost, a provider out of quota), not about the work.
+
+Three cracks found while writing this:
+
+1. A goal whose planner hits an LLM error stays in `planning` forever (G-029).
+2. A worker that dies because its fallback provider is out of entitlement is escalated to the owner
+   instead of being retried (E-16, M-096).
+3. Closing the window quits the app, and with it the scheduler: the fleet stops until the owner
+   opens Studio again.
+
+## Build order
+
+Each phase depends only on the ones before it. Phases ship as minor releases; every task ships as
+its own PR with the full gates.
+
+| Phase | Name | Ships as | Depends on |
+| --- | --- | --- | --- |
+| B0 | Foundation: nothing waits on a crash | 1.3.1 | 1.3.0 |
+| B1 | Shadow Kone: the owner's judgment, delegated | 1.4.0 | B0 |
+| B2 | Quota grid: every subscription used, none exhausted | 1.5.0 | B0, router scorecards |
+| B3 | The dreaming brain | 1.6.0 | B0, memory ledger |
+| B4 | Time machine: counterfactual replay | 1.7.0 | eval replays, B2 |
+| B5 | Proof-carrying work | 1.8.0 | B4 |
+| B6 | Ouroboros: Studio builds Studio | 1.9.0 | B1, B5 |
+| B7 | Agency in a box | 2.0.0 | B1, B5, B6 |
+
+## B0: Foundation, nothing waits on a crash (1.3.1)
+
+Goal: no goal stalls or dies because of infrastructure.
+
+- [ ] **B0.1 Provider and worker failures are retried, not escalated.** Extend
+  `automation::model_failure` to recognise an exhausted entitlement or billing limit, a lost managed
+  worker (`EOFError`), a gateway connection failure and a worker that exited without reporting.
+  Done when: the E-16 reason text is classified as a model failure in a unit test.
+- [ ] **B0.2 A failed plan is planned again.** `goal_loop` replans a goal left in `planning` with
+  "The planner failed" after 5, 15 and 45 minutes, then escalates once. Done when: a unit test walks
+  the backoff, and G-029 replans on its own in the running app.
+- [ ] **B0.3 The fleet keeps running with the window closed.** Closing the window hides it to the
+  system tray; the tray menu has Open, Pause or resume the fleet, and Quit. Optional start at login.
+  Done when: the window is closed and a scheduler pass still runs (timeline entry after close).
+- [ ] **B0.4 This roadmap in Help.** `docs/BEYOND.md` is bundled and linked from the README.
+
+## B1: Shadow Kone, the owner's judgment delegated (1.4.0)
+
+Goal: zero missions lost to silence, without letting an agent take a decision the owner would
+not have taken. Design: `docs/SHADOW.md`.
+
+- [ ] **B1.1 Decision memory.** Every escalation answer is a precedent: kind, reason class (pure
+  classifier: provider, worker lost, no PR, no heartbeat, CI, reject, merge allow list, budget,
+  destructive), repository, agent, answer, who answered. Read from `escalations`, no new table.
+- [ ] **B1.2 Learned rules.** A reason class with at least 3 owner answers, all the same, becomes a
+  rule. One contradicting answer removes it. Destructive and budget questions never get a rule.
+- [ ] **B1.3 Veto window.** When a rule matches, Shadow announces the answer on Today and the phone
+  ("Shadow will retry M-096 in 10 min. Reply E-16 <code> stop to overrule") and answers when the
+  window closes, `answered_by = shadow`. The owner's answer inside the window always wins.
+- [ ] **B1.4 Shadow screen.** Autonomy tab section: on or off, window length, the learned rules with
+  their precedents, Shadow's answers and the owner's overrules, agreement rate.
+- [ ] **B1.5 Self-demotion.** Two owner overrules of the same rule in a row retire it until three new
+  consistent answers arrive.
+- [ ] **B1.6 Judge for novel questions.** For a question with no rule, a Claude turn with the
+  constitution and the nearest precedents proposes an answer with a confidence; only reversible
+  answers (retry) above 0.8 are announced, everything else waits for the owner.
+- [ ] **B1.7 Voice escalation (opt-in).** Urgent questions near their deadline go out as a phone call
+  through the `hermes-phone` plugin, with the owner's explicit per-call approval as the plugin
+  requires.
+
+## B2: Quota grid (1.5.0)
+
+Goal: every flat-rate subscription is used around the clock and no worker is ever sent to a provider
+that is out of quota.
+
+- [ ] B2.1 Live headroom per provider: Claude 5-hour window, Antigravity quota, OpenRouter credits,
+  from `hermes usage --json`, `agent_limits` and the provider error log.
+- [ ] B2.2 Entitlement memory: a provider that answered "entitlement exhausted" is skipped by the
+  fallback order until its reset, and the fallback chain is reordered for new workers.
+- [ ] B2.3 Mission bids: each eligible agent bids predicted success, time and cost from the
+  scorecards; the scheduler awards the mission to the best bid with headroom.
+- [ ] B2.4 Night shift: heavy missions are held for the hours after a quota reset; a forecast chart
+  on the Agents screen shows when each subscription frees up.
+
+## B3: The dreaming brain (1.6.0)
+
+Goal: the fleet measurably knows more every morning.
+
+- [ ] B3.1 Worker sessions write to the memory ledger, not only Chat turns.
+- [ ] B3.2 Nightly dream: read the day's worker transcripts, reviews and escalations; write lessons,
+  merge duplicates, mark contradictions, propose skill fixes through `skill_proposals`.
+- [ ] B3.3 Morning card on Today: what the fleet learned last night, with links to the notes.
+- [ ] B3.4 Proof of learning: the four-probe context eval runs before and after each dream; the
+  score history is a chart on the Brain tab.
+
+## B4: Time machine (1.7.0)
+
+Goal: any past mission can be rerun with another agent, model or prompt, and every real mission
+becomes a benchmark.
+
+- [ ] B4.1 Fork a finished mission at its base commit into a sandbox worktree; never pushes.
+- [ ] B4.2 Side-by-side result: diff, tests, review verdict, time and cost for each variant.
+- [ ] B4.3 Automatic benchmark set: approved missions with a done check become eval cases.
+- [ ] B4.4 New model day: when `model_watch` sees a new model, replay the benchmark set on it and
+  post the comparison.
+
+## B5: Proof-carrying work (1.8.0)
+
+Goal: every merge carries a receipt anyone can verify.
+
+- [ ] B5.1 Receipt per merge: mission, PR, head commit, CI run ids and results, reviewer and verdict,
+  done-check output, `prove-it` probes, all hashed.
+- [ ] B5.2 Hash chain over receipts, signed with the Studio minisign key already used by the updater.
+- [ ] B5.3 Public ledger on the website: totals, per-repo receipts, a verify page.
+
+## B6: Ouroboros, Studio builds Studio (1.9.0)
+
+Goal: the fleet improves AgentOS Studio itself, with the owner approving releases only.
+
+- [ ] B6.1 Opt agentos-studio into autonomy with protected paths (signing, release workflow, updater
+  keys, constitution) that no mission may touch.
+- [ ] B6.2 Candidate release: when a phase completes, the fleet builds a release candidate and runs
+  the live mission templates on it.
+- [ ] B6.3 Weekly ship message: changelog, receipts and test totals to the phone; "ship" tags it.
+
+## B7: Agency in a box (2.0.0)
+
+Goal: K-ONE IT SOLUTIONS can take a client's goal and deliver a reviewed pull request with proof.
+
+- [ ] B7.1 Intake on the website: goal, repository, deadline.
+- [ ] B7.2 Quote from scorecards and history (time, confidence), approved by the owner on the phone.
+- [ ] B7.3 Client repository through a GitHub invitation; work on the fleet like any goal.
+- [ ] B7.4 Delivery: the PR, its receipt and a client report.
+
+## What this roadmap will not do
+
+- No agent ever answers a destructive, budget or merge-allow-list question on the owner's behalf.
+  Shadow handles the questions the owner has already answered the same way, and he can overrule it.
+- No model call picks a model (the router rule stands). Bids come from recorded outcomes.
+- Nothing on a client's repository merges without the owner's approval in B7.
