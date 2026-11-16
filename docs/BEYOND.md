@@ -95,14 +95,22 @@ not have taken. Design: `docs/SHADOW.md`.
 Goal: every flat-rate subscription is used around the clock and no worker is ever sent to a provider
 that is out of quota.
 
-- [ ] B2.1 Live headroom per provider: Claude 5-hour window, Antigravity quota, OpenRouter credits,
-  from `hermes usage --json`, `agent_limits` and the provider error log.
-- [ ] B2.2 Entitlement memory: a provider that answered "entitlement exhausted" is skipped by the
-  fallback order until its reset, and the fallback chain is reordered for new workers.
-- [ ] B2.3 Mission bids: each eligible agent bids predicted success, time and cost from the
-  scorecards; the scheduler awards the mission to the best bid with headroom.
-- [ ] B2.4 Night shift: heavy missions are held for the hours after a quota reset; a forecast chart
-  on the Agents screen shows when each subscription frees up.
+- [x] B2.1 Live headroom per subscription. Agent cards already read `hermes usage --json` for Claude
+  and Hermes; the Antigravity card now reads the same Antigravity subscription
+  (`antigravity-oauth`) instead of "reports no quota".
+- [x] B2.2 Entitlement memory: a worker error naming a model out of credits or entitlement
+  (`entitlement is exhausted for <model>`, the real E-16 text) closes that model for 5 hours
+  (kv `quota.exhausted.<model>`), with a note on the mission's timeline.
+- [x] B2.3 Steering: the lanes are the owner's own Hermes routes, primary then fallback chain
+  (`quota_grid.rs`). A Hermes mission with no pinned model starts on the primary when its lane is
+  open, otherwise this attempt is pinned to the first open fallback. Agent choice for `auto`
+  missions already bids on live headroom and measured success (`assign.rs`).
+- [x] B2.4 Hold instead of fail: when every route is closed, the mission waits for the soonest
+  reset (a deferral the scheduler already honours) instead of starting a worker on a dead lane.
+- [x] B2.5 The quota grid card on the Agents screen: each route, open or closed, its headroom and why.
+- [ ] B2.6 Start at login, so the night shift starts after a reboot without the owner.
+- [ ] B2.7 Forecast: when each subscription frees up, and heavy missions held for the hours after a
+  reset.
 
 ## B3: The dreaming brain (1.6.0)
 

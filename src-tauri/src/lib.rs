@@ -73,6 +73,7 @@ pub mod prompts;
 pub mod provenance;
 pub mod provider_health;
 pub mod pty;
+pub mod quota_grid;
 pub mod review_agent;
 pub mod router;
 pub mod routing;
@@ -381,6 +382,7 @@ pub fn run_gui() {
             ops::explorer_checkouts,
             ops::shadow_status,
             ops::shadow_set,
+            ops::quota_lanes,
             ops::explorer_files,
             ops::explorer_read,
             ops::explorer_status,

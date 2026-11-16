@@ -480,6 +480,8 @@ pub fn cards(refresh: bool) -> Vec<AgentCard> {
                     ..Default::default()
                 },
                 "claude-code" => quota_for(CLAUDE_PROVIDER, refresh),
+                // agy and Hermes' antigravity-oauth plugin share the Antigravity subscription.
+                "antigravity" => quota_for("antigravity-oauth", refresh),
                 "hermes" if !hp.is_empty() => quota_for(&hp, refresh),
                 _ => none_quota("this agent reports no quota to Studio"),
             };

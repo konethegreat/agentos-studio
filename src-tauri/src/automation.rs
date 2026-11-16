@@ -588,6 +588,18 @@ fn advance_kanban(m: &Mission, task: &str, global_stop: bool) -> anyhow::Result<
         }
         Next::Block(reason) => {
             if model_failure(&reason) {
+                if let Some(model) = crate::quota_grid::note_failure(&reason, store::now()) {
+                    let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+                        mission_id: Some(&m.id),
+                        kind: "note",
+                        from_agent: "quota grid",
+                        summary: &format!(
+                            "{model} ran out of credits or entitlement; new workers avoid it for {} h",
+                            crate::quota_grid::EXHAUSTED_SECS / 3600
+                        ),
+                        ..Default::default()
+                    });
+                }
                 return model_failure_retry(m, &reason).map(Advance::Stuck);
             }
             missions::block(&m.id, &format!("Hermes kanban: {reason}"), false)?;
