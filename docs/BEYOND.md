@@ -90,7 +90,7 @@ not have taken. Design: `docs/SHADOW.md`.
   through the `hermes-phone` plugin, with the owner's explicit per-call approval as the plugin
   requires.
 
-## B2: Quota grid (shipped in 1.4.0; B2.6 and B2.7 open)
+## B2: Quota grid (B2.1 to B2.5 shipped in 1.4.0; B2.6 and B2.7 in 1.7.0)
 
 Goal: every flat-rate subscription is used around the clock and no worker is ever sent to a provider
 that is out of quota.
@@ -108,9 +108,10 @@ that is out of quota.
 - [x] B2.4 Hold instead of fail: when every route is closed, the mission waits for the soonest
   reset (a deferral the scheduler already honours) instead of starting a worker on a dead lane.
 - [x] B2.5 The quota grid card on the Agents screen: each route, open or closed, its headroom and why.
-- [ ] B2.6 Start at login, so the night shift starts after a reboot without the owner.
-- [ ] B2.7 Forecast: when each subscription frees up, and heavy missions held for the hours after a
-  reset.
+- [x] B2.6 Start at login, so the night shift starts after a reboot without the owner (Windows Run
+  key, launched minimized to the tray; toggle on the quota grid card).
+- [x] B2.7 Forecast: when each subscription frees up, and heavy missions held for the hours after a
+  reset (the grid already holds new work while every route is closed; the card now says when).
 
 ## B3: The dreaming brain (1.6.0)
 

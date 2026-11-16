@@ -10,6 +10,7 @@ pub mod ask;
 pub mod assign;
 pub mod automation;
 pub mod autonomy;
+pub mod autostart;
 pub mod bench;
 pub mod boot;
 pub mod bootstrapper;
@@ -137,6 +138,10 @@ pub fn run_gui() {
             }
             if let Err(e) = tray::install(&handle) {
                 eprintln!("tray icon not installed; closing the window quits: {e:#}");
+            } else if autostart::start_minimized(std::env::args()) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
             }
             if let Err(e) = single::claim(handle.clone()) {
                 eprintln!("single instance guard not claimed: {e:#}");
@@ -387,6 +392,9 @@ pub fn run_gui() {
             ops::shadow_status,
             ops::shadow_set,
             ops::quota_lanes,
+            ops::quota_forecast,
+            ops::autostart_get,
+            ops::autostart_set,
             ops::playbook_learned,
             ops::playbook_rebuild,
             ops::bench_status,
