@@ -123,8 +123,17 @@ pub fn precedents<'a>(history: &'a [Escalation], class: &str, except: &str) -> V
         .filter(|e| e.id != except && owner_decided(e))
         .filter(|e| reason_class(&e.kind, &e.question) == class)
         .collect();
-    out.sort_by_key(|e| std::cmp::Reverse(e.answered_at.unwrap_or(e.created_at)));
+    out.sort_by_key(|e| {
+        std::cmp::Reverse((e.answered_at.unwrap_or(e.created_at), id_number(&e.id)))
+    });
     out
+}
+
+/// `E-16` -> 16, so answers given in the same second still order newest first. Pure.
+fn id_number(id: &str) -> i64 {
+    id.strip_prefix("E-")
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0)
 }
 
 /// What Shadow would answer and why, or None when the owner must answer. Pure.
@@ -550,6 +559,18 @@ mod tests {
             vec!["E-4", "E-1"],
             "newest first, no timeout, no shadow, no other class"
         );
+
+        // Answers in the same second: the later escalation is the newer answer.
+        let same = vec![
+            esc("E-9", "stuck", LOST, Some("stop"), Some("studio"), 100),
+            esc("E-10", "stuck", LOST, Some("retry"), Some("studio"), 100),
+            esc("E-8", "stuck", LOST, Some("retry"), Some("studio"), 100),
+        ];
+        let p: Vec<&str> = precedents(&same, "provider", "")
+            .iter()
+            .map(|e| e.id.as_str())
+            .collect();
+        assert_eq!(p, vec!["E-10", "E-9", "E-8"]);
     }
 
     #[test]
