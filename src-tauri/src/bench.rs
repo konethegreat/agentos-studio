@@ -89,11 +89,9 @@ pub fn worth_measuring(new: &[(String, String)]) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = new
         .iter()
         .filter(|(p, _)| flat_provider(p))
-        .filter(|(p, m)| match m.split_once('[') {
-            Some((base, _)) => !new.iter().any(|(q, n)| q == p && n == base),
-            None => true,
-        })
-        .cloned()
+        // A context-size variant (`claude-fable-5-2[1m]`) is the same model with a longer window:
+        // its base is what gets measured, once, even when the base itself is not new this week.
+        .map(|(p, m)| (p.clone(), base_model(m).to_string()))
         .collect();
     out.sort();
     out.dedup();
@@ -151,10 +149,27 @@ fn kv_set(key: &str, value: &str) {
     }
 }
 
+/// `claude-fable-5-2[1m]` -> `claude-fable-5-2`. Pure.
+pub fn base_model(model: &str) -> &str {
+    model.split_once('[').map_or(model, |(b, _)| b).trim()
+}
+
 pub fn queue() -> Vec<Job> {
-    kv(QUEUE_KEY)
+    let q: Vec<Job> = kv(QUEUE_KEY)
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // A context variant queued by 1.5.0 is measured as its base model, once.
+    let mut out: Vec<Job> = Vec::new();
+    for mut j in q {
+        j.model = base_model(&j.model).to_string();
+        if !out
+            .iter()
+            .any(|o| o.mission == j.mission && o.provider == j.provider && o.model == j.model)
+        {
+            out.push(j);
+        }
+    }
+    out
 }
 
 fn save_queue(q: &[Job]) {
@@ -445,6 +460,26 @@ mod tests {
                     "claude-fable-5-2".to_string()
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn a_new_context_variant_measures_its_base_model() {
+        // The live case in 1.5.0: Fable 5.2 was seen weeks ago, only its [1m] variant is new.
+        let only_variant = vec![(
+            "claude-subscription-directsdk-experimental".to_string(),
+            "claude-fable-5-2[1m]".to_string(),
+        )];
+        assert_eq!(
+            worth_measuring(&only_variant),
+            vec![(
+                "claude-subscription-directsdk-experimental".to_string(),
+                "claude-fable-5-2".to_string()
+            )]
+        );
+        assert_eq!(
+            base_model("gemini-4-hydrogen-high"),
+            "gemini-4-hydrogen-high"
         );
     }
 
