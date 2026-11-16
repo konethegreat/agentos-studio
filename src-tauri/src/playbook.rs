@@ -312,9 +312,164 @@ pub fn learned_since(v: &Vault, hours: i64) -> Vec<Learned> {
     out
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PeriodStats {
+    pub missions: usize,
+    pub approved_first: usize,
+    pub first_attempt_rate: f64,
+    pub total_retries: u32,
+    pub avg_retries: f64,
+}
+
+/// Proof of learning per repository: before vs after its playbook (Beyond B3.4).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct RepoProof {
+    pub repo: String,
+    pub playbook_at: Option<i64>,
+    pub lessons: usize,
+    pub before: PeriodStats,
+    pub after: PeriodStats,
+}
+
+fn summarize_period(rows: &[(&crate::missions::Mission, u32)]) -> PeriodStats {
+    let n = rows.len();
+    if n == 0 {
+        return PeriodStats {
+            missions: 0,
+            approved_first: 0,
+            first_attempt_rate: 0.0,
+            total_retries: 0,
+            avg_retries: 0.0,
+        };
+    }
+    let approved_first = rows
+        .iter()
+        .filter(|(m, retries)| m.review_verdict.as_deref() == Some("approve") && *retries == 0)
+        .count();
+    let total_retries: u32 = rows.iter().map(|(_, r)| *r).sum();
+    PeriodStats {
+        missions: n,
+        approved_first,
+        first_attempt_rate: approved_first as f64 / n as f64,
+        total_retries,
+        avg_retries: total_retries as f64 / n as f64,
+    }
+}
+
+/// Pure proof-of-learning aggregation per repository.
+pub fn compute_proof(
+    missions: &[crate::missions::Mission],
+    retries_map: &std::collections::HashMap<String, u32>,
+    playbook_at: &std::collections::HashMap<String, i64>,
+    lesson_counts: &std::collections::HashMap<String, usize>,
+) -> Vec<RepoProof> {
+    let mut by_repo: std::collections::BTreeMap<String, Vec<&crate::missions::Mission>> =
+        Default::default();
+    for m in missions {
+        if m.review_verdict.is_some() || m.status == "done" || m.status == "failed" {
+            by_repo.entry(m.repo.clone()).or_default().push(m);
+        }
+    }
+    let mut out = Vec::new();
+    for (repo, ms) in by_repo {
+        let key = repo.to_lowercase();
+        let cut = playbook_at.get(&key).copied();
+        let mut before = Vec::new();
+        let mut after = Vec::new();
+        for m in ms {
+            let r = retries_map.get(&m.id).copied().unwrap_or(0);
+            if let Some(t) = cut {
+                if m.created_at >= t {
+                    after.push((m, r));
+                } else {
+                    before.push((m, r));
+                }
+            } else {
+                before.push((m, r));
+            }
+        }
+        out.push(RepoProof {
+            repo: repo.clone(),
+            playbook_at: cut,
+            lessons: lesson_counts.get(&key).copied().unwrap_or(0),
+            before: summarize_period(&before),
+            after: summarize_period(&after),
+        });
+    }
+    out.sort_by(|a, b| {
+        (b.before.missions + b.after.missions)
+            .cmp(&(a.before.missions + a.after.missions))
+            .then_with(|| a.repo.cmp(&b.repo))
+    });
+    out
+}
+
+/// Live proof-of-learning across all repositories from `studio.db` and the vault.
+pub fn proof_of_learning(v: &Vault) -> Vec<RepoProof> {
+    let missions = crate::missions::list(500).unwrap_or_default();
+    let mut retries_map = std::collections::HashMap::new();
+    for m in &missions {
+        let total = crate::stuck::retries(&m.id) + crate::goal_loop::rejects(&m.id);
+        retries_map.insert(m.id.clone(), total);
+    }
+    let mut playbook_at: std::collections::HashMap<String, i64> = Default::default();
+    let mut lesson_counts: std::collections::HashMap<String, usize> = Default::default();
+    for r in crate::memory_index::notes(v).unwrap_or_default() {
+        if (r.kind == "convention" || r.kind == "gotcha") && r.status == "active" {
+            if let Some(repo) = r.repo {
+                let k = repo.to_lowercase();
+                *lesson_counts.entry(k.clone()).or_default() += 1;
+                let pb = note_path(v, &repo);
+                if pb.exists() {
+                    let entry = playbook_at.entry(k).or_insert(r.mtime);
+                    if r.mtime < *entry {
+                        *entry = r.mtime;
+                    }
+                }
+            }
+        }
+    }
+    compute_proof(&missions, &retries_map, &playbook_at, &lesson_counts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn proof_splits_before_and_after_playbook_and_counts_first_attempt_rate() {
+        let mut m1 = crate::missions::Mission {
+            id: "M-1".into(),
+            repo: "r1".into(),
+            status: "done".into(),
+            review_verdict: Some("approve".into()),
+            created_at: 100,
+            ..Default::default()
+        };
+        let m2 = crate::missions::Mission {
+            id: "M-2".into(),
+            repo: "r1".into(),
+            status: "done".into(),
+            review_verdict: Some("approve".into()),
+            created_at: 200,
+            ..Default::default()
+        };
+        m1.review_verdict = Some("approve".into());
+        let mut retries = std::collections::HashMap::new();
+        retries.insert("M-1".into(), 1);
+        retries.insert("M-2".into(), 0);
+        let mut pb = std::collections::HashMap::new();
+        pb.insert("r1".into(), 150);
+        let mut lc = std::collections::HashMap::new();
+        lc.insert("r1".into(), 4);
+        let out = compute_proof(&[m1, m2], &retries, &pb, &lc);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].before.missions, 1);
+        assert_eq!(out[0].before.approved_first, 0);
+        assert_eq!(out[0].after.missions, 1);
+        assert_eq!(out[0].after.approved_first, 1);
+        assert!((out[0].after.first_attempt_rate - 1.0).abs() < 1e-6);
+    }
 
     fn lesson(kind: &str, title: &str, mtime: i64, links: i64, text: &str) -> Lesson {
         Lesson {

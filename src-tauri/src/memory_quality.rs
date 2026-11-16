@@ -56,6 +56,8 @@ pub struct MemoryQualityReport {
     pub dry_run: bool,
     pub scanned: usize,
     pub stale: Vec<Change>,
+    #[serde(default)]
+    pub duplicates: Vec<Change>,
     pub contradictions: Vec<Change>,
     /// Why the contradiction turn's answer was dropped, when it was not valid.
     pub dropped: Option<String>,
@@ -65,6 +67,7 @@ impl MemoryQualityReport {
     pub fn superseded(&self) -> usize {
         self.stale
             .iter()
+            .chain(self.duplicates.iter())
             .chain(self.contradictions.iter())
             .filter(|c| c.written)
             .count()
@@ -591,10 +594,135 @@ pub fn run(v: &Vault, dry_run: bool) -> Result<MemoryQualityReport> {
     Ok(report)
 }
 
+fn token_set(body: &str) -> HashSet<String> {
+    condensed(body)
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 3)
+        .map(str::to_string)
+        .collect()
+}
+
+fn jaccard_similarity(a: &str, b: &str) -> f64 {
+    if condensed(a) == condensed(b) {
+        return 1.0;
+    }
+    let ta = token_set(a);
+    let tb = token_set(b);
+    if ta.is_empty() || tb.is_empty() {
+        return 0.0;
+    }
+    let inter = ta.intersection(&tb).count() as f64;
+    let union = ta.union(&tb).count() as f64;
+    if union == 0.0 {
+        0.0
+    } else {
+        inter / union
+    }
+}
+
+fn merge_unique_lines(v: &Vault, winner_rel: &str, loser_body: &str) -> Result<()> {
+    let path = v.resolve_rel(winner_rel)?;
+    let mut doc = Doc::parse(&fs::read_to_string(&path)?);
+    let existing = condensed(&doc.body).to_lowercase();
+    let mut extra = Vec::new();
+    for line in loser_body.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with('#') || line.to_lowercase().starts_with("see also:")
+        {
+            continue;
+        }
+        let norm = line.to_lowercase();
+        if !existing.contains(&norm) {
+            extra.push(line.to_string());
+        }
+    }
+    if !extra.is_empty() {
+        let mut body = doc.body.trim_end().to_string();
+        body.push_str("\n\n");
+        body.push_str(&extra.join("\n"));
+        body.push('\n');
+        doc.body = body;
+        doc.set_str("updated", now());
+        v.write_note(winner_rel, &doc.render())?;
+    }
+    Ok(())
+}
+
+fn duplicate_changes(
+    v: &Vault,
+    notes: &[Note],
+    dry_run: bool,
+    marked: &mut HashSet<String>,
+) -> Result<Vec<Change>> {
+    let mut groups: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
+    for (i, n) in notes.iter().enumerate() {
+        if n.status != "active" || !matches!(n.kind.as_str(), "convention" | "gotcha" | "fact") {
+            continue;
+        }
+        let repo = n.repo.as_deref().unwrap_or("").to_lowercase();
+        groups.entry((n.kind.clone(), repo)).or_default().push(i);
+    }
+    let mut out = Vec::new();
+    for ids in groups.values() {
+        for a_idx in 0..ids.len() {
+            for b_idx in a_idx + 1..ids.len() {
+                let (i, j) = (ids[a_idx], ids[b_idx]);
+                let (na, nb) = (&notes[i], &notes[j]);
+                if marked.contains(&na.rel) || marked.contains(&nb.rel) {
+                    continue;
+                }
+                if opposition(&na.body, &nb.body) {
+                    continue;
+                }
+                let sim = jaccard_similarity(&na.body, &nb.body);
+                if sim < 0.60 {
+                    continue;
+                }
+                let (winner, loser) = if na.protected != nb.protected {
+                    if na.protected {
+                        (na, nb)
+                    } else {
+                        (nb, na)
+                    }
+                } else if na.body.len() >= nb.body.len() {
+                    (na, nb)
+                } else {
+                    (nb, na)
+                };
+                let reason = format!(
+                    "Near-duplicate of [[{}]] ({:.0}% overlap)",
+                    winner.slug,
+                    sim * 100.0
+                );
+                let mut written = false;
+                if !loser.protected && !dry_run {
+                    if !winner.protected {
+                        merge_unique_lines(v, &winner.rel, &loser.body)?;
+                    }
+                    supersede(v, &loser.rel, Some(&winner.slug), &reason)?;
+                    written = true;
+                    marked.insert(loser.rel.clone());
+                }
+                out.push(Change {
+                    note: loser.slug.clone(),
+                    path: loser.rel.clone(),
+                    kind: "duplicate".into(),
+                    superseded_by: Some(winner.slug.clone()),
+                    reason,
+                    written,
+                    protected: loser.protected,
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
 fn run_with(v: &Vault, dry_run: bool, turn: &Turn<'_>) -> Result<MemoryQualityReport> {
     let notes = load_notes(v);
     let mut marked = HashSet::new();
     let stale = stale_changes(v, &notes, dry_run, &mut marked)?;
+    let duplicates = duplicate_changes(v, &notes, dry_run, &mut marked)?;
     let pairs = candidate_pairs(&notes);
     let mut contradictions = Vec::new();
     let mut dropped = None;
@@ -628,6 +756,7 @@ fn run_with(v: &Vault, dry_run: bool, turn: &Turn<'_>) -> Result<MemoryQualityRe
         dry_run,
         scanned: notes.len(),
         stale,
+        duplicates,
         contradictions,
         dropped,
     })
@@ -1224,5 +1353,49 @@ mod tests {
             d.path().join("missing").display().to_string(),
         ])
         .is_err());
+    }
+
+    #[test]
+    fn near_duplicates_are_merged_into_the_richer_note() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::memory_index::set_test_index_dir(Some(d.path().join("index")));
+        let v = Vault::new(d.path().join("vault"));
+        v.scaffold().unwrap();
+        let mem = v.root.join("03_Memory");
+        let a = mem.join("Npm_ci_one.md");
+        let b = mem.join("Npm_ci_two.md");
+        std::fs::write(
+            &a,
+            "---\ntype: convention\nrepo: repo-a\nstatus: active\n---\n# Use npm ci\n\nAlways run npm ci in CI workflows so lockfile stays exact.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &b,
+            "---\ntype: convention\nrepo: repo-a\nstatus: active\n---\n# Use npm ci in CI\n\nAlways run npm ci in CI workflows so lockfile stays exact and fast.\nCheck lockfile first.\n",
+        )
+        .unwrap();
+        let notes: Vec<Note> = load_notes(&v)
+            .into_iter()
+            .filter(|n| n.repo.as_deref() == Some("repo-a"))
+            .collect();
+        assert_eq!(notes.len(), 2);
+        let mut marked = HashSet::new();
+        // Override protection by calling duplicate_changes on unprotected copies.
+        let unprotected: Vec<Note> = notes
+            .into_iter()
+            .map(|mut n| {
+                n.protected = false;
+                n
+            })
+            .collect();
+        let changes = duplicate_changes(&v, &unprotected, false, &mut marked).unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].kind, "duplicate");
+        assert!(changes[0].written);
+        assert_eq!(changes[0].superseded_by.as_deref(), Some("Npm_ci_two"));
+        let raw_a = fs::read_to_string(&a).unwrap();
+        assert!(raw_a.contains("status: superseded"), "{raw_a}");
+        crate::memory_index::set_test_index_dir(None);
     }
 }

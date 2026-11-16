@@ -1011,6 +1011,20 @@ pub async fn playbook_rebuild(state: State<'_, AppState>) -> CmdResult<Vec<Strin
     blocking(move || crate::playbook::write_all(&crate::vault::Vault::new(root))).await
 }
 
+/// Proof of learning per repository: before vs after each playbook (Beyond B3.4).
+#[tauri::command]
+pub async fn playbook_proof(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<crate::playbook::RepoProof>> {
+    let root = vault_root(&state)?;
+    blocking(move || {
+        Ok(crate::playbook::proof_of_learning(
+            &crate::vault::Vault::new(root),
+        ))
+    })
+    .await
+}
+
 /// The time machine: the benchmark set, the replay queue and today's count (Beyond B4).
 #[tauri::command]
 pub async fn bench_status() -> CmdResult<crate::bench::Status> {

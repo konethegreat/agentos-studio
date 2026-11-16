@@ -6,6 +6,7 @@ import { useToast } from "../components/Toasts";
 import { Guide, useReportGuides } from "../components/Guides";
 import { HermesMemoryPanel } from "../components/HermesMemory";
 import { LearningPanel } from "../components/Learning";
+import { ProofOfLearningPanel } from "../components/ProofOfLearning";
 import { MemoryQualityPanel } from "../components/MemoryQuality";
 import { SkillProposalsPanel } from "../components/SkillProposals";
 import { WhyPanel } from "../components/Provenance";
@@ -317,6 +318,7 @@ export function Memory() {
             )}
           </div>
           <MemoryQualityPanel onChanged={() => void load()} />
+          <ProofOfLearningPanel />
           <LearningPanel onWrote={() => void load()} />
           <SkillProposalsPanel />
           <WhyPanel />
