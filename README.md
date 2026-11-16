@@ -35,6 +35,13 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.5.0
+
+Beyond phases B3 and B4 (docs/BEYOND.md): the fleet learns from its work and measures new models on it.
+
+- **Playbooks.** What the fleet learned in a repository (conventions and gotchas from every reviewed mission) is ranked and delivered to every worker that starts there, Hermes workers included, who received none of it before. A generated Playbook.md per repository in the vault is rewritten each night, and Today shows what was learned in the last day.
+- **The time machine (Brain tab).** Approved missions are a benchmark set. A new model on your Claude or Antigravity subscription is replayed on three of them, in a sandbox that never pushes, and scored on the tests and a second agent's review; the scores feed the model router. One replay at a time, at most six a day, never on a metered provider.
+
 ## What is new in 1.4.0
 
 The first release of the Beyond roadmap (docs/BEYOND.md): a fleet that does not wait on its owner.
