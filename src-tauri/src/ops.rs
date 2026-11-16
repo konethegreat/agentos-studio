@@ -1009,6 +1009,24 @@ pub async fn bench_clear() -> CmdResult<crate::bench::Status> {
     blocking(crate::bench::clear).await
 }
 
+/// Every merge receipt, newest first (Beyond B5).
+#[tauri::command]
+pub async fn receipts_list(limit: Option<usize>) -> CmdResult<Vec<crate::receipts::Receipt>> {
+    blocking(move || {
+        let mut all = crate::receipts::all()?;
+        all.reverse();
+        all.truncate(limit.unwrap_or(100));
+        Ok(all)
+    })
+    .await
+}
+
+/// Verify the whole receipt chain: links, hashes and signatures.
+#[tauri::command]
+pub async fn receipts_verify() -> CmdResult<crate::receipts::Verification> {
+    blocking(crate::receipts::verify).await
+}
+
 /// The repository and its worktrees (one per mission attempt).
 #[tauri::command]
 pub async fn explorer_checkouts(

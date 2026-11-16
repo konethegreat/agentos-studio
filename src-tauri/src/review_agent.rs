@@ -565,7 +565,12 @@ pub fn merge(id: &str, allowlisted: bool) -> Result<String> {
     }
     message.push_str(&crate::provenance::trailers(&m));
     let subject = crate::github::squash_subject(&title, number);
-    crate::github::pr_merge_with(
+    // What the gate saw, captured before the merge changes it: the reviewed head and the checks.
+    let head = crate::github::pr_shas(&repo, number)
+        .map(|(h, _)| h)
+        .unwrap_or_default();
+    let checks = crate::github::pr_check_runs(&repo, number).unwrap_or_default();
+    let out = crate::github::pr_merge_with(
         &repo,
         number,
         "squash",
@@ -573,7 +578,18 @@ pub fn merge(id: &str, allowlisted: bool) -> Result<String> {
         true,
         subject.as_deref(),
         Some(&message),
-    )
+    )?;
+    // Beyond B5: a signed receipt. The merge already happened, so a failure here is only noted.
+    if let Err(e) = crate::receipts::record(&m, &repo, number, &head, &checks) {
+        let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+            mission_id: Some(&m.id),
+            kind: "note",
+            from_agent: "agentos-studio",
+            summary: &format!("Merged, but the receipt could not be written: {e:#}"),
+            ..Default::default()
+        });
+    }
+    Ok(out)
 }
 
 /// The provider family of an agent's answers, for picking a reviewer on another provider.
