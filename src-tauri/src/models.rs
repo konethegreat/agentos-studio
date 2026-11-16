@@ -44,7 +44,9 @@ fn label(id: &str) -> String {
         "claude-subscription-directsdk" | "claude-subscription-directsdk-experimental" => {
             "Claude subscription".into()
         }
-        "antigravity-oauth" | "antigravity" => "Antigravity (Argon)".into(),
+        "antigravity-subscription-directsdk" | "antigravity-oauth" | "antigravity" => {
+            "Antigravity (Argon)".into()
+        }
         "anthropic" => "Anthropic API".into(),
         "openrouter" => "OpenRouter".into(),
         "openai" => "OpenAI".into(),

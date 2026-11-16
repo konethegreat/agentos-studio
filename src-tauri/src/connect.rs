@@ -122,35 +122,33 @@ pub fn plugin_enabled_in(show_output: &str) -> bool {
 }
 
 fn antigravity_connected() -> (bool, String) {
-    let out = procs::run("hermes", &["plugins", "show", "antigravity-oauth"]);
-    let text = out
-        .as_ref()
-        .map(|o| {
-            format!(
-                "{}{}",
-                String::from_utf8_lossy(&o.stdout),
-                String::from_utf8_lossy(&o.stderr)
-            )
-        })
-        .unwrap_or_default();
-    let installed = out.as_ref().is_some_and(|o| o.status.success());
-    if installed && plugin_enabled_in(&text) {
-        (
-            true,
-            "The antigravity-oauth plugin is enabled in Hermes".into(),
-        )
-    } else if installed || text.contains("Access is denied") {
-        (
-            false,
-            "The antigravity-oauth plugin is installed but Hermes has disabled it. Run `hermes plugins show antigravity-oauth` for the reason".into(),
-        )
-    } else {
-        (
-            false,
-            "Optional. Needs the community antigravity-oauth plugin and your Antigravity login"
-                .into(),
-        )
+    for plugin in ["antigravity-subscription-directsdk", "antigravity-oauth"] {
+        let out = procs::run("hermes", &["plugins", "show", plugin]);
+        let text = out
+            .as_ref()
+            .map(|o| {
+                format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                )
+            })
+            .unwrap_or_default();
+        let installed = out.as_ref().is_some_and(|o| o.status.success());
+        if installed && plugin_enabled_in(&text) {
+            return (true, format!("The {plugin} plugin is enabled in Hermes"));
+        } else if installed || text.contains("Access is denied") {
+            return (
+                false,
+                format!("The {plugin} plugin is installed but Hermes has disabled it. Run `hermes plugins show {plugin}` for the reason"),
+            );
+        }
     }
+    (
+        false,
+        "Optional. Needs the antigravity-subscription-directsdk plugin and your Antigravity login"
+            .into(),
+    )
 }
 
 pub fn status() -> Vec<Connection> {
