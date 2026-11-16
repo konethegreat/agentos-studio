@@ -10,6 +10,7 @@ pub mod ask;
 pub mod assign;
 pub mod automation;
 pub mod autonomy;
+pub mod bench;
 pub mod boot;
 pub mod bootstrapper;
 pub mod broadcast;
@@ -386,6 +387,9 @@ pub fn run_gui() {
             ops::quota_lanes,
             ops::playbook_learned,
             ops::playbook_rebuild,
+            ops::bench_status,
+            ops::bench_measure,
+            ops::bench_clear,
             ops::explorer_files,
             ops::explorer_read,
             ops::explorer_status,

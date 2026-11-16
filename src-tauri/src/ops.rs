@@ -989,6 +989,26 @@ pub async fn playbook_rebuild(state: State<'_, AppState>) -> CmdResult<Vec<Strin
     blocking(move || crate::playbook::write_all(&crate::vault::Vault::new(root))).await
 }
 
+/// The time machine: the benchmark set, the replay queue and today's count (Beyond B4).
+#[tauri::command]
+pub async fn bench_status() -> CmdResult<crate::bench::Status> {
+    blocking(crate::bench::status).await
+}
+
+/// Queue the benchmark set for one model on a flat subscription.
+#[tauri::command]
+pub async fn bench_measure(provider: String, model: String) -> CmdResult<Vec<crate::bench::Job>> {
+    blocking(move || {
+        crate::bench::enqueue_model(&provider, &model, &format!("measure {model} (owner)"))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn bench_clear() -> CmdResult<crate::bench::Status> {
+    blocking(crate::bench::clear).await
+}
+
 /// The repository and its worktrees (one per mission attempt).
 #[tauri::command]
 pub async fn explorer_checkouts(

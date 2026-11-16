@@ -506,6 +506,7 @@ fn hermes_turn(
     dir: &Path,
     prompt: &str,
     model: &str,
+    provider: &str,
     profile: Option<&str>,
     max_turns: Option<&str>,
     limit: Duration,
@@ -528,6 +529,9 @@ fn hermes_turn(
     args.extend(["--in".to_string(), dir.display().to_string()]);
     if !model.trim().is_empty() {
         args.extend(["-m".to_string(), model.trim().to_string()]);
+        if !provider.trim().is_empty() {
+            args.extend(["--provider".to_string(), provider.trim().to_string()]);
+        }
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let r = procs::run_with_timeout("hermes", &refs, None, Some(dir), limit);
@@ -602,6 +606,19 @@ fn write_note(v: &Vault, r: &EvalResult) -> Result<String> {
 
 /// Replay one finished mission on `agent` (and `model`, when given) and write one eval note.
 pub fn run(v: &Vault, mission_id: &str, agent: &str, model: Option<&str>) -> Result<EvalResult> {
+    run_with(v, mission_id, agent, model, None)
+}
+
+/// [`run`], with the Hermes provider pinned for the model (a new model is measured on the
+/// subscription it appeared on, never on whatever Hermes would infer).
+pub fn run_with(
+    v: &Vault,
+    mission_id: &str,
+    agent: &str,
+    model: Option<&str>,
+    provider: Option<&str>,
+) -> Result<EvalResult> {
+    let provider = provider.map(str::trim).unwrap_or_default().to_string();
     let agent = normalize_agent(agent)?;
     let model = model
         .map(str::trim)
@@ -671,7 +688,15 @@ pub fn run(v: &Vault, mission_id: &str, agent: &str, model: Option<&str>) -> Res
     let (_, session) = if agent == "claude-code" {
         claude_turn(&wt, &prompt, &model, true, REPLAY_LIMIT)?
     } else {
-        hermes_turn(&wt, &prompt, &model, None, Some(MAX_TURNS), REPLAY_LIMIT)?
+        hermes_turn(
+            &wt,
+            &prompt,
+            &model,
+            &provider,
+            None,
+            Some(MAX_TURNS),
+            REPLAY_LIMIT,
+        )?
     };
     let (diff, changed_files) = replay_diff(&wt)?;
     let deps_installed = install_deps(&wt);
@@ -685,6 +710,7 @@ pub fn run(v: &Vault, mission_id: &str, agent: &str, model: Option<&str>) -> Res
         hermes_turn(
             &wt,
             &review_prompt,
+            "",
             "",
             profile.as_deref(),
             None,

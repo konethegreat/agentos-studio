@@ -598,6 +598,28 @@ export interface Learned {
   titles: string[];
 }
 
+/** Beyond B4, the time machine. */
+export interface BenchJob {
+  mission: string;
+  provider: string;
+  model: string;
+  reason: string;
+  queued_at: number;
+}
+
+export interface BenchStatus {
+  cases: { mission: string; repo: string; goal: string; pr_url: string | null }[];
+  queue: BenchJob[];
+  running: boolean;
+  today: number;
+  per_day: number;
+}
+
+export interface ModelChanges {
+  new: { provider: string; model: string; first_seen: number }[];
+  gone: { provider: string; model: string; used_by: string[] }[];
+}
+
 export interface NewGoal {
   outcome: string;
   repos: string[];
@@ -1261,6 +1283,10 @@ export const api = {
   quotaLanes: (refresh = false) => invoke<QuotaLane[]>("quota_lanes", { refresh }),
   playbookLearned: (hours = 24) => invoke<Learned[]>("playbook_learned", { hours }),
   playbookRebuild: () => invoke<string[]>("playbook_rebuild"),
+  benchStatus: () => invoke<BenchStatus>("bench_status"),
+  benchMeasure: (provider: string, model: string) => invoke<BenchJob[]>("bench_measure", { provider, model }),
+  benchClear: () => invoke<BenchStatus>("bench_clear"),
+  modelChanges: () => invoke<ModelChanges>("model_changes"),
   shadowSet: (p: { enabled?: boolean; windowMinutes?: number; cls?: string; answer?: string }) =>
     invoke<ShadowStatus>("shadow_set", { enabled: p.enabled, windowMinutes: p.windowMinutes, class: p.cls, answer: p.answer }),
   digestNow: () => invoke<string>("digest_now"),

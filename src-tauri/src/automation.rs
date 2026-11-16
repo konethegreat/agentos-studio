@@ -543,7 +543,9 @@ pub fn tick(v: &Vault) -> TickReport {
     keep_awake(report.running > 0);
     report.kept_awake = report.running > 0;
     // 4. Once a night, rewrite every repository's playbook from what the fleet learned.
+    // 5. The time machine: measure new models on real work, one replay at a time.
     if !cfg!(test) {
+        let _ = crate::bench::step(v, chrono::Utc::now().timestamp());
         if let Some(changed) = crate::playbook::nightly(v) {
             if !changed.is_empty() {
                 let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
