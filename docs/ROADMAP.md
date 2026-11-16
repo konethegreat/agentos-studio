@@ -912,6 +912,12 @@ Hermes feature; do not remove a Studio feature that covers non-Hermes agents.
 - Shipped: Computer Use view (Work > Computer Use); verified read-only against the real install by
   `tests/live/live_computer_use.rs`.
 
+## Beyond 1.3 (planned)
+
+The next eight phases, B0 to B7, live in [BEYOND.md](BEYOND.md): nothing waits on a crash, Shadow Kone,
+the quota grid, the dreaming brain, the time machine, proof-carrying work, Studio building Studio,
+and the agency. Each phase there lists its tasks and the evidence that closes them.
+
 ## Ideas worth considering
 
 - Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.

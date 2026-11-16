@@ -85,6 +85,7 @@ pub mod skills;
 pub mod store;
 pub mod stuck;
 pub mod timeline;
+pub mod tray;
 pub mod updates;
 pub mod usage;
 pub mod vault;
@@ -122,10 +123,14 @@ pub fn run_gui() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(state)
+        .on_window_event(tray::on_window_event)
         .setup(move |app| {
             let handle = app.handle().clone();
             if let Ok(dir) = app.path().resource_dir() {
                 help::set_resource_dir(&dir);
+            }
+            if let Err(e) = tray::install(&handle) {
+                eprintln!("tray icon not installed; closing the window quits: {e:#}");
             }
             if let Err(e) = single::claim(handle.clone()) {
                 eprintln!("single instance guard not claimed: {e:#}");

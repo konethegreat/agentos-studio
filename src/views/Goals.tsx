@@ -507,6 +507,7 @@ const KIND_LABEL: Record<string, string> = {
   destructive: "Destructive approval",
   merge: "Merge outside the allow list",
   done_check: "Done check failed twice",
+  plan_failed: "Planning failed three times",
 };
 
 function EscalationRow({ e, busy, onAnswer }: { e: Escalation; busy: boolean; onAnswer: (answer: string) => void }) {

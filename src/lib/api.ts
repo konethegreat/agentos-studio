@@ -537,7 +537,7 @@ export interface Escalation {
   id: string;
   goal_id: string | null;
   mission_id: string | null;
-  kind: "budget" | "second_reject" | "stuck" | "destructive" | "merge" | "done_check";
+  kind: "budget" | "second_reject" | "stuck" | "destructive" | "merge" | "done_check" | "plan_failed";
   question: string;
   options: string[];
   safe_answer: string;

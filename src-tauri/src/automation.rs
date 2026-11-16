@@ -124,9 +124,10 @@ pub fn model_retry_key(id: &str) -> String {
     format!("mission.modelfail.{id}")
 }
 
-/// A Hermes worker that stopped because its model failed: the plan's usage or rate limit, or a
-/// fallback model that stopped replying or sent a broken tool call. The work itself is not at
-/// fault, so it deserves a fresh attempt rather than the owner's attention. Pure.
+/// A Hermes worker that stopped because its model or its runtime failed: the plan's usage or rate
+/// limit, a fallback provider out of credits or entitlement, a fallback model that stopped
+/// replying or sent a broken tool call, or a managed worker the gateway lost. The work itself is
+/// not at fault, so it deserves a fresh attempt rather than the owner's attention. Pure.
 pub fn model_failure(reason: &str) -> bool {
     let r = reason.to_lowercase();
     [
@@ -139,6 +140,12 @@ pub fn model_failure(reason: &str) -> bool {
         "rate limit",
         "http 429",
         "quota reached",
+        "entitlement is exhausted",
+        "billing, credits",
+        "insufficient credits",
+        "managed worker lost",
+        "gateway connection failed",
+        "without kanban_complete",
     ]
     .iter()
     .any(|p| r.contains(p))
@@ -896,6 +903,22 @@ mod tests {
         assert_eq!(model_failure_step(1), "retry");
         assert_eq!(model_failure_step(2), "block");
         assert_eq!(model_retry_key("M-62"), "mission.modelfail.M-62");
+    }
+
+    #[test]
+    fn a_fallback_out_of_entitlement_or_a_lost_worker_is_not_the_work() {
+        // The real M-096 block (E-16): Claude's limit, a fallback out of entitlement, the worker lost.
+        let real = "pid 26144 exited with code 1 [managed worker lost: EOFError] Worker's last output: 'billing, credits, or account entitlement is exhausted for gemini-4-hydrogen-high. Add credits or update billing with that provider, then retry.' Kanban owner refused: Kanban owner silent for 230s: Gateway connection failed; no local fallback";
+        assert!(model_failure(real));
+        assert!(model_failure("managed worker lost: EOFError"));
+        assert!(model_failure(
+            "Gateway connection failed; no local fallback"
+        ));
+        assert!(model_failure("402: insufficient credits for this request"));
+        assert!(!model_failure("cargo test: 2 failed; see output"));
+        assert!(!model_failure(
+            "Blocked on PR #16: still open and now conflicts with main"
+        ));
     }
 
     #[test]

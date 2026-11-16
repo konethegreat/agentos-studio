@@ -40,6 +40,7 @@ const KIND_LABEL: Record<string, string> = {
   destructive: "Destructive approval",
   merge: "Merge outside the allow list",
   done_check: "Done check failed twice",
+  plan_failed: "Planning failed three times",
 };
 
 const IN_PROGRESS = ["planning", "running", "verifying", "paused"];
