@@ -23,6 +23,8 @@ use crate::vault::Vault;
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Pass {
+    /// What Shadow Kone planned or answered in this pass.
+    pub shadow: Vec<String>,
     pub merged: Vec<String>,
     pub escalated: Vec<String>,
     pub applied: Vec<String>,
@@ -93,6 +95,22 @@ pub fn is_destructive(reason: &str) -> bool {
 pub fn pass(v: &Vault, automation_on: bool) -> Pass {
     let mut p = Pass::default();
     let now = store::now();
+    // Shadow answers before the deadline does, so its answers are applied in this same pass.
+    match crate::shadow::step(now) {
+        Ok(lines) => {
+            for (mission, line) in lines {
+                let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+                    mission_id: mission.as_deref(),
+                    kind: "note",
+                    from_agent: "shadow",
+                    summary: &line,
+                    ..Default::default()
+                });
+                p.shadow.push(line);
+            }
+        }
+        Err(e) => p.errors.push(format!("shadow: {e:#}")),
+    }
     if let Err(e) = escalation::expire_due(now) {
         p.errors.push(format!("expiring escalations: {e:#}"));
     }

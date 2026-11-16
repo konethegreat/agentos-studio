@@ -549,6 +549,36 @@ export interface Escalation {
   answered_at: number | null;
 }
 
+/** Beyond B1, Shadow Kone (docs/SHADOW.md): one reason class and how Shadow treats it. */
+export interface ShadowRule {
+  class: string;
+  label: string;
+  standing: string | null;
+  learned: string | null;
+  precedents: string[];
+  never: boolean;
+}
+
+/** One escalation Shadow planned, and what became of it. */
+export interface ShadowRecord {
+  escalation: string;
+  class: string;
+  planned: string;
+  source: "standing" | "rule";
+  reason: string;
+  due_at: number;
+  outcome: "pending" | "answered" | "agreed" | "overruled" | "expired";
+  final_answer: string | null;
+}
+
+export interface ShadowStatus {
+  enabled: boolean;
+  window_minutes: number;
+  rules: ShadowRule[];
+  record: ShadowRecord[];
+  agreement: number | null;
+}
+
 export interface NewGoal {
   outcome: string;
   repos: string[];
@@ -1208,6 +1238,9 @@ export const api = {
   answerEscalation: (id: string, answer: string) => invoke<Escalation>("escalation_answer", { id, answer }),
   escalationSettings: () => invoke<{ timeout_minutes: number; notify_target: string | null }>("escalation_settings"),
   setEscalationTimeout: (minutes: number) => invoke<void>("set_escalation_timeout", { minutes }),
+  shadowStatus: () => invoke<ShadowStatus>("shadow_status"),
+  shadowSet: (p: { enabled?: boolean; windowMinutes?: number; cls?: string; answer?: string }) =>
+    invoke<ShadowStatus>("shadow_set", { enabled: p.enabled, windowMinutes: p.windowMinutes, class: p.cls, answer: p.answer }),
   digestNow: () => invoke<string>("digest_now"),
   digestSettings: () => invoke<{ times: string; notify_target: string | null }>("digest_settings"),
   setDigestTimes: (times: string) => invoke<void>("set_digest_times", { times }),

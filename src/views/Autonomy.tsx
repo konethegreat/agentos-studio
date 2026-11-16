@@ -3,6 +3,7 @@ import { Bot, CirclePause, CirclePlay, ListChecks, Play, RefreshCw, ShieldCheck 
 import { api, errorText, type AutonomyRepo, type AutonomySettings } from "../lib/api";
 import { Badge, Button, Card, Empty, Toggle, inputClass } from "../components/ui";
 import { useToast } from "../components/Toasts";
+import { ShadowCard } from "../components/ShadowCard";
 
 function when(at: number): string {
   return at ? new Date(at * 1000).toLocaleString() : "";
@@ -153,6 +154,8 @@ export function Autonomy({ onOpenGoals }: { onOpenGoals?: () => void }) {
           />
         </label>
       </Card>
+
+      <ShadowCard />
 
       {repos === null ? (
         <div className="text-small text-muted">Reading the repositories...</div>

@@ -78,6 +78,7 @@ pub mod router;
 pub mod routing;
 pub mod settings;
 pub mod setup_flow;
+pub mod shadow;
 pub mod single;
 pub mod skill_bridge;
 pub mod skill_proposals;
@@ -378,6 +379,8 @@ pub fn run_gui() {
             ops::open_external,
             ops::reveal_path,
             ops::explorer_checkouts,
+            ops::shadow_status,
+            ops::shadow_set,
             ops::explorer_files,
             ops::explorer_read,
             ops::explorer_status,

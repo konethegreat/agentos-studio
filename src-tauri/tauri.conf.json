@@ -59,7 +59,8 @@
       "../docs/PROMPTS.md": "docs/PROMPTS.md",
       "../docs/AUTONOMOUS-REPOS.md": "docs/AUTONOMOUS-REPOS.md",
       "../docs/EXPLORER.md": "docs/EXPLORER.md",
-      "../docs/BEYOND.md": "docs/BEYOND.md"
+      "../docs/BEYOND.md": "docs/BEYOND.md",
+      "../docs/SHADOW.md": "docs/SHADOW.md"
     }
   },
   "plugins": {

@@ -53,35 +53,36 @@ its own PR with the full gates.
 
 Goal: no goal stalls or dies because of infrastructure.
 
-- [ ] **B0.1 Provider and worker failures are retried, not escalated.** Extend
+- [x] **B0.1 Provider and worker failures are retried, not escalated.** Extend
   `automation::model_failure` to recognise an exhausted entitlement or billing limit, a lost managed
   worker (`EOFError`), a gateway connection failure and a worker that exited without reporting.
   Done when: the E-16 reason text is classified as a model failure in a unit test.
-- [ ] **B0.2 A failed plan is planned again.** `goal_loop` replans a goal left in `planning` with
+- [x] **B0.2 A failed plan is planned again.** `goal_loop` replans a goal left in `planning` with
   "The planner failed" after 5, 15 and 45 minutes, then escalates once. Done when: a unit test walks
   the backoff, and G-029 replans on its own in the running app.
-- [ ] **B0.3 The fleet keeps running with the window closed.** Closing the window hides it to the
-  system tray; the tray menu has Open, Pause or resume the fleet, and Quit. Optional start at login.
+- [x] **B0.3 The fleet keeps running with the window closed.** Closing the window hides it to the
+  system tray; the tray menu has Open, Pause or resume the fleet, and Quit. Start at login moves to B2, where the night shift needs it.
   Done when: the window is closed and a scheduler pass still runs (timeline entry after close).
-- [ ] **B0.4 This roadmap in Help.** `docs/BEYOND.md` is bundled and linked from the README.
+- [x] **B0.4 This roadmap in Help.** `docs/BEYOND.md` is bundled and linked from the README.
 
 ## B1: Shadow Kone, the owner's judgment delegated (1.4.0)
 
 Goal: zero missions lost to silence, without letting an agent take a decision the owner would
 not have taken. Design: `docs/SHADOW.md`.
 
-- [ ] **B1.1 Decision memory.** Every escalation answer is a precedent: kind, reason class (pure
+- [x] **B1.1 Decision memory.** Every escalation answer is a precedent: kind, reason class (pure
   classifier: provider, worker lost, no PR, no heartbeat, CI, reject, merge allow list, budget,
   destructive), repository, agent, answer, who answered. Read from `escalations`, no new table.
-- [ ] **B1.2 Learned rules.** A reason class with at least 3 owner answers, all the same, becomes a
+- [x] **B1.2 Learned rules.** A reason class with at least 3 owner answers, all the same, becomes a
   rule. One contradicting answer removes it. Destructive and budget questions never get a rule.
-- [ ] **B1.3 Veto window.** When a rule matches, Shadow announces the answer on Today and the phone
+- [x] **B1.3 Veto window.** When a rule matches, Shadow announces the answer on Today and the phone
   ("Shadow will retry M-096 in 10 min. Reply E-16 <code> stop to overrule") and answers when the
   window closes, `answered_by = shadow`. The owner's answer inside the window always wins.
-- [ ] **B1.4 Shadow screen.** Autonomy tab section: on or off, window length, the learned rules with
+- [x] **B1.4 Shadow screen.** Autonomy tab section: on or off, window length, the learned rules with
   their precedents, Shadow's answers and the owner's overrules, agreement rate.
-- [ ] **B1.5 Self-demotion.** Two owner overrules of the same rule in a row retire it until three new
-  consistent answers arrive.
+- [x] **B1.5 Self-demotion.** An owner overrule is itself his newest answer, so it breaks the streak
+  and retires the rule at once (stricter than the two overrules first planned); three new
+  consistent answers bring it back.
 - [ ] **B1.6 Judge for novel questions.** For a question with no rule, a Claude turn with the
   constitution and the nearest precedents proposes an answer with a confidence; only reversible
   answers (retry) above 0.8 are announced, everything else waits for the owner.

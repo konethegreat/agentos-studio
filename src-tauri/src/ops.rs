@@ -934,6 +934,24 @@ fn explorer_root(state: &State<'_, AppState>, root: &str) -> CmdResult<std::path
     crate::explorer::check_root(root, &allowed).map_err(err)
 }
 
+/// Shadow Kone: its switch, window, learned rules, standing answers and record (docs/SHADOW.md).
+#[tauri::command]
+pub async fn shadow_status() -> CmdResult<crate::shadow::Status> {
+    blocking(crate::shadow::status).await
+}
+
+/// Change Shadow's switch, its window, or one class's standing answer (empty clears it).
+#[tauri::command]
+pub async fn shadow_set(
+    enabled: Option<bool>,
+    window_minutes: Option<i64>,
+    class: Option<String>,
+    answer: Option<String>,
+) -> CmdResult<crate::shadow::Status> {
+    let standing = class.map(|c| (c, answer.unwrap_or_default()));
+    blocking(move || crate::shadow::set(enabled, window_minutes, standing)).await
+}
+
 /// The repository and its worktrees (one per mission attempt).
 #[tauri::command]
 pub async fn explorer_checkouts(

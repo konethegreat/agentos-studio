@@ -40,7 +40,8 @@ pub struct Escalation {
     /// `open`, `answered` or `expired` (the safe answer was taken at the deadline).
     pub status: String,
     pub answer: Option<String>,
-    /// `studio`, `phone`, `notion` (the goals board Decision column) or `timeout`.
+    /// `studio`, `phone`, `notion` (the goals board Decision column), `shadow` (Shadow Kone after
+    /// its window, docs/SHADOW.md) or `timeout`.
     pub answered_by: Option<String>,
     pub created_at: i64,
     pub deadline_at: i64,
@@ -208,8 +209,10 @@ pub fn raise(
     let code = new_code();
     let c = store::open()?;
     let id = next_id(&c)?;
-    // A new escalation has never been applied, whatever an earlier one with this id left behind.
+    // A new escalation has never been applied or planned by Shadow, whatever an earlier one with
+    // this id left behind.
     store::kv_delete(&c, &applied_key(&id))?;
+    store::kv_delete(&c, &crate::shadow::plan_key(&id))?;
     let now = store::now();
     c.execute(
         "INSERT INTO escalations (id, goal_id, mission_id, kind, question, options, safe_answer,
@@ -254,7 +257,7 @@ pub fn raise_and_send(
     Ok(e)
 }
 
-/// Record the owner's answer. `by` is `studio` or `phone`.
+/// Record an answer. `by` is `studio`, `phone`, `notion` or `shadow` (Shadow Kone, after its window).
 pub fn answer(id: &str, choice: &str, by: &str) -> Result<Escalation> {
     let e = get(id)?.ok_or_else(|| anyhow::anyhow!("no escalation '{id}'"))?;
     if e.status != "open" {
@@ -360,6 +363,7 @@ pub fn delete_for_goal(goal_id: &str) -> Result<usize> {
         .collect();
     for id in &ids {
         store::kv_delete(&c, &applied_key(id))?;
+        store::kv_delete(&c, &crate::shadow::plan_key(id))?;
     }
     Ok(c.execute(
         "DELETE FROM escalations WHERE goal_id = ?1",
