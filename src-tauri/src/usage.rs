@@ -265,7 +265,7 @@ pub fn credits() -> Vec<Credits> {
             ..Default::default()
         }),
     }
-    for p in ["claude-subscription", "antigravity-oauth"] {
+    for p in ["claude-subscription", "antigravity-subscription-directsdk"] {
         out.push(Credits {
             provider: p.into(),
             kind: "flat".into(),
@@ -281,7 +281,7 @@ pub fn credits() -> Vec<Credits> {
 /// estimates. Only metered providers count against a mission budget. Pure.
 pub fn is_flat(provider: &str) -> bool {
     let p = provider.trim().to_lowercase();
-    p.starts_with("claude-subscription") || p == "antigravity-oauth"
+    p.starts_with("claude-subscription") || p.starts_with("antigravity-")
 }
 
 /// Metered spend of Hermes sessions, from `state.db`: each session's `estimated_cost_usd` (or

@@ -40,7 +40,7 @@ static RUNNING: AtomicBool = AtomicBool::new(false);
 /// Providers a replay may run on: flat subscriptions only. Pure.
 pub fn flat_provider(provider: &str) -> bool {
     let p = provider.trim().to_lowercase();
-    p.starts_with("claude-subscription") || p == "antigravity-oauth"
+    p.starts_with("claude-subscription") || p.starts_with("antigravity-")
 }
 
 /// The benchmark set from mission history. Pure.

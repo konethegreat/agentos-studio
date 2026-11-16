@@ -3,7 +3,7 @@ import { History, Loader2, RefreshCw } from "lucide-react";
 import { api, errorText, type BenchStatus, type ModelChanges } from "../lib/api";
 import { useToast } from "./Toasts";
 
-const FLAT = (p: string) => p.startsWith("claude-subscription") || p === "antigravity-oauth";
+const FLAT = (p: string) => p.startsWith("claude-subscription") || p.startsWith("antigravity-");
 const btn =
   "inline-flex h-7 items-center gap-1 rounded-lg border border-line px-2 text-xs text-slate-200 hover:bg-white/5 disabled:opacity-50";
 

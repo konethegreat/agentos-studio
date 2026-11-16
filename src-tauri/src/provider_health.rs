@@ -33,9 +33,9 @@ pub const KNOWN: [Known; 3] = [
         plugin: Some("claude-subscription-directsdk-experimental"),
     },
     Known {
-        id: "antigravity-oauth",
+        id: "antigravity-subscription-directsdk",
         label: "Antigravity",
-        plugin: Some("antigravity-oauth"),
+        plugin: Some("antigravity-subscription-directsdk"),
     },
     Known {
         id: "openrouter",
@@ -222,7 +222,9 @@ pub fn judge(
     } else if signed_in == Some(false) {
         let fix = match k.id {
             "openrouter" => None,
-            "antigravity-oauth" => Some(("sign_in_antigravity", "Sign in to Antigravity")),
+            "antigravity-subscription-directsdk" | "antigravity-oauth" => {
+                Some(("sign_in_antigravity", "Sign in to Antigravity"))
+            }
             _ => Some(("sign_in_claude", "Sign in to Claude")),
         };
         if in_use || k.id != "openrouter" {
@@ -386,7 +388,11 @@ pub fn fix_command(provider: &str, action: &str) -> Option<(&'static str, Vec<St
         "sign_in_claude" => ("claude", vec!["auth".into(), "login".into()]),
         "sign_in_antigravity" => (
             "hermes",
-            vec!["auth".into(), "add".into(), "antigravity-oauth".into()],
+            vec![
+                "auth".into(),
+                "add".into(),
+                "antigravity-subscription-directsdk".into(),
+            ],
         ),
         "enable_plugin" => (
             "hermes",
@@ -534,17 +540,22 @@ mod tests {
         let ps = vec![ok(&KNOWN[0]), ok(&KNOWN[1])];
         let a = advice(Some(KNOWN[0].id), &[], &ps).unwrap();
         assert!(a.contains("Antigravity"));
-        assert!(advice(Some(KNOWN[0].id), &["antigravity-oauth".into()], &ps).is_none());
+        assert!(advice(
+            Some(KNOWN[0].id),
+            &["antigravity-subscription-directsdk".into()],
+            &ps
+        )
+        .is_none());
         assert!(advice(None, &[], &ps).is_none());
     }
 
     #[test]
     fn fixes_are_fixed_commands_only() {
         assert_eq!(
-            fix_command("antigravity-oauth", "sign_in_antigravity")
+            fix_command("antigravity-subscription-directsdk", "sign_in_antigravity")
                 .unwrap()
                 .1,
-            ["auth", "add", "antigravity-oauth"]
+            ["auth", "add", "antigravity-subscription-directsdk"]
         );
         assert_eq!(
             fix_command("openrouter", "enable_plugin"),

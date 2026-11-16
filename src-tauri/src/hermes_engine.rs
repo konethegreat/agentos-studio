@@ -126,7 +126,7 @@ pub struct ProviderDef {
 }
 
 pub const SUBSCRIPTION_PLUGIN: &str = "claude-subscription-directsdk-experimental";
-pub const ANTIGRAVITY_PLUGIN: &str = "antigravity-oauth";
+pub const ANTIGRAVITY_PLUGIN: &str = "antigravity-subscription-directsdk";
 
 pub const PROVIDERS: &[ProviderDef] = &[
     ProviderDef {
@@ -145,8 +145,8 @@ pub const PROVIDERS: &[ProviderDef] = &[
         blurb: "Runs on your Claude Pro or Max plan through Claude Code. No API key.",
     },
     ProviderDef {
-        id: "antigravity-oauth",
-        label: "Antigravity (OAuth)",
+        id: "antigravity-subscription-directsdk",
+        label: "Antigravity (DirectSDK)",
         hermes: ANTIGRAVITY_PLUGIN,
         kind: "antigravity",
         key_env: &[],
@@ -159,7 +159,7 @@ pub const PROVIDERS: &[ProviderDef] = &[
             "claude-opus-5-5-medium",
             "claude-sonnet-5-5-medium",
         ],
-        blurb: "Runs on your Google Antigravity subscription via antigravity-oauth. No API key.",
+        blurb: "Runs on your Google Antigravity subscription via antigravity-subscription-directsdk. No API key.",
     },
     ProviderDef {
         id: "openrouter",
