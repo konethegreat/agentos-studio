@@ -35,6 +35,15 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.4.0
+
+The first release of the Beyond roadmap (docs/BEYOND.md): a fleet that does not wait on its owner.
+
+- **Shadow Kone (Autonomy screen).** When you have answered the same kind of question the same way three times in a row, or set a standing answer, Shadow answers it for you after a window (10 minutes by default). It tells you on Today and on your phone first, your own answer inside the window always wins, and it never answers a budget, a destructive approval or a merge outside the allow list. Design: docs/SHADOW.md.
+- **The quota grid (Agents screen).** Hermes' primary and fallback models as lanes, each open or closed from live quota. A model that runs out of credits or entitlement is avoided for 5 hours; a Hermes mission runs on the first open lane, or waits for the soonest reset instead of failing.
+- **Nothing waits on a crash.** A worker lost to its provider (a spent fallback, a lost managed worker, a gateway failure) is retried instead of escalated; a goal whose planner failed is planned again after 5, 15 and 45 minutes.
+- **The fleet keeps running with the window closed.** Closing Studio hides it to the system tray; the tray opens it, pauses or resumes the fleet, or quits.
+
 ## What is new in 1.3.0
 
 - **Pause and resume missions without cancelling.** Running missions can be paused (halting kanban or stopping the bus worker while keeping the worktree and progress) and resumed back into work or review.

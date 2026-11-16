@@ -40,16 +40,16 @@ its own PR with the full gates.
 
 | Phase | Name | Ships as | Depends on |
 | --- | --- | --- | --- |
-| B0 | Foundation: nothing waits on a crash | 1.3.1 | 1.3.0 |
-| B1 | Shadow Kone: the owner's judgment, delegated | 1.4.0 | B0 |
-| B2 | Quota grid: every subscription used, none exhausted | 1.5.0 | B0, router scorecards |
+| B0 | Foundation: nothing waits on a crash | 1.4.0 (shipped) | 1.3.0 |
+| B1 | Shadow Kone: the owner's judgment, delegated | 1.4.0 (shipped) | B0 |
+| B2 | Quota grid: every subscription used, none exhausted | 1.4.0 (shipped, two tasks left) | B0, router scorecards |
 | B3 | The dreaming brain | 1.6.0 | B0, memory ledger |
 | B4 | Time machine: counterfactual replay | 1.7.0 | eval replays, B2 |
 | B5 | Proof-carrying work | 1.8.0 | B4 |
 | B6 | Ouroboros: Studio builds Studio | 1.9.0 | B1, B5 |
 | B7 | Agency in a box | 2.0.0 | B1, B5, B6 |
 
-## B0: Foundation, nothing waits on a crash (1.3.1)
+## B0: Foundation, nothing waits on a crash (shipped in 1.4.0)
 
 Goal: no goal stalls or dies because of infrastructure.
 
@@ -65,7 +65,7 @@ Goal: no goal stalls or dies because of infrastructure.
   Done when: the window is closed and a scheduler pass still runs (timeline entry after close).
 - [x] **B0.4 This roadmap in Help.** `docs/BEYOND.md` is bundled and linked from the README.
 
-## B1: Shadow Kone, the owner's judgment delegated (1.4.0)
+## B1: Shadow Kone, the owner's judgment delegated (shipped in 1.4.0)
 
 Goal: zero missions lost to silence, without letting an agent take a decision the owner would
 not have taken. Design: `docs/SHADOW.md`.
@@ -90,7 +90,7 @@ not have taken. Design: `docs/SHADOW.md`.
   through the `hermes-phone` plugin, with the owner's explicit per-call approval as the plugin
   requires.
 
-## B2: Quota grid (1.5.0)
+## B2: Quota grid (shipped in 1.4.0; B2.6 and B2.7 open)
 
 Goal: every flat-rate subscription is used around the clock and no worker is ever sent to a provider
 that is out of quota.
@@ -114,14 +114,20 @@ that is out of quota.
 
 ## B3: The dreaming brain (1.6.0)
 
-Goal: the fleet measurably knows more every morning.
+Goal: what the fleet learns reaches the next worker.
 
-- [ ] B3.1 Worker sessions write to the memory ledger, not only Chat turns.
-- [ ] B3.2 Nightly dream: read the day's worker transcripts, reviews and escalations; write lessons,
-  merge duplicates, mark contradictions, propose skill fixes through `skill_proposals`.
-- [ ] B3.3 Morning card on Today: what the fleet learned last night, with links to the notes.
-- [ ] B3.4 Proof of learning: the four-probe context eval runs before and after each dream; the
-  score history is a chart on the Brain tab.
+Evidence (2026-11-16): the learning loop wrote 280 notes in three days (131 conventions, 111
+gotchas, 55 to 83 per repository) with only two near-duplicate pairs. The notes are good; the gap
+is delivery. An implementer receives a 1,500-character conventions block, so most of what a
+repository has learned never reaches its next worker.
+
+- [ ] B3.1 Nightly distillation: per repository, rank the lesson notes by use (recall hits,
+  rejections they would have prevented, recency) and write one generated playbook note
+  (`01_Projects/<repo>/Playbook.md`) that fits the implementer's context budget.
+- [ ] B3.2 Merge near-duplicates and mark contradictions for the owner instead of keeping both.
+- [ ] B3.3 Morning card on Today: what the fleet learned yesterday and which playbooks changed.
+- [ ] B3.4 Proof of learning: first-attempt approval rate and retries per repository, before and
+  after each playbook, charted on the Brain tab.
 
 ## B4: Time machine (1.7.0)
 
