@@ -35,6 +35,13 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.5.1
+
+Fixes found by running 1.5.0 on the live fleet.
+
+- **Refused models are avoided.** The quota grid now reads Hermes' own log for models a provider refused for billing or credits, including refusals a fallback covered, and keeps workers off them for 5 hours. Before, it only learned from mission errors and missed an Antigravity outage that refused every Gemini model.
+- **The time machine measures models, not outages.** A model being refused is not replayed, and a replay that hit a refusal mid-run is requeued instead of scored. A new context-size variant (such as a [1m] model) is measured as its base model, once.
+
 ## What is new in 1.5.0
 
 Beyond phases B3 and B4 (docs/BEYOND.md): the fleet learns from its work and measures new models on it.
