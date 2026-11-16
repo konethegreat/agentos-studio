@@ -3,6 +3,7 @@ import { Bot, CheckCircle2, CircleAlert, Gauge, Pencil, RefreshCw, Terminal } fr
 import { api, errorText, type AgentCard, type InstalledAgent } from "../lib/api";
 import { Badge, Button, Card, Empty, Modal, inputClass } from "../components/ui";
 import { useToast } from "../components/Toasts";
+import { QuotaGridCard } from "../components/QuotaGridCard";
 
 const HEALTH_STYLE: Record<string, string> = {
   ready: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25",
@@ -29,6 +30,7 @@ export function Agents() {
   const [editing, setEditing] = useState<AgentCard | null>(null);
   const [draft, setDraft] = useState("");
   const [agy, setAgy] = useState<{ model: string; models: [string, string][] } | null>(null);
+  const [quotaTick, setQuotaTick] = useState(0);
 
   async function load(refresh = false) {
     setBusy(true);
@@ -89,10 +91,18 @@ export function Agents() {
             to each other.
           </p>
         </div>
-        <Button onClick={() => void load(true)} disabled={busy}>
+        <Button
+          onClick={() => {
+            setQuotaTick((t) => t + 1);
+            void load(true);
+          }}
+          disabled={busy}
+        >
           <RefreshCw className={`size-4 ${busy ? "animate-spin" : ""}`} /> Read quota again
         </Button>
       </div>
+
+      <QuotaGridCard tick={quotaTick} />
 
       {cards === null ? (
         <p className="text-sm text-slate-500">Reading the registry...</p>

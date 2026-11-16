@@ -579,6 +579,18 @@ export interface ShadowStatus {
   agreement: number | null;
 }
 
+/** Beyond B2, the quota grid: one of Hermes' routes (primary first, then the fallback chain). */
+export interface QuotaLane {
+  provider: string;
+  model: string;
+  primary: boolean;
+  headroom_pct: number | null;
+  resets_at: string | null;
+  exhausted_until: number | null;
+  open: boolean;
+  why: string;
+}
+
 export interface NewGoal {
   outcome: string;
   repos: string[];
@@ -1239,6 +1251,7 @@ export const api = {
   escalationSettings: () => invoke<{ timeout_minutes: number; notify_target: string | null }>("escalation_settings"),
   setEscalationTimeout: (minutes: number) => invoke<void>("set_escalation_timeout", { minutes }),
   shadowStatus: () => invoke<ShadowStatus>("shadow_status"),
+  quotaLanes: (refresh = false) => invoke<QuotaLane[]>("quota_lanes", { refresh }),
   shadowSet: (p: { enabled?: boolean; windowMinutes?: number; cls?: string; answer?: string }) =>
     invoke<ShadowStatus>("shadow_set", { enabled: p.enabled, windowMinutes: p.windowMinutes, class: p.cls, answer: p.answer }),
   digestNow: () => invoke<string>("digest_now"),

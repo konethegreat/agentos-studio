@@ -205,6 +205,12 @@ pub fn deferred_until(id: &str) -> Option<i64> {
         .and_then(|v| v.parse().ok())
 }
 
+/// Make a mission wait until `until` (the scheduler skips it until then).
+pub fn set_deferred(id: &str, until: i64) -> anyhow::Result<()> {
+    let c = crate::store::open()?;
+    crate::store::kv_set(&c, &kv_key("defer", id), &until.to_string())
+}
+
 /// Resolve an `auto` mission's agent now, with live cards. Records the decision in the exchange
 /// log; a deferral is recorded once per wait.
 pub fn resolve(m: &Mission) -> anyhow::Result<String> {

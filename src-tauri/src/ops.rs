@@ -952,6 +952,12 @@ pub async fn shadow_set(
     blocking(move || crate::shadow::set(enabled, window_minutes, standing)).await
 }
 
+/// The quota grid: Hermes' primary and fallback routes, each open or closed and why (Beyond B2).
+#[tauri::command]
+pub async fn quota_lanes(refresh: Option<bool>) -> CmdResult<Vec<crate::quota_grid::Lane>> {
+    blocking(move || Ok(crate::quota_grid::lanes(refresh.unwrap_or(false)))).await
+}
+
 /// The repository and its worktrees (one per mission attempt).
 #[tauri::command]
 pub async fn explorer_checkouts(

@@ -230,6 +230,8 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         return crate::council::start(v, &m);
     }
     if uses_kanban(&m) {
+        // The quota grid keeps a worker off a spent model: a fallback for this attempt, or a wait.
+        let m = crate::quota_grid::steer_mission(&m)?.unwrap_or(m);
         let task_id = crate::kanban::create_task(&m)?;
         return dispatch(id, &task_id);
     }
