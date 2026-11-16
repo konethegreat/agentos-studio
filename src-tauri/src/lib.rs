@@ -80,6 +80,7 @@ pub mod receipts;
 pub mod review_agent;
 pub mod router;
 pub mod routing;
+pub mod self_build;
 pub mod settings;
 pub mod setup_flow;
 pub mod shadow;

@@ -499,6 +499,11 @@ pub fn tick(v: &Vault) -> TickReport {
             .filter(|m| crate::assign::deferred_until(&m.id).map_or(true, |t| t <= now))
             .filter(|m| !crate::goal_loop::held(&m.id))
             .filter(|m| !metered_stop(m))
+            // Beyond B6: one heavy Studio build at a time on this machine.
+            .filter(|m| {
+                !crate::self_build::is_self(&m.repo)
+                    || crate::self_build::may_start(m, &running, crate::self_build::cargo_busy())
+            })
             .filter(|m| match crate::goals::goal_of(&m.id) {
                 None => report.enabled,
                 Some(gid) => {

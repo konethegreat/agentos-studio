@@ -332,7 +332,13 @@ pub fn note(findings: &[Finding]) -> String {
 /// Read a pull request's diff through `gh` and judge it.
 pub fn check_pr(repo_with_owner: &str, number: u64) -> Result<Vec<Finding>> {
     let diff = crate::github::pr_diff(repo_with_owner, number)?;
-    Ok(check_diff(&diff))
+    let mut out = check_diff(&diff);
+    // Beyond B6: on Studio itself, the paths that keep the fleet honest are fenced off.
+    out.extend(crate::self_build::protected_findings(
+        repo_with_owner,
+        &parse_diff(&diff),
+    ));
+    Ok(out)
 }
 
 #[cfg(test)]
