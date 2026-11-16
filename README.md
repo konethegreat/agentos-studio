@@ -35,6 +35,10 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 1.6.1
+
+- **Antigravity DirectSDK support.** AgentOS Studio now uses `antigravity-subscription-directsdk` as the primary Antigravity provider across quota reading, provider health, usage, and Time Machine replays, while keeping `antigravity-oauth` as a fallback.
+
 ## What is new in 1.6.0
 
 - **Proof of every merge.** Each merge the gate makes leaves a receipt: the reviewed commit, the merge commit, every CI check, who did the work and who approved it, the verify result and the spend. Receipts are hash-chained and signed with a key made on your machine, so changing, deleting or reordering any of them is caught. Safety: Proof of every merge, with Verify the chain.
