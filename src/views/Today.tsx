@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, CircleDollarSign, FileText, Flag, Pause, Play, RefreshCw, Sunrise, UserCheck, Users } from "lucide-react";
+import { ArrowRight, CircleDollarSign, FileText, Flag, Pause, Play, RefreshCw, Sunrise, UserCheck, UserRoundCog, Users } from "lucide-react";
 import {
   api,
   errorText,
@@ -7,6 +7,7 @@ import {
   type FleetPause,
   type GoalDetail,
   type Mission,
+  type ShadowRecord,
   type WorkerInfo,
 } from "../lib/api";
 import { Markdown } from "../components/Markdown";
@@ -78,18 +79,20 @@ export function Today() {
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
   const [pause, setPause] = useState<FleetPause | null>(null);
   const [digest, setDigest] = useState<string | null>(null);
+  const [shadow, setShadow] = useState<ShadowRecord[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState(0);
 
   const load = useCallback(async () => {
     try {
-      const [g, e, m, w, p, d] = await Promise.all([
+      const [g, e, m, w, p, d, s] = await Promise.all([
         api.goals(),
         api.escalations(100).catch(() => [] as Escalation[]),
         api.missions().catch(() => [] as Mission[]),
         api.workers().catch(() => [] as WorkerInfo[]),
         api.fleetPauseState().catch(() => null as FleetPause | null),
         api.digestLatest().catch(() => null as string | null),
+        api.shadowStatus().then((x) => x.record).catch(() => [] as ShadowRecord[]),
       ]);
       setRows(g);
       setAsks(e);
@@ -97,6 +100,7 @@ export function Today() {
       setWorkers(w);
       setPause(p);
       setDigest(d);
+      setShadow(s);
       setUpdatedAt(Date.now());
     } catch (e) {
       toast("error", errorText(e));
@@ -226,6 +230,16 @@ export function Today() {
                         </Button>
                       ))}
                     </div>
+                    {shadow
+                      .filter((r) => r.escalation === e.id && r.outcome === "pending")
+                      .map((r) => (
+                        <p key={r.due_at} className="mt-1 flex items-center gap-1.5 text-label text-sky-300">
+                          <UserRoundCog className="size-3.5" />
+                          Shadow will answer {r.planned} at{" "}
+                          {new Date(r.due_at * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}, because{" "}
+                          {r.reason}. Answer yourself before then to overrule it.
+                        </p>
+                      ))}
                   </div>
                 ))}
                 {awaiting.map(({ goal }) => (
