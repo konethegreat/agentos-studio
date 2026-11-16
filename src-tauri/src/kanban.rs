@@ -187,7 +187,14 @@ pub fn create_task(m: &Mission) -> Result<String> {
     let dir = crate::store::studio_dir().join("kanban");
     std::fs::create_dir_all(&dir)?;
     let body_file = dir.join(format!("{}.md", m.id));
-    std::fs::write(&body_file, task_body(m))?;
+    // Every Hermes worker gets what the fleet learned in this repository (Beyond B3.1).
+    let mut body = task_body(m);
+    let learned = crate::playbook::for_worker_here(&m.repo);
+    if !learned.is_empty() {
+        body.push_str("\n\n");
+        body.push_str(&learned);
+    }
+    std::fs::write(&body_file, body)?;
     let assignee =
         crate::hermes_surfaces::profile_for_role("implementer").unwrap_or_else(|| "default".into());
     let out = hermes(&create_args(

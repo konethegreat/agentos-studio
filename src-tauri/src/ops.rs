@@ -958,6 +958,37 @@ pub async fn quota_lanes(refresh: Option<bool>) -> CmdResult<Vec<crate::quota_gr
     blocking(move || Ok(crate::quota_grid::lanes(refresh.unwrap_or(false)))).await
 }
 
+fn vault_root(state: &State<'_, AppState>) -> CmdResult<std::path::PathBuf> {
+    state
+        .settings
+        .lock()
+        .map(|s| s.vault_path())
+        .map_err(|_| "settings are unavailable".to_string())
+}
+
+/// What the fleet learned in the last `hours`, per repository (Today's card, Beyond B3.3).
+#[tauri::command]
+pub async fn playbook_learned(
+    state: State<'_, AppState>,
+    hours: Option<i64>,
+) -> CmdResult<Vec<crate::playbook::Learned>> {
+    let root = vault_root(&state)?;
+    blocking(move || {
+        Ok(crate::playbook::learned_since(
+            &crate::vault::Vault::new(root),
+            hours.unwrap_or(24),
+        ))
+    })
+    .await
+}
+
+/// Rewrite every repository's playbook note now. Returns the repositories that changed.
+#[tauri::command]
+pub async fn playbook_rebuild(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
+    let root = vault_root(&state)?;
+    blocking(move || crate::playbook::write_all(&crate::vault::Vault::new(root))).await
+}
+
 /// The repository and its worktrees (one per mission attempt).
 #[tauri::command]
 pub async fn explorer_checkouts(
