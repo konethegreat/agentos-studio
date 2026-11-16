@@ -4,6 +4,7 @@ import { useToast } from "../components/Toasts";
 import { Badge, Button, Card } from "../components/ui";
 import { api, errorText, type ToolPolicyModel, type UnattendedProfile } from "../lib/api";
 import { HermesAuditCard } from "../components/HermesAudit";
+import { ReceiptsCard } from "../components/ReceiptsCard";
 import { studio, type AuditEntry, type Policy, type PolicyView } from "../lib/studio";
 
 const RISK: Record<string, string> = {
@@ -133,6 +134,7 @@ export function SafetyCenter() {
           </Button>
         </div>
 
+        <ReceiptsCard />
         <HermesAuditCard />
 
         <Card className="p-0">

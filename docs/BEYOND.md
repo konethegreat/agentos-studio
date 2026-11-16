@@ -45,7 +45,7 @@ its own PR with the full gates.
 | B2 | Quota grid: every subscription used, none exhausted | 1.4.0 (shipped, two tasks left) | B0, router scorecards |
 | B3 | The dreaming brain | 1.5.0 (shipped: B3.1, B3.3) | B0, memory ledger |
 | B4 | Time machine: counterfactual replay | 1.5.0 (shipped) | eval replays, B2 |
-| B5 | Proof-carrying work | 1.8.0 | B4 |
+| B5 | Proof-carrying work | 1.6.0 (B5.1, B5.2) | B4 |
 | B6 | Ouroboros: Studio builds Studio | 1.9.0 | B1, B5 |
 | B7 | Agency in a box | 2.0.0 | B1, B5, B6 |
 
@@ -151,14 +151,22 @@ Fable 5.2 and the Gemini Hydrogen family appeared on the owner's subscriptions u
   time, at most 6 a day, only with the fleet running and quota on that provider. Brain tab: the
   Time machine panel (new models with Measure, the queue, today's count).
 
-## B5: Proof-carrying work (1.8.0)
+## B5: Proof-carrying work (1.6.0)
 
 Goal: every merge carries a receipt anyone can verify.
 
-- [ ] B5.1 Receipt per merge: mission, PR, head commit, CI run ids and results, reviewer and verdict,
-  done-check output, `prove-it` probes, all hashed.
-- [ ] B5.2 Hash chain over receipts, signed with the Studio minisign key already used by the updater.
-- [ ] B5.3 Public ledger on the website: totals, per-repo receipts, a verify page.
+- [x] B5.1 Receipt per merge (`receipts.rs`), written by the gate right after it merges: mission,
+  goal, pull request, the reviewed head commit (read before the merge), the merge commit, every
+  CI check and its state, implementer, reviewer, verdict, verify result and metered spend. A
+  receipt that cannot be written never undoes the merge; it is noted on the mission's timeline.
+- [x] B5.2 Hash chain and signature: each receipt hashes the one before it and is signed with an
+  ed25519 key made on this machine (`keys/receipts.seed`; not the updater key, whose private half
+  lives in CI). Verification names the first receipt that was edited, removed, reordered, re-signed
+  with another key or forged. Safety screen: Proof of every merge, with Verify the chain.
+- [ ] B5.3 Public ledger on the website: totals and per-repository receipts for public
+  repositories only (the sandboxes are private), with the public key and a verify page.
+- [ ] B5.4 `prove-it` probes in the receipt (the Hermes plugin that checks completion claims
+  against git and the file system).
 
 ## B6: Ouroboros, Studio builds Studio (1.9.0)
 

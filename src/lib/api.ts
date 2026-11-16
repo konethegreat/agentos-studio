@@ -620,6 +620,36 @@ export interface ModelChanges {
   gone: { provider: string; model: string; used_by: string[] }[];
 }
 
+/** Beyond B5: a merge receipt, as the gate saw the merge. */
+export interface MergeReceipt {
+  seq: number;
+  at: number;
+  mission: string;
+  goal: string | null;
+  repo: string;
+  pr: number;
+  pr_url: string;
+  head_commit: string;
+  merge_commit: string | null;
+  checks: { name: string; state: string }[];
+  implementer: string;
+  reviewer: string;
+  verdict: string;
+  verify: string;
+  spent_usd: number;
+  prev_hash: string;
+  public_key: string;
+  hash: string;
+  signature: string;
+}
+
+export interface ReceiptVerification {
+  ok: boolean;
+  receipts: number;
+  public_key: string | null;
+  problem: string | null;
+}
+
 export interface NewGoal {
   outcome: string;
   repos: string[];
@@ -1286,6 +1316,8 @@ export const api = {
   benchStatus: () => invoke<BenchStatus>("bench_status"),
   benchMeasure: (provider: string, model: string) => invoke<BenchJob[]>("bench_measure", { provider, model }),
   benchClear: () => invoke<BenchStatus>("bench_clear"),
+  receipts: (limit = 100) => invoke<MergeReceipt[]>("receipts_list", { limit }),
+  verifyReceipts: () => invoke<ReceiptVerification>("receipts_verify"),
   modelChanges: () => invoke<ModelChanges>("model_changes"),
   shadowSet: (p: { enabled?: boolean; windowMinutes?: number; cls?: string; answer?: string }) =>
     invoke<ShadowStatus>("shadow_set", { enabled: p.enabled, windowMinutes: p.windowMinutes, class: p.cls, answer: p.answer }),

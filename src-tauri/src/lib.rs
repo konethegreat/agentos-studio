@@ -76,6 +76,7 @@ pub mod provenance;
 pub mod provider_health;
 pub mod pty;
 pub mod quota_grid;
+pub mod receipts;
 pub mod review_agent;
 pub mod router;
 pub mod routing;
@@ -390,6 +391,8 @@ pub fn run_gui() {
             ops::bench_status,
             ops::bench_measure,
             ops::bench_clear,
+            ops::receipts_list,
+            ops::receipts_verify,
             ops::explorer_files,
             ops::explorer_read,
             ops::explorer_status,

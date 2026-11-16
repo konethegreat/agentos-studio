@@ -234,6 +234,34 @@ pub fn pr_detail(repo: &str, number: u64) -> Result<Value> {
     )
 }
 
+/// The pull request's head commit, and its merge commit once merged.
+pub fn pr_shas(repo: &str, number: u64) -> Result<(String, Option<String>)> {
+    let r = repo_arg(repo)?;
+    let v = gh_json(
+        &[
+            "pr",
+            "view",
+            &number.to_string(),
+            "-R",
+            r,
+            "--json",
+            "headRefOid,mergeCommit",
+        ],
+        None,
+    )?;
+    let head = v
+        .get("headRefOid")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let merge = v
+        .get("mergeCommit")
+        .and_then(|m| m.get("oid"))
+        .and_then(Value::as_str)
+        .map(String::from);
+    Ok((head, merge))
+}
+
 pub fn pr_diff(repo: &str, number: u64) -> Result<String> {
     let r = repo_arg(repo)?;
     Ok(clip(
