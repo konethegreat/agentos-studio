@@ -61,6 +61,73 @@ pub fn note_failure(reason: &str, now: i64) -> Option<String> {
     Some(model)
 }
 
+/// Hermes logs every model its provider refused (`<model> via <provider> refused for
+/// billing/credits`), including ones a fallback then covered, which no mission error shows.
+/// Returns (model, epoch) for each refusal. Pure.
+pub fn parse_refusals(log: &str) -> Vec<(String, i64)> {
+    let Ok(re) = regex::Regex::new(
+        r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\S* WARNING .*?: ([A-Za-z0-9._:/\-\[\]]+) via \S+ refused for billing/credits",
+    ) else {
+        return Vec::new();
+    };
+    log.lines()
+        .filter_map(|l| {
+            let c = re.captures(l)?;
+            let t = chrono::NaiveDateTime::parse_from_str(c.get(1)?.as_str(), "%Y-%m-%d %H:%M:%S")
+                .ok()?
+                .and_local_timezone(chrono::Local)
+                .earliest()?
+                .timestamp();
+            Some((c.get(2)?.as_str().to_string(), t))
+        })
+        .collect()
+}
+
+/// The end of Hermes' agent log: enough for the last several hours.
+fn agent_log_tail() -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL: u64 = 4 * 1024 * 1024;
+    let path = crate::procs::hermes_home().join("logs").join("agent.log");
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return String::new();
+    };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let _ = f.seek(SeekFrom::Start(len.saturating_sub(TAIL)));
+    let mut buf = Vec::new();
+    let _ = f.read_to_end(&mut buf);
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
+/// Refusals Hermes logged since `since` (epoch).
+pub fn refusals_since(since: i64) -> Vec<(String, i64)> {
+    parse_refusals(&agent_log_tail())
+        .into_iter()
+        .filter(|(_, t)| *t >= since)
+        .collect()
+}
+
+/// Close every model Hermes saw refused in the last `EXHAUSTED_SECS`, until 5 hours after its
+/// latest refusal. Returns the models closed.
+pub fn learn_from_log(now: i64) -> Vec<String> {
+    let mut latest: std::collections::BTreeMap<String, i64> = Default::default();
+    for (m, t) in refusals_since(now - EXHAUSTED_SECS) {
+        let e = latest.entry(m.to_lowercase()).or_insert(t);
+        *e = (*e).max(t);
+    }
+    let Ok(c) = store::open() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (m, t) in latest {
+        let until = t + EXHAUSTED_SECS;
+        if exhausted_until(&m, now).map_or(true, |u| u < until) {
+            let _ = store::kv_set(&c, &exhausted_key(&m), &until.to_string());
+        }
+        out.push(m);
+    }
+    out
+}
+
 /// Until when a model is closed, if it still is.
 pub fn exhausted_until(model: &str, now: i64) -> Option<i64> {
     kv(&exhausted_key(model))
@@ -204,6 +271,7 @@ pub fn routes() -> Vec<Route> {
 /// Every lane with its live state. `refresh` forces new quota readings.
 pub fn lanes(refresh: bool) -> Vec<Lane> {
     let now = store::now();
+    learn_from_log(now);
     let mut quotas: std::collections::HashMap<String, Quota> = std::collections::HashMap::new();
     routes()
         .iter()
@@ -401,6 +469,19 @@ mod tests {
         );
         assert_eq!(note_failure("a test failed", now), None);
         crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn refusals_are_read_from_hermes_own_log() {
+        let log = "2026-11-16 21:52:57,294 WARNING [local-32ea] agent.chat_completion_helpers: Profile default: gemini-4-argon-medium via antigravity-oauth refused for billing/credits \u{2014} using fallback gemini-4-hydrogen-medium via antigravity-oauth. To\n\
+2026-11-16 21:53:00,000 INFO [local-32ea] agent.conversation_loop: API call #2\n\
+2026-11-16 21:55:49,493 WARNING [local-32ea] agent.chat_completion_helpers: Profile default: gemini-4-hydrogen-medium via antigravity-oauth refused for billing/credits \u{2014} using fallback gemini-4-hydrogen-high\n";
+        let r = parse_refusals(log);
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].0, "gemini-4-argon-medium");
+        assert_eq!(r[1].0, "gemini-4-hydrogen-medium");
+        assert_eq!(r[1].1 - r[0].1, 2 * 60 + 52);
+        assert!(parse_refusals("no refusals here\n").is_empty());
     }
 
     #[test]

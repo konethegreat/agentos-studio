@@ -129,6 +129,14 @@ pub fn plan(
     out
 }
 
+/// Was this model refused by its provider while the replay ran? Then the replay did not measure
+/// it. Pure.
+pub fn refused_during(model: &str, refusals: &[(String, i64)]) -> bool {
+    refusals
+        .iter()
+        .any(|(m, _)| m.eq_ignore_ascii_case(model.trim()))
+}
+
 /// May the runner start another replay today? `day` is kv `bench.day`, `<date>:<count>`. Pure.
 pub fn under_daily_cap(day: Option<&str>, today: &str) -> bool {
     match day.and_then(|d| d.split_once(':')) {
@@ -278,10 +286,12 @@ pub fn step(v: &Vault, now: i64) -> Vec<String> {
         return log;
     }
     let mut q = queue();
-    let Some(i) = q
-        .iter()
-        .position(|j| crate::agents::has_headroom(&crate::agents::quota_for(&j.provider, false)))
-    else {
+    // A model its provider is refusing would measure the outage, not the model: it waits.
+    crate::quota_grid::learn_from_log(now);
+    let Some(i) = q.iter().position(|j| {
+        crate::quota_grid::exhausted_until(&j.model, now).is_none()
+            && crate::agents::has_headroom(&crate::agents::quota_for(&j.provider, false))
+    }) else {
         return log;
     };
     let job = q.remove(i);
@@ -299,6 +309,7 @@ pub fn step(v: &Vault, now: i64) -> Vec<String> {
     let root = v.root.clone();
     std::thread::spawn(move || {
         let v = Vault::new(&root);
+        let started = store::now();
         let r = crate::eval::run_with(
             &v,
             &job.mission,
@@ -306,7 +317,21 @@ pub fn step(v: &Vault, now: i64) -> Vec<String> {
             Some(&job.model),
             Some(&job.provider),
         );
+        let refused = refused_during(&job.model, &crate::quota_grid::refusals_since(started));
         let summary = match &r {
+            // The provider refused the model mid-replay and Hermes fell back to another one, so
+            // the score belongs to neither: discard the note and measure again after the reset.
+            Ok(e) if refused => {
+                let _ = std::fs::remove_file(&e.note_path);
+                crate::quota_grid::learn_from_log(store::now());
+                let mut q = queue();
+                q.push(job.clone());
+                save_queue(&q);
+                format!(
+                    "Replay of {} on {} not scored: the provider refused {} for billing or credits during the replay; queued again for after the reset",
+                    job.mission, job.model, job.model
+                )
+            }
             Ok(e) => format!(
                 "Replayed {} on {}: {} of 100 ({}; the original scored {})",
                 job.mission, job.model, e.score, e.comparison, e.original_score
@@ -318,10 +343,12 @@ pub fn step(v: &Vault, now: i64) -> Vec<String> {
                 err.to_string().chars().take(300).collect::<String>()
             ),
         };
-        kv_set(
-            &done_key(&job.mission, &job.provider, &job.model),
-            &store::now().to_string(),
-        );
+        if !(refused && r.is_ok()) {
+            kv_set(
+                &done_key(&job.mission, &job.provider, &job.model),
+                &store::now().to_string(),
+            );
+        }
         let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
             mission_id: Some(&job.mission),
             kind: "note",
@@ -507,6 +534,16 @@ mod tests {
         );
         assert_eq!(jobs[0].mission, cases[2].id);
         assert!(jobs[0].reason.contains("gemini-x"));
+    }
+
+    #[test]
+    fn a_replay_whose_model_was_refused_measured_nothing() {
+        // The first live replay: M-080 on Hydrogen High, refused for billing mid-run.
+        let refusals = vec![("gemini-4-hydrogen-high".to_string(), 100)];
+        assert!(refused_during("gemini-4-hydrogen-high", &refusals));
+        assert!(refused_during("Gemini-4-Hydrogen-High ", &refusals));
+        assert!(!refused_during("claude-fable-5-2", &refusals));
+        assert!(!refused_during("gemini-4-hydrogen-high", &[]));
     }
 
     #[test]
