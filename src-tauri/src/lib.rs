@@ -397,6 +397,7 @@ pub fn run_gui() {
             ops::autostart_set,
             ops::playbook_learned,
             ops::playbook_rebuild,
+            ops::playbook_proof,
             ops::bench_status,
             ops::bench_measure,
             ops::bench_clear,

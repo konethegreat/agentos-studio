@@ -127,9 +127,9 @@ repository has learned never reaches its next worker.
   kanban tasks (which received no lessons before) and bus workers (which received only 1,500
   characters of conventions). A generated `01_Projects/<repo>/Playbook.md` is rewritten nightly
   after 02:00. Real vault, k-one-it-solutions-website: 28 of 60 lessons reach the worker.
-- [ ] B3.2 Merge near-duplicates and mark contradictions for the owner instead of keeping both.
+- [x] B3.2 Merge near-duplicates and mark contradictions for the owner instead of keeping both.
 - [x] B3.3 Today card "Learned in the last day": new lessons per repository.
-- [ ] B3.4 Proof of learning: first-attempt approval rate and retries per repository, before and
+- [x] B3.4 Proof of learning: first-attempt approval rate and retries per repository, before and
   after each playbook, charted on the Brain tab.
 
 ## B4: Time machine (1.5.0)

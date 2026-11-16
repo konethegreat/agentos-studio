@@ -21,7 +21,9 @@ function Change({ change }: { change: QualityChange }) {
           className={`shrink-0 rounded-full px-1.5 py-0.5 text-2xs font-medium ring-1 ${
             change.kind === "stale"
               ? "bg-amber-500/10 text-amber-300 ring-amber-500/25"
-              : "bg-rose-500/10 text-rose-300 ring-rose-500/25"
+              : change.kind === "duplicate"
+                ? "bg-sky-500/10 text-sky-300 ring-sky-500/25"
+                : "bg-rose-500/10 text-rose-300 ring-rose-500/25"
           }`}
         >
           {change.kind}
@@ -69,14 +71,20 @@ export function MemoryQualityPanel({ onChanged }: { onChanged?: () => void }) {
     try {
       const r = await api.memoryQualityRun(false);
       setReport(r);
+      const dups = r.duplicates ?? [];
+      const writtenCount =
+        r.stale.filter((c) => c.written).length +
+        dups.filter((c) => c.written).length +
+        r.contradictions.filter((c) => c.written).length;
       const parts = [
         `${r.stale.length} stale`,
+        `${dups.length} duplicate`,
         `${r.contradictions.length} contradictory`,
-        `${r.stale.filter((c) => c.written).length + r.contradictions.filter((c) => c.written).length} superseded`,
+        `${writtenCount} superseded`,
       ];
       if (r.dropped) toast("error", `The contradiction answer was dropped: ${r.dropped}`);
-      else toast(r.stale.length || r.contradictions.length ? "ok" : "info", `Quality check: ${parts.join(", ")}`);
-      if (r.stale.some((c) => c.written) || r.contradictions.some((c) => c.written)) onChanged?.();
+      else toast(r.stale.length || dups.length || r.contradictions.length ? "ok" : "info", `Quality check: ${parts.join(", ")}`);
+      if (writtenCount > 0) onChanged?.();
     } catch (e) {
       toast("error", errorText(e));
     } finally {
@@ -108,7 +116,8 @@ export function MemoryQualityPanel({ onChanged }: { onChanged?: () => void }) {
     }
   }
 
-  const changes = report ? [...report.stale, ...report.contradictions] : [];
+  const dups = report?.duplicates ?? [];
+  const changes = report ? [...report.stale, ...dups, ...report.contradictions] : [];
   const superseded = changes.filter((c) => c.written).length;
 
   return (
@@ -143,7 +152,7 @@ export function MemoryQualityPanel({ onChanged }: { onChanged?: () => void }) {
         </span>
         {report && (
           <span className="text-slate-400">
-            {report.scanned} notes scanned, {report.stale.length} stale, {report.contradictions.length} contradictory,{" "}
+            {report.scanned} notes scanned, {report.stale.length} stale, {dups.length} duplicate, {report.contradictions.length} contradictory,{" "}
             {superseded} superseded
           </span>
         )}

@@ -601,6 +601,23 @@ export interface QuotaForecast {
   heavy_ready: boolean;
 }
 
+/** Beyond B3.4: before/after playbook stats per repository. */
+export interface PeriodStats {
+  missions: number;
+  approved_first: number;
+  first_attempt_rate: number;
+  total_retries: number;
+  avg_retries: number;
+}
+
+export interface RepoProof {
+  repo: string;
+  playbook_at: number | null;
+  lessons: number;
+  before: PeriodStats;
+  after: PeriodStats;
+}
+
 /** Beyond B3: what the fleet learned in one repository recently. */
 export interface Learned {
   repo: string;
@@ -881,6 +898,7 @@ export interface QualityReport {
   dry_run: boolean;
   scanned: number;
   stale: QualityChange[];
+  duplicates?: QualityChange[];
   contradictions: QualityChange[];
   dropped: string | null;
 }
@@ -1325,6 +1343,7 @@ export const api = {
   autostartGet: () => invoke<boolean>("autostart_get"),
   autostartSet: (enabled: boolean) => invoke<boolean>("autostart_set", { enabled }),
   playbookLearned: (hours = 24) => invoke<Learned[]>("playbook_learned", { hours }),
+  playbookProof: () => invoke<RepoProof[]>("playbook_proof"),
   playbookRebuild: () => invoke<string[]>("playbook_rebuild"),
   benchStatus: () => invoke<BenchStatus>("bench_status"),
   benchMeasure: (provider: string, model: string) => invoke<BenchJob[]>("bench_measure", { provider, model }),
