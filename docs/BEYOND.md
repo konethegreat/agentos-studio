@@ -43,8 +43,8 @@ its own PR with the full gates.
 | B0 | Foundation: nothing waits on a crash | 1.4.0 (shipped) | 1.3.0 |
 | B1 | Shadow Kone: the owner's judgment, delegated | 1.4.0 (shipped) | B0 |
 | B2 | Quota grid: every subscription used, none exhausted | 1.4.0 (shipped, two tasks left) | B0, router scorecards |
-| B3 | The dreaming brain | 1.6.0 | B0, memory ledger |
-| B4 | Time machine: counterfactual replay | 1.7.0 | eval replays, B2 |
+| B3 | The dreaming brain | 1.5.0 (B3.1, B3.3 shipped) | B0, memory ledger |
+| B4 | Time machine: counterfactual replay | 1.5.0 | eval replays, B2 |
 | B5 | Proof-carrying work | 1.8.0 | B4 |
 | B6 | Ouroboros: Studio builds Studio | 1.9.0 | B1, B5 |
 | B7 | Agency in a box | 2.0.0 | B1, B5, B6 |
@@ -131,16 +131,25 @@ repository has learned never reaches its next worker.
 - [ ] B3.4 Proof of learning: first-attempt approval rate and retries per repository, before and
   after each playbook, charted on the Brain tab.
 
-## B4: Time machine (1.7.0)
+## B4: Time machine (1.5.0)
 
 Goal: any past mission can be rerun with another agent, model or prompt, and every real mission
 becomes a benchmark.
 
-- [ ] B4.1 Fork a finished mission at its base commit into a sandbox worktree; never pushes.
-- [ ] B4.2 Side-by-side result: diff, tests, review verdict, time and cost for each variant.
-- [ ] B4.3 Automatic benchmark set: approved missions with a done check become eval cases.
-- [ ] B4.4 New model day: when `model_watch` sees a new model, replay the benchmark set on it and
-  post the comparison.
+Evidence (2026-11-16): the replay harness (`eval.rs`) existed since Roadmap 1.5, but no replay had
+ever run, so the router's "3 improving eval replays" gate had no evidence to use. Meanwhile Claude
+Fable 5.2 and the Gemini Hydrogen family appeared on the owner's subscriptions unmeasured.
+
+- [x] B4.1 Fork a finished mission at its base commit into a sandbox worktree; never pushes
+  (`eval.rs`, shipped earlier). A replay can now pin the Hermes provider of its model.
+- [x] B4.2 Side-by-side result: tests, review verdict, time and cost against the original, one
+  note per replay under `03_Memory/evals/` (shipped earlier, Brain tab Evaluations).
+- [x] B4.3 Benchmark set (`bench.rs`): approved missions with a pull request, newest 3 per
+  repository, round-robin, up to 12; Studio's own repository is left out (a full Rust build).
+- [x] B4.4 New model day: hourly, a model first seen this week on a flat subscription (never a
+  metered provider, never a context variant) gets 3 benchmark replays queued. One replay at a
+  time, at most 6 a day, only with the fleet running and quota on that provider. Brain tab: the
+  Time machine panel (new models with Measure, the queue, today's count).
 
 ## B5: Proof-carrying work (1.8.0)
 
