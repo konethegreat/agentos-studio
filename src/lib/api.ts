@@ -591,6 +591,13 @@ export interface QuotaLane {
   why: string;
 }
 
+/** Beyond B3: what the fleet learned in one repository recently. */
+export interface Learned {
+  repo: string;
+  count: number;
+  titles: string[];
+}
+
 export interface NewGoal {
   outcome: string;
   repos: string[];
@@ -1252,6 +1259,8 @@ export const api = {
   setEscalationTimeout: (minutes: number) => invoke<void>("set_escalation_timeout", { minutes }),
   shadowStatus: () => invoke<ShadowStatus>("shadow_status"),
   quotaLanes: (refresh = false) => invoke<QuotaLane[]>("quota_lanes", { refresh }),
+  playbookLearned: (hours = 24) => invoke<Learned[]>("playbook_learned", { hours }),
+  playbookRebuild: () => invoke<string[]>("playbook_rebuild"),
   shadowSet: (p: { enabled?: boolean; windowMinutes?: number; cls?: string; answer?: string }) =>
     invoke<ShadowStatus>("shadow_set", { enabled: p.enabled, windowMinutes: p.windowMinutes, class: p.cls, answer: p.answer }),
   digestNow: () => invoke<string>("digest_now"),

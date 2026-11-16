@@ -542,6 +542,19 @@ pub fn tick(v: &Vault) -> TickReport {
         .unwrap_or(report.running);
     keep_awake(report.running > 0);
     report.kept_awake = report.running > 0;
+    // 4. Once a night, rewrite every repository's playbook from what the fleet learned.
+    if !cfg!(test) {
+        if let Some(changed) = crate::playbook::nightly(v) {
+            if !changed.is_empty() {
+                let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+                    kind: "note",
+                    from_agent: "agentos-studio",
+                    summary: &format!("Playbooks rewritten: {}", changed.join(", ")),
+                    ..Default::default()
+                });
+            }
+        }
+    }
     report
 }
 

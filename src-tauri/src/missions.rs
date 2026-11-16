@@ -250,7 +250,8 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
     if let Err(e) = crate::context_ledger::write_worktree_context(&wt, &m) {
         eprintln!("{id}: context file not written: {e:#}");
     }
-    let conventions = crate::learning::conventions_for(v, &m.repo);
+    // Conventions and gotchas, ranked to fit (Beyond B3.1).
+    let conventions = crate::playbook::for_worker(v, &m.repo);
     let args = crate::vault::DelegateArgs {
         title: m.goal.chars().take(90).collect(),
         assigned_to: m.agent.clone(),

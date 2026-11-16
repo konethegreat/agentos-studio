@@ -66,6 +66,7 @@ pub mod pause;
 pub mod permissions;
 pub mod planner;
 pub mod plans;
+pub mod playbook;
 pub mod policy;
 pub mod procs;
 pub mod projects;
@@ -383,6 +384,8 @@ pub fn run_gui() {
             ops::shadow_status,
             ops::shadow_set,
             ops::quota_lanes,
+            ops::playbook_learned,
+            ops::playbook_rebuild,
             ops::explorer_files,
             ops::explorer_read,
             ops::explorer_status,

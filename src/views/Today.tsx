@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, CircleDollarSign, FileText, Flag, Pause, Play, RefreshCw, Sunrise, UserCheck, UserRoundCog, Users } from "lucide-react";
+import { ArrowRight, BookOpenCheck, CircleDollarSign, FileText, Flag, Pause, Play, RefreshCw, Sunrise, UserCheck, UserRoundCog, Users } from "lucide-react";
 import {
   api,
   errorText,
   type Escalation,
   type FleetPause,
   type GoalDetail,
+  type Learned,
   type Mission,
   type ShadowRecord,
   type WorkerInfo,
@@ -80,12 +81,13 @@ export function Today() {
   const [pause, setPause] = useState<FleetPause | null>(null);
   const [digest, setDigest] = useState<string | null>(null);
   const [shadow, setShadow] = useState<ShadowRecord[]>([]);
+  const [learned, setLearned] = useState<Learned[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState(0);
 
   const load = useCallback(async () => {
     try {
-      const [g, e, m, w, p, d, s] = await Promise.all([
+      const [g, e, m, w, p, d, s, l] = await Promise.all([
         api.goals(),
         api.escalations(100).catch(() => [] as Escalation[]),
         api.missions().catch(() => [] as Mission[]),
@@ -93,6 +95,7 @@ export function Today() {
         api.fleetPauseState().catch(() => null as FleetPause | null),
         api.digestLatest().catch(() => null as string | null),
         api.shadowStatus().then((x) => x.record).catch(() => [] as ShadowRecord[]),
+        api.playbookLearned(24).catch(() => [] as Learned[]),
       ]);
       setRows(g);
       setAsks(e);
@@ -101,6 +104,7 @@ export function Today() {
       setPause(p);
       setDigest(d);
       setShadow(s);
+      setLearned(l);
       setUpdatedAt(Date.now());
     } catch (e) {
       toast("error", errorText(e));
@@ -399,6 +403,37 @@ export function Today() {
                       </div>
                     ))}
                 </div>
+              )}
+            </div>
+          </Card>
+
+          <Card className="p-0">
+            <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+              <BookOpenCheck className="size-4 text-violet-300" />
+              <h2 className="text-sm font-semibold text-slate-100">Learned in the last day</h2>
+            </div>
+            <div className="space-y-2 px-4 py-3">
+              {learned.length === 0 ? (
+                <p className="text-label text-slate-500">
+                  Nothing new. Each reviewed mission adds what it taught to the repository's playbook, which every worker
+                  there receives.
+                </p>
+              ) : (
+                learned.map((l) => (
+                  <div key={l.repo} className="space-y-0.5">
+                    <div className="flex items-center gap-2 text-small">
+                      <span className="min-w-0 flex-1 truncate text-slate-200">{l.repo}</span>
+                      <Badge className="bg-violet-500/10 text-violet-300 ring-violet-500/25">
+                        {l.count} lesson{l.count === 1 ? "" : "s"}
+                      </Badge>
+                    </div>
+                    {l.titles.map((t) => (
+                      <p key={t} className="truncate text-label text-slate-500" title={t}>
+                        {t}
+                      </p>
+                    ))}
+                  </div>
+                ))
               )}
             </div>
           </Card>
