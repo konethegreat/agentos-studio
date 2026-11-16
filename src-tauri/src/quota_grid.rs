@@ -241,6 +241,53 @@ pub fn steer(lanes: &[Lane], now: i64) -> Steer {
     }
 }
 
+/// When one lane frees up (Beyond B2.7).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Forecast {
+    pub provider: String,
+    pub model: String,
+    pub open_now: bool,
+    /// Epoch seconds when the lane is expected to be usable; `None` when it is open now or unknown.
+    pub opens_at: Option<i64>,
+    /// Plain words for the owner.
+    pub summary: String,
+    /// True when a heavy mission should wait for this lane rather than run on a thinner one.
+    pub heavy_ready: bool,
+}
+
+/// Per-lane reset forecast. A heavy mission (the primary route) is "ready" only when the primary
+/// is open; otherwise the summary says when it frees up. Pure.
+pub fn forecast(lanes: &[Lane], now: i64) -> Vec<Forecast> {
+    lanes
+        .iter()
+        .map(|l| {
+            let opens = l.exhausted_until.or_else(|| {
+                l.resets_at
+                    .as_deref()
+                    .and_then(|r| chrono::DateTime::parse_from_rfc3339(r).ok())
+                    .map(|d| d.timestamp())
+            });
+            let opens = opens.filter(|t| *t > now);
+            let summary = if l.open {
+                "open now".to_string()
+            } else {
+                match opens {
+                    Some(t) => format!("frees up about {}", hhmm(t)),
+                    None => "closed, no reset time reported".to_string(),
+                }
+            };
+            Forecast {
+                provider: l.provider.clone(),
+                model: l.model.clone(),
+                open_now: l.open,
+                opens_at: if l.open { None } else { opens },
+                summary,
+                heavy_ready: l.primary && l.open,
+            }
+        })
+        .collect()
+}
+
 fn config_route(v: &serde_yaml::Value) -> Option<Route> {
     let get = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
     Some(Route {
@@ -447,6 +494,32 @@ mod tests {
             Steer::Primary,
             "no routes known: leave it to Hermes"
         );
+    }
+
+    #[test]
+    fn forecast_says_when_a_closed_lane_frees_up_and_gates_heavy_work() {
+        let now = 1_000_000;
+        let closed = Lane {
+            provider: "p".into(),
+            model: "m1".into(),
+            primary: true,
+            headroom_pct: Some(0.0),
+            resets_at: None,
+            exhausted_until: Some(now + 3600),
+            open: false,
+            why: "spent".into(),
+        };
+        let open = Lane {
+            primary: false,
+            model: "m2".into(),
+            exhausted_until: None,
+            open: true,
+            ..closed.clone()
+        };
+        let f = forecast(&[closed, open], now);
+        assert!(!f[0].heavy_ready && f[0].opens_at == Some(now + 3600));
+        assert!(f[0].summary.starts_with("frees up about"));
+        assert!(f[1].open_now && f[1].opens_at.is_none() && !f[1].heavy_ready);
     }
 
     #[test]

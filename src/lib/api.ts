@@ -591,6 +591,16 @@ export interface QuotaLane {
   why: string;
 }
 
+/** Beyond B2.7: when a route frees up. */
+export interface QuotaForecast {
+  provider: string;
+  model: string;
+  open_now: boolean;
+  opens_at: number | null;
+  summary: string;
+  heavy_ready: boolean;
+}
+
 /** Beyond B3: what the fleet learned in one repository recently. */
 export interface Learned {
   repo: string;
@@ -1311,6 +1321,9 @@ export const api = {
   setEscalationTimeout: (minutes: number) => invoke<void>("set_escalation_timeout", { minutes }),
   shadowStatus: () => invoke<ShadowStatus>("shadow_status"),
   quotaLanes: (refresh = false) => invoke<QuotaLane[]>("quota_lanes", { refresh }),
+  quotaForecast: (refresh = false) => invoke<QuotaForecast[]>("quota_forecast", { refresh }),
+  autostartGet: () => invoke<boolean>("autostart_get"),
+  autostartSet: (enabled: boolean) => invoke<boolean>("autostart_set", { enabled }),
   playbookLearned: (hours = 24) => invoke<Learned[]>("playbook_learned", { hours }),
   playbookRebuild: () => invoke<string[]>("playbook_rebuild"),
   benchStatus: () => invoke<BenchStatus>("bench_status"),

@@ -958,6 +958,28 @@ pub async fn quota_lanes(refresh: Option<bool>) -> CmdResult<Vec<crate::quota_gr
     blocking(move || Ok(crate::quota_grid::lanes(refresh.unwrap_or(false)))).await
 }
 
+/// When each subscription frees up (Beyond B2.7).
+#[tauri::command]
+pub async fn quota_forecast(refresh: Option<bool>) -> CmdResult<Vec<crate::quota_grid::Forecast>> {
+    blocking(move || {
+        let lanes = crate::quota_grid::lanes(refresh.unwrap_or(false));
+        Ok(crate::quota_grid::forecast(&lanes, crate::store::now()))
+    })
+    .await
+}
+
+/// Whether AgentOS Studio starts at Windows login (Beyond B2.6).
+#[tauri::command]
+pub async fn autostart_get() -> CmdResult<bool> {
+    blocking(|| Ok(crate::autostart::is_enabled())).await
+}
+
+/// Enable or disable starting AgentOS Studio at login (Beyond B2.6).
+#[tauri::command]
+pub async fn autostart_set(enabled: bool) -> CmdResult<bool> {
+    blocking(move || crate::autostart::set_enabled(enabled)).await
+}
+
 fn vault_root(state: &State<'_, AppState>) -> CmdResult<std::path::PathBuf> {
     state
         .settings

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Route as RouteIcon } from "lucide-react";
-import { api, errorText, type QuotaLane } from "../lib/api";
+import { api, errorText, type QuotaForecast, type QuotaLane } from "../lib/api";
 import { Badge, Card } from "./ui";
 
 /**
@@ -24,7 +24,25 @@ export function QuotaGridCard({ tick }: { tick: number }) {
     void load(tick > 0);
   }, [load, tick]);
 
+  const [forecast, setForecast] = useState<QuotaForecast[]>([]);
+  const [login, setLogin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void api.quotaForecast(false).then(setForecast).catch(() => setForecast([]));
+    void api.autostartGet().then(setLogin).catch(() => setLogin(null));
+  }, [tick, lanes]);
+
+  const toggleLogin = async () => {
+    try {
+      setLogin(await api.autostartSet(!login));
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
   const first = lanes?.findIndex((l) => l.open) ?? -1;
+  const heavy = forecast.find((f) => f.heavy_ready);
+  const primaryCast = forecast[0];
 
   return (
     <Card className="space-y-2 p-4">
@@ -37,6 +55,19 @@ export function QuotaGridCard({ tick }: { tick: number }) {
         </span>
       </div>
       {error && <div className="text-label text-rose-300">{error}</div>}
+      {primaryCast && (
+        <p className="text-label text-slate-400">
+          {heavy
+            ? "Heavy missions can start now: the primary route is open."
+            : `Heavy missions wait for the primary route (${primaryCast.model}): ${primaryCast.summary}.`}
+        </p>
+      )}
+      {login !== null && (
+        <label className="flex items-center gap-2 text-label text-slate-400">
+          <input type="checkbox" checked={login} onChange={() => void toggleLogin()} />
+          Start AgentOS Studio at Windows login (minimized to the tray) so the fleet resumes after a reboot.
+        </label>
+      )}
       {lanes === null ? (
         <p className="text-small text-slate-500">Reading Hermes' routes...</p>
       ) : lanes.length === 0 ? (
