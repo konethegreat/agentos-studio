@@ -168,12 +168,18 @@ Goal: every merge carries a receipt anyone can verify.
 - [ ] B5.4 `prove-it` probes in the receipt (the Hermes plugin that checks completion claims
   against git and the file system).
 
-## B6: Ouroboros, Studio builds Studio (1.9.0)
+## B6: Ouroboros, Studio builds Studio (1.6.0 for B6.1)
 
 Goal: the fleet improves AgentOS Studio itself, with the owner approving releases only.
 
-- [ ] B6.1 Opt agentos-studio into autonomy with protected paths (signing, release workflow, updater
-  keys, constitution) that no mission may touch.
+- [x] B6.1 Fences for working on Studio itself (`self_build.rs`). On the Studio repository the
+  constitution gate fails any pull request touching a protected path: `.github/`, `.agentos/`,
+  the agent rule files, dependencies and `tauri.conf.json` (updater key), capabilities, and the
+  gate, merge, receipts, Shadow, budget and fence code. Those change only by the owner's hand.
+  A Studio mission starts only when no other Studio mission runs and no cargo or rustc process is
+  alive, because the laptop runs one Rust build at a time. Studio worker briefs carry both rules.
+  The opt-in itself (`.agentos/routing.json`) lands only after an app with the fences is
+  installed, so no unfenced build ever picks Studio up.
 - [ ] B6.2 Candidate release: when a phase completes, the fleet builds a release candidate and runs
   the live mission templates on it.
 - [ ] B6.3 Weekly ship message: changelog, receipts and test totals to the phone; "ship" tags it.

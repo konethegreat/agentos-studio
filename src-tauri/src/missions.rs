@@ -309,6 +309,9 @@ pub fn bus_instructions(
         if m.provider.trim().is_empty() { "default" } else { m.provider.trim() }
     );
     b.push_str(crate::constitution_gate::WORKER_RULES);
+    if crate::self_build::is_self(&m.repo) {
+        b.push_str(crate::self_build::WORKER_RULES);
+    }
     if m.review_verdict.as_deref() == Some("reject") {
         if let Some(note) = m.review_note.as_deref().filter(|n| !n.trim().is_empty()) {
             b.push_str(&format!(
