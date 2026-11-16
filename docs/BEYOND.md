@@ -43,8 +43,8 @@ its own PR with the full gates.
 | B0 | Foundation: nothing waits on a crash | 1.4.0 (shipped) | 1.3.0 |
 | B1 | Shadow Kone: the owner's judgment, delegated | 1.4.0 (shipped) | B0 |
 | B2 | Quota grid: every subscription used, none exhausted | 1.4.0 (shipped, two tasks left) | B0, router scorecards |
-| B3 | The dreaming brain | 1.5.0 (B3.1, B3.3 shipped) | B0, memory ledger |
-| B4 | Time machine: counterfactual replay | 1.5.0 | eval replays, B2 |
+| B3 | The dreaming brain | 1.5.0 (shipped: B3.1, B3.3) | B0, memory ledger |
+| B4 | Time machine: counterfactual replay | 1.5.0 (shipped) | eval replays, B2 |
 | B5 | Proof-carrying work | 1.8.0 | B4 |
 | B6 | Ouroboros: Studio builds Studio | 1.9.0 | B1, B5 |
 | B7 | Agency in a box | 2.0.0 | B1, B5, B6 |
