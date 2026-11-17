@@ -181,9 +181,9 @@ Goal: the fleet improves AgentOS Studio itself, with the owner approving release
   alive, because the laptop runs one Rust build at a time. Studio worker briefs carry both rules.
   The opt-in itself (`.agentos/routing.json`) lands only after an app with the fences is
   installed, so no unfenced build ever picks Studio up.
-- [ ] B6.2 Candidate release: when a phase completes, the fleet builds a release candidate and runs
+- [x] B6.2 Candidate release: when a phase completes, the fleet builds a release candidate and runs
   the live mission templates on it.
-- [ ] B6.3 Weekly ship message: changelog, receipts and test totals to the phone; "ship" tags it.
+- [x] B6.3 Weekly ship message: changelog, receipts and test totals to the phone; "ship" tags it.
 
 ## B7: Agency in a box (2.0.0)
 
