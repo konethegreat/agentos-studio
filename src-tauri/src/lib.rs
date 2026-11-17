@@ -197,9 +197,11 @@ pub fn run_gui() {
             std::thread::spawn(move || {
                 std::thread::sleep(Duration::from_secs(45));
                 loop {
-                    let report = crate::provider_health::check(chrono::Utc::now().timestamp());
+                    let now = chrono::Utc::now().timestamp();
+                    let report = crate::provider_health::check(now);
                     if let Ok(c) = crate::store::open() {
                         let fresh = crate::provider_health::record_in(&c, &report);
+                        let _ = crate::provider_health::auto_heal_in(&c, &report, now, false);
                         if crate::notices::os_enabled_in(&c) {
                             for h in fresh {
                                 use tauri_plugin_notification::NotificationExt;
@@ -271,6 +273,8 @@ pub fn run_gui() {
             commands::notices_list,
             commands::notices_read,
             commands::provider_health,
+            commands::provider_auto_heal,
+            commands::provider_autofix_log,
             commands::prompts_list,
             commands::prompt_get,
             commands::prompt_save,

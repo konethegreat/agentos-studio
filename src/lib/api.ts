@@ -170,6 +170,15 @@ export interface ProviderHealthReport {
   checked_at: number;
 }
 
+export interface AutoFixEntry {
+  at: number;
+  provider: string;
+  issue: string;
+  steps: string[];
+  outcome: string;
+  detail: string;
+}
+
 /** One item in the notification centre; `view` is the screen that owns it. */
 export interface Notice {
   id: string;
@@ -1243,6 +1252,8 @@ export const api = {
   promptSessions: () => invoke<PromptSession[]>("prompt_sessions"),
   providerHealth: (fresh: boolean) => invoke<ProviderHealthReport>("provider_health", { fresh }),
   providerFix: (provider: string, action: string) => invoke<void>("provider_fix", { provider, action }),
+  providerAutoHeal: () => invoke<AutoFixEntry[]>("provider_auto_heal"),
+  providerAutofixLog: () => invoke<AutoFixEntry[]>("provider_autofix_log"),
   noticesRead: () => invoke<void>("notices_read"),
   clientConnect: (id: string) => invoke<void>("client_connect", { id }),
   clientDisconnect: (id: string) => invoke<void>("client_disconnect", { id }),

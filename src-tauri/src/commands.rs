@@ -391,6 +391,22 @@ pub async fn provider_fix(provider: String, action: String) -> CmdResult<()> {
     blocking(move || crate::provider_health::run_fix(&provider, &action)).await
 }
 
+/// Diagnose and auto-fix unhealthy providers non-interactively.
+#[tauri::command]
+pub async fn provider_auto_heal() -> CmdResult<Vec<crate::provider_health::AutoFixEntry>> {
+    blocking(crate::provider_health::auto_heal_now).await
+}
+
+/// Recent provider auto-troubleshoot and auto-heal actions.
+#[tauri::command]
+pub async fn provider_autofix_log() -> CmdResult<Vec<crate::provider_health::AutoFixEntry>> {
+    blocking(|| {
+        let c = crate::store::open()?;
+        Ok(crate::provider_health::autofix_log_in(&c))
+    })
+    .await
+}
+
 /// The notification centre: everything that needs attention, newest first.
 #[tauri::command]
 pub async fn notices_list() -> CmdResult<Vec<crate::notices::Notice>> {

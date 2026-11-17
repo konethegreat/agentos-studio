@@ -156,15 +156,27 @@ fn hhmm(epoch: i64) -> String {
 
 /// One lane from its route, its provider's quota and the exhaustion memory. Pure.
 pub fn lane(route: &Route, primary: bool, quota: &Quota, exhausted: Option<i64>) -> Lane {
+    lane_with_health(route, primary, quota, exhausted, None)
+}
+
+/// One lane, also accounting for provider health degradation (e.g. broken pipe or auth failure). Pure.
+pub fn lane_with_health(
+    route: &Route,
+    primary: bool,
+    quota: &Quota,
+    exhausted: Option<i64>,
+    degraded: Option<&str>,
+) -> Lane {
     let room = agents::has_headroom(quota);
-    let why = match exhausted {
-        Some(t) => format!(
+    let why = match (exhausted, degraded) {
+        (Some(t), _) => format!(
             "{} ran out of credits or entitlement; closed until about {}",
             route.model,
             hhmm(t)
         ),
-        None if !room => format!("{}: {}", route.provider, quota.summary),
-        None => match quota.headroom_pct {
+        (None, Some(reason)) => format!("{} is degraded: {reason}", route.provider),
+        (None, None) if !room => format!("{}: {}", route.provider, quota.summary),
+        (None, None) => match quota.headroom_pct {
             Some(h) => format!("{h:.0}% left in the tightest window"),
             None => "room to run (the provider reports no limits)".into(),
         },
@@ -176,7 +188,7 @@ pub fn lane(route: &Route, primary: bool, quota: &Quota, exhausted: Option<i64>)
         headroom_pct: quota.headroom_pct,
         resets_at: quota.resets_at.clone(),
         exhausted_until: exhausted,
-        open: exhausted.is_none() && room,
+        open: exhausted.is_none() && degraded.is_none() && room,
         why,
     }
 }
@@ -320,6 +332,7 @@ pub fn lanes(refresh: bool) -> Vec<Lane> {
     let now = store::now();
     learn_from_log(now);
     let mut quotas: std::collections::HashMap<String, Quota> = std::collections::HashMap::new();
+    let conn = store::open().ok();
     routes()
         .iter()
         .enumerate()
@@ -328,7 +341,16 @@ pub fn lanes(refresh: bool) -> Vec<Lane> {
                 .entry(r.provider.clone())
                 .or_insert_with(|| agents::quota_for(&r.provider, refresh))
                 .clone();
-            lane(r, i == 0, &q, exhausted_until(&r.model, now))
+            let degraded = conn
+                .as_ref()
+                .and_then(|c| crate::provider_health::is_degraded_in(c, &r.provider, now));
+            lane_with_health(
+                r,
+                i == 0,
+                &q,
+                exhausted_until(&r.model, now),
+                degraded.as_deref(),
+            )
         })
         .collect()
 }

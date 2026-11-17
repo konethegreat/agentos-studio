@@ -957,15 +957,27 @@ pub fn opt_in(slug: &str, dir: &Path, level_wanted: &str, brief: &str) -> Result
             .unwrap_or("")
             .trim()
             .to_string();
-        let (code, _, err) = crate::procs::run_with_timeout(
-            "gh",
-            &["pr", "merge", &url, "--squash", "--delete-branch"],
-            None,
-            Some(&wt),
-            std::time::Duration::from_secs(90),
-        )?;
-        if code != Some(0) {
-            return Ok(format!("{url} (opened; merge it yourself: {})", err.trim()));
+        let mut merged = false;
+        let mut last_err = String::new();
+        for flag in ["--squash", "--merge", "--rebase"] {
+            let (code, _, err) = crate::procs::run_with_timeout(
+                "gh",
+                &["pr", "merge", &url, flag, "--delete-branch"],
+                None,
+                Some(&wt),
+                std::time::Duration::from_secs(90),
+            )?;
+            if code == Some(0) {
+                merged = true;
+                break;
+            }
+            last_err = err.trim().to_string();
+            if !crate::github::merge_method_not_allowed(&last_err) {
+                break;
+            }
+        }
+        if !merged {
+            return Ok(format!("{url} (opened; merge it yourself: {last_err})"));
         }
         Ok(url)
     })();

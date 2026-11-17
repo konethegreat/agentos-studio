@@ -18,6 +18,9 @@ const LIMIT_DEFAULT_SECS: i64 = 3600;
 /// Read at most this much of the end of `errors.log`.
 const TAIL_BYTES: u64 = 512 * 1024;
 pub const HEALTH_KEY: &str = "provider.health";
+pub const AUTOFIX_LOG_KEY: &str = "provider.autofix.log";
+const AUTOFIX_COOLDOWN_SECS: i64 = 900;
+const DEGRADED_TTL_SECS: i64 = 1800;
 
 pub struct Known {
     pub id: &'static str,
@@ -134,6 +137,28 @@ pub fn classify(summary: &str) -> (&'static str, Option<String>) {
         "auth"
     } else if s.contains("timed out") || s.contains("timeout") {
         "timeout"
+    } else if s.contains("broken pipe")
+        || s.contains("brokenpipeerror")
+        || s.contains("eoferror")
+        || s.contains("connection reset")
+        || s.contains("connection refused")
+        || s.contains("connection aborted")
+        || s.contains("stream drop")
+        || s.contains("stream exhausted")
+        || s.contains("managed worker lost")
+        || s.contains("process exited")
+    {
+        "broken_pipe"
+    } else if s.contains("http 500")
+        || s.contains("http 502")
+        || s.contains("http 503")
+        || s.contains("http 504")
+        || s.contains("internal server error")
+        || s.contains("bad gateway")
+        || s.contains("service unavailable")
+        || s.contains("overloaded")
+    {
+        "server_error"
     } else {
         "other"
     };
@@ -260,17 +285,21 @@ pub fn judge(
             ),
             Some(("refresh", "Refresh sign-in")),
         )
-    } else if let Some(f) = recent
-        .as_ref()
-        .filter(|f| now - f.at <= 1800 && f.kind == "timeout")
-    {
+    } else if let Some(f) = recent.as_ref().filter(|f| {
+        now - f.at <= 1800 && matches!(f.kind.as_str(), "timeout" | "broken_pipe" | "server_error")
+    }) {
+        let prefix = match f.kind.as_str() {
+            "broken_pipe" => "Stream or worker pipe broke in the last half hour",
+            "server_error" => "Upstream server error in the last half hour",
+            _ => "Calls timed out in the last half hour",
+        };
         (
             "failing",
             format!(
-                "Calls timed out in the last half hour: {}",
+                "{prefix}: {}",
                 f.summary.chars().take(120).collect::<String>()
             ),
-            Some(("refresh", "Refresh sign-in")),
+            Some(("auto_heal", "Troubleshoot & fix")),
         )
     } else if signed_in == Some(true) {
         ("ok", "Signed in".into(), None)
@@ -405,11 +434,303 @@ pub fn fix_command(provider: &str, action: &str) -> Option<(&'static str, Vec<St
 }
 
 pub fn run_fix(provider: &str, action: &str) -> anyhow::Result<()> {
+    if action == "auto_heal" {
+        let _ = auto_heal_now()?;
+        return Ok(());
+    }
     let (tool, args) = fix_command(provider, action)
         .ok_or_else(|| anyhow::anyhow!("unknown fix '{action}' for '{provider}'"))?;
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     procs::spawn_console(tool, &refs)?;
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutoFixEntry {
+    pub at: i64,
+    pub provider: String,
+    pub issue: String,
+    pub steps: Vec<String>,
+    /// fixed, switched_fallback, needs_user, degraded
+    pub outcome: String,
+    pub detail: String,
+}
+
+fn degraded_key(provider: &str) -> String {
+    format!("provider.degraded.{provider}")
+}
+
+fn cooldown_key(provider: &str) -> String {
+    format!("provider.autofix.cooldown.{provider}")
+}
+
+pub fn is_degraded_in(c: &rusqlite::Connection, provider: &str, now: i64) -> Option<String> {
+    let raw = crate::store::kv_get(c, &degraded_key(provider))
+        .ok()
+        .flatten()?;
+    let (until_s, reason) = raw.split_once('|')?;
+    let until: i64 = until_s.trim().parse().ok()?;
+    (until > now).then(|| reason.to_string())
+}
+
+pub fn set_degraded_in(c: &rusqlite::Connection, provider: &str, until: i64, reason: &str) {
+    let clean: String = reason.chars().take(160).collect();
+    let _ = crate::store::kv_set(c, &degraded_key(provider), &format!("{until}|{clean}"));
+}
+
+pub fn clear_degraded_in(c: &rusqlite::Connection, provider: &str) {
+    let _ = crate::store::kv_set(c, &degraded_key(provider), "");
+}
+
+pub fn autofix_log_in(c: &rusqlite::Connection) -> Vec<AutoFixEntry> {
+    crate::store::kv_get(c, AUTOFIX_LOG_KEY)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn push_autofix_log_in(c: &rusqlite::Connection, entry: AutoFixEntry) {
+    let mut list = autofix_log_in(c);
+    list.insert(0, entry);
+    list.truncate(30);
+    let _ = crate::store::kv_set(
+        c,
+        AUTOFIX_LOG_KEY,
+        &serde_json::to_string(&list).unwrap_or_default(),
+    );
+}
+
+fn run_hermes_ok(args: &[&str]) -> (bool, String) {
+    match procs::run_with_timeout(
+        "hermes",
+        args,
+        None,
+        None,
+        std::time::Duration::from_secs(30),
+    ) {
+        Ok((code, out, err)) => {
+            let combined = format!("{out} {err}").trim().to_string();
+            (code == Some(0), combined.chars().take(160).collect())
+        }
+        Err(e) => (false, format!("{e:#}").chars().take(160).collect()),
+    }
+}
+
+/// Diagnose and auto-fix unhealthy providers non-interactively.
+/// Uses a 15-minute cooldown per provider unless `bypass_cooldown` is true.
+pub fn auto_heal_in(
+    c: &rusqlite::Connection,
+    report: &Report,
+    now: i64,
+    bypass_cooldown: bool,
+) -> Vec<AutoFixEntry> {
+    auto_heal_with(c, report, now, bypass_cooldown, run_hermes_ok)
+}
+
+fn auto_heal_with(
+    c: &rusqlite::Connection,
+    report: &Report,
+    now: i64,
+    bypass_cooldown: bool,
+    mut exec: impl FnMut(&[&str]) -> (bool, String),
+) -> Vec<AutoFixEntry> {
+    let mut out = Vec::new();
+    let has_healthy_other = |id: &str| {
+        report
+            .providers
+            .iter()
+            .any(|p| p.id != id && p.state == "ok")
+    };
+    for h in &report.providers {
+        if matches!(h.state.as_str(), "ok" | "not_set_up") {
+            clear_degraded_in(c, &h.id);
+            continue;
+        }
+        if !bypass_cooldown {
+            let cd: i64 = crate::store::kv_get(c, &cooldown_key(&h.id))
+                .ok()
+                .flatten()
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0);
+            if cd > now {
+                continue;
+            }
+        }
+        let _ = crate::store::kv_set(
+            c,
+            &cooldown_key(&h.id),
+            &(now + AUTOFIX_COOLDOWN_SECS).to_string(),
+        );
+        let mut steps = Vec::new();
+        let (outcome, detail) = match h.state.as_str() {
+            "plugin_disabled" => {
+                if let Some(plugin) = KNOWN.iter().find(|k| k.id == h.id).and_then(|k| k.plugin) {
+                    let (ok_en, msg) = exec(&["plugins", "enable", plugin]);
+                    steps.push(format!(
+                        "hermes plugins enable {plugin}: {}",
+                        if ok_en { "ok" } else { &msg }
+                    ));
+                    let (ok_show, show_out) = exec(&["plugins", "show", plugin]);
+                    if ok_en && ok_show && crate::connect::plugin_enabled_in(&show_out) {
+                        clear_degraded_in(c, &h.id);
+                        (
+                            "fixed".to_string(),
+                            format!("Enabled Hermes plugin {plugin}"),
+                        )
+                    } else {
+                        set_degraded_in(c, &h.id, now + DEGRADED_TTL_SECS, &h.detail);
+                        (
+                            "needs_user".to_string(),
+                            format!("Plugin {plugin} could not be enabled automatically: {msg}"),
+                        )
+                    }
+                } else {
+                    ("needs_user".to_string(), h.detail.clone())
+                }
+            }
+            "rate_limited" => {
+                let closed = crate::quota_grid::learn_from_log(now);
+                steps.push(format!(
+                    "quota_grid.learn_from_log: closed {} model(s)",
+                    closed.len()
+                ));
+                set_degraded_in(c, &h.id, now + DEGRADED_TTL_SECS, &h.detail);
+                if has_healthy_other(&h.id) {
+                    ("switched_fallback".to_string(), "Marked rate-limited provider degraded so quota grid steers to healthy fallback".to_string())
+                } else {
+                    ("degraded".to_string(), h.detail.clone())
+                }
+            }
+            "signed_out" => {
+                if h.id != "openrouter" {
+                    let (ok_ref, msg) = exec(&["auth", "refresh", &h.id]);
+                    steps.push(format!(
+                        "hermes auth refresh {}: {}",
+                        h.id,
+                        if ok_ref { "ok" } else { &msg }
+                    ));
+                    let (_, st_out) = exec(&["auth", "status", &h.id]);
+                    if parse_auth(&st_out) == Some(true) {
+                        clear_degraded_in(c, &h.id);
+                        (
+                            "fixed".to_string(),
+                            format!("Refreshed sign-in for {}", h.label),
+                        )
+                    } else {
+                        set_degraded_in(c, &h.id, now + DEGRADED_TTL_SECS, &h.detail);
+                        (
+                            "needs_user".to_string(),
+                            format!("{} is signed out and requires interactive login", h.label),
+                        )
+                    }
+                } else {
+                    set_degraded_in(c, &h.id, now + DEGRADED_TTL_SECS, &h.detail);
+                    (
+                        "needs_user".to_string(),
+                        "OpenRouter API key is missing".to_string(),
+                    )
+                }
+            }
+            _ => {
+                // failing: auth, timeout, broken_pipe, server_error
+                let mut refreshed = false;
+                if h.id != "openrouter" {
+                    let (ok_ref, msg_ref) = exec(&["auth", "refresh", &h.id]);
+                    steps.push(format!(
+                        "hermes auth refresh {}: {}",
+                        h.id,
+                        if ok_ref { "ok" } else { &msg_ref }
+                    ));
+                    let (ok_rst, msg_rst) = exec(&["auth", "reset", &h.id]);
+                    steps.push(format!(
+                        "hermes auth reset {}: {}",
+                        h.id,
+                        if ok_rst { "ok" } else { &msg_rst }
+                    ));
+                    let (_, st_out) = exec(&["auth", "status", &h.id]);
+                    let signed = parse_auth(&st_out);
+                    steps.push(format!("hermes auth status {}: {:?}", h.id, signed));
+                    if signed == Some(false) {
+                        set_degraded_in(c, &h.id, now + DEGRADED_TTL_SECS, &h.detail);
+                        let entry = AutoFixEntry {
+                            at: now,
+                            provider: h.id.clone(),
+                            issue: h.state.clone(),
+                            steps,
+                            outcome: "needs_user".into(),
+                            detail: format!(
+                                "{} is signed out after refresh; sign in required",
+                                h.label
+                            ),
+                        };
+                        push_autofix_log_in(c, entry.clone());
+                        out.push(entry);
+                        continue;
+                    }
+                    refreshed = ok_ref || ok_rst;
+                }
+                if refreshed && !has_healthy_other(&h.id) {
+                    clear_degraded_in(c, &h.id);
+                    (
+                        "fixed".to_string(),
+                        format!("Refreshed and reset {} credentials/cooldowns", h.label),
+                    )
+                } else if has_healthy_other(&h.id) {
+                    set_degraded_in(c, &h.id, now + DEGRADED_TTL_SECS, &h.detail);
+                    ("switched_fallback".to_string(), format!("Reset {} and marked it degraded for 30m so quota grid steers to a healthy fallback", h.label))
+                } else if refreshed {
+                    clear_degraded_in(c, &h.id);
+                    (
+                        "fixed".to_string(),
+                        format!("Refreshed and reset {} credentials/cooldowns", h.label),
+                    )
+                } else {
+                    set_degraded_in(c, &h.id, now + DEGRADED_TTL_SECS, &h.detail);
+                    (
+                        "degraded".to_string(),
+                        format!(
+                            "Auto-troubleshoot could not restore {}; marked degraded",
+                            h.label
+                        ),
+                    )
+                }
+            }
+        };
+        let entry = AutoFixEntry {
+            at: now,
+            provider: h.id.clone(),
+            issue: h.state.clone(),
+            steps,
+            outcome: outcome.clone(),
+            detail: detail.clone(),
+        };
+        push_autofix_log_in(c, entry.clone());
+        let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+            kind: "provider_heal",
+            from_agent: "provider health",
+            summary: &format!("{} ({}): {}", h.label, outcome, detail),
+            ..Default::default()
+        });
+        out.push(entry);
+    }
+    out
+}
+
+pub fn auto_heal_now() -> anyhow::Result<Vec<AutoFixEntry>> {
+    let now = chrono::Utc::now().timestamp();
+    let report = check(now);
+    let c = crate::store::open()?;
+    let _ = record_in(&c, &report);
+    Ok(auto_heal_in(&c, &report, now, true))
+}
+
+pub fn auto_heal_if_due() -> anyhow::Result<Vec<AutoFixEntry>> {
+    let now = chrono::Utc::now().timestamp();
+    let report = check(now);
+    let c = crate::store::open()?;
+    let _ = record_in(&c, &report);
+    Ok(auto_heal_in(&c, &report, now, false))
 }
 
 /// The last report saved by the monitor.
@@ -463,6 +784,8 @@ mod tests {
         assert_eq!(f[1].provider, "antigravity-oauth");
         assert_eq!(f[1].kind, "timeout");
         assert_eq!(classify("HTTP 401 Unauthorized: token expired").0, "auth");
+        assert_eq!(classify("[Errno 32] Broken pipe").0, "broken_pipe");
+        assert_eq!(classify("HTTP 503 Service Unavailable").0, "server_error");
         assert_eq!(classify("boom").0, "other");
     }
 
@@ -605,6 +928,57 @@ mod tests {
         );
         r.providers[0] = judge(&KNOWN[0], true, Some(true), Some(true), None, 0);
         assert!(record_in(&c, &r).is_empty());
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn auto_heal_enables_disabled_plugin_and_steers_around_broken_pipe() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let c = crate::store::open().unwrap();
+        let now = 1_700_000_000;
+        let pipe_fail = Failure {
+            at: now - 60,
+            provider: KNOWN[0].id.into(),
+            kind: "broken_pipe".into(),
+            summary: "[Errno 32] Broken pipe".into(),
+            resets: None,
+        };
+        let report = Report {
+            providers: vec![
+                judge(
+                    &KNOWN[0],
+                    true,
+                    Some(true),
+                    Some(true),
+                    Some(pipe_fail),
+                    now,
+                ),
+                judge(&KNOWN[1], true, Some(true), Some(false), None, now),
+                judge(&KNOWN[2], true, Some(true), Some(true), None, now),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(report.providers[0].state, "failing");
+        assert_eq!(report.providers[1].state, "plugin_disabled");
+        let entries = auto_heal_with(&c, &report, now, false, |args| match args {
+            ["plugins", "enable", _] => (true, "enabled".into()),
+            ["plugins", "show", _] => (true, "Status: enabled".into()),
+            ["auth", "refresh", _] => (true, "ok".into()),
+            ["auth", "reset", _] => (true, "ok".into()),
+            ["auth", "status", id] => (true, format!("{id}: logged in")),
+            _ => (false, "unexpected".into()),
+        });
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].provider, KNOWN[0].id);
+        assert_eq!(entries[0].outcome, "switched_fallback");
+        assert!(is_degraded_in(&c, KNOWN[0].id, now + 10).is_some());
+        assert_eq!(entries[1].outcome, "fixed");
+        assert!(is_degraded_in(&c, KNOWN[1].id, now + 10).is_none());
+        assert_eq!(autofix_log_in(&c).len(), 2);
+        // Cooldown prevents re-running immediately.
+        assert!(auto_heal_with(&c, &report, now + 10, false, |_| (true, "ok".into())).is_empty());
         crate::store::set_test_db(None);
     }
 }

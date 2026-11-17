@@ -570,7 +570,7 @@ pub fn merge(id: &str, allowlisted: bool) -> Result<String> {
         .map(|(h, _)| h)
         .unwrap_or_default();
     let checks = crate::github::pr_check_runs(&repo, number).unwrap_or_default();
-    let out = crate::github::pr_merge_with(
+    let out = crate::github::pr_merge_with_fallback(
         &repo,
         number,
         "squash",
