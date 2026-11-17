@@ -573,6 +573,7 @@ export interface ShadowRecord {
 
 export interface ShadowStatus {
   enabled: boolean;
+  voice_enabled: boolean;
   window_minutes: number;
   rules: ShadowRule[];
   record: ShadowRecord[];
@@ -1353,6 +1354,8 @@ export const api = {
   modelChanges: () => invoke<ModelChanges>("model_changes"),
   shadowSet: (p: { enabled?: boolean; windowMinutes?: number; cls?: string; answer?: string }) =>
     invoke<ShadowStatus>("shadow_set", { enabled: p.enabled, windowMinutes: p.windowMinutes, class: p.cls, answer: p.answer }),
+  shadowSetVoiceEnabled: (enabled: boolean) =>
+    invoke<void>("shadow_set_voice_enabled", { enabled }),
   digestNow: () => invoke<string>("digest_now"),
   digestSettings: () => invoke<{ times: string; notify_target: string | null }>("digest_settings"),
   setDigestTimes: (times: string) => invoke<void>("set_digest_times", { times }),

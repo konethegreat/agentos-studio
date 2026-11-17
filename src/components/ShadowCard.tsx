@@ -65,8 +65,23 @@ export function ShadowCard() {
             the allow list.
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <Toggle checked={s.enabled} label={s.enabled ? "On" : "Off"} onChange={(on) => void change({ enabled: on })} />
+          <Toggle
+            checked={s.voice_enabled}
+            label="Voice call on urgent blocks"
+            onChange={async (on) => {
+              setBusy(true);
+              try {
+                await api.shadowSetVoiceEnabled(on);
+                await load();
+              } catch (e) {
+                toast("error", errorText(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          />
           <label className="flex items-center gap-2 whitespace-nowrap text-small text-slate-300">
             Window
             <select
