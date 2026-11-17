@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Circle, CircleAlert, ExternalLink, KeyRound, RefreshCw } from "lucide-react";
-import { api, errorText, type ProviderHealthReport } from "../lib/api";
+import { api, errorText, type AutoFixEntry, type ProviderHealthReport } from "../lib/api";
 import { studio } from "../lib/studio";
 import { useToast } from "./Toasts";
 import { Button, Card, inputClass } from "./ui";
@@ -33,11 +33,18 @@ const STATE_TEXT: Record<string, string> = {
 function ConnectionHealth() {
   const toast = useToast();
   const [r, setR] = useState<ProviderHealthReport | null>(null);
+  const [healLog, setHealLog] = useState<AutoFixEntry[]>([]);
   const [busy, setBusy] = useState(false);
+  const [healing, setHealing] = useState(false);
   async function load(fresh: boolean) {
     setBusy(true);
     try {
-      setR(await api.providerHealth(fresh));
+      const [report, log] = await Promise.all([
+        api.providerHealth(fresh),
+        api.providerAutofixLog().catch(() => [] as AutoFixEntry[]),
+      ]);
+      setR(report);
+      setHealLog(log);
     } catch (e) {
       toast("error", errorText(e));
     } finally {
@@ -48,7 +55,27 @@ function ConnectionHealth() {
     void load(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  async function runAutoHeal() {
+    setHealing(true);
+    try {
+      const entries = await api.providerAutoHeal();
+      await load(true);
+      if (entries.length === 0) {
+        toast("ok", "All active providers look healthy.");
+      } else {
+        toast("info", entries.map((e) => `${e.provider}: ${e.outcome} (${e.detail})`).join("; "));
+      }
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setHealing(false);
+    }
+  }
   async function fix(id: string, action: string, label: string) {
+    if (action === "auto_heal") {
+      await runAutoHeal();
+      return;
+    }
     try {
       await api.providerFix(id, action);
       toast("info", `${label}: finish it in the window that opened, then press Check now.`);
@@ -58,11 +85,16 @@ function ConnectionHealth() {
   }
   return (
     <div className="border-t border-line px-4 py-3">
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-small font-semibold text-slate-200">Can Hermes run right now?</div>
-        <Button size="sm" variant="ghost" busy={busy} icon={<RefreshCw className="size-3.5" />} onClick={() => void load(true)}>
-          Check now
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" variant="ghost" busy={healing} onClick={() => void runAutoHeal()}>
+            Troubleshoot & fix
+          </Button>
+          <Button size="sm" variant="ghost" busy={busy} icon={<RefreshCw className="size-3.5" />} onClick={() => void load(true)}>
+            Check now
+          </Button>
+        </div>
       </div>
       {r?.advice && (
         <div className="mb-2 rounded-lg bg-amber-500/[0.06] px-3 py-2 text-small text-amber-200 ring-1 ring-amber-500/25">
@@ -95,6 +127,20 @@ function ConnectionHealth() {
             </li>
           ))}
         </ul>
+      )}
+      {healLog.length > 0 && (
+        <div className="mt-3 border-t border-line/60 pt-2">
+          <div className="mb-1 text-2xs font-medium uppercase tracking-wide text-slate-400">
+            Recent auto-troubleshoot actions
+          </div>
+          <ul className="space-y-1 text-label text-muted">
+            {healLog.slice(0, 3).map((e, idx) => (
+              <li key={`${e.at}-${e.provider}-${idx}`}>
+                <span className="text-slate-300">{e.provider}</span> ({e.issue} -&gt; {e.outcome}): {e.detail}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

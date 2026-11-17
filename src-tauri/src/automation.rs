@@ -146,6 +146,16 @@ pub fn model_failure(reason: &str) -> bool {
         "managed worker lost",
         "gateway connection failed",
         "without kanban_complete",
+        "broken pipe",
+        "brokenpipeerror",
+        "connection reset",
+        "provider unavailable",
+        "bad gateway",
+        "service unavailable",
+        "overloaded",
+        "http 502",
+        "http 503",
+        "http 504",
     ]
     .iter()
     .any(|p| r.contains(p))
@@ -191,6 +201,7 @@ fn model_failure_retry(m: &Mission, reason: &str) -> anyhow::Result<String> {
         ),
     )?;
     crate::stuck::reset(&m.id);
+    let _ = crate::provider_health::auto_heal_if_due();
     Ok(format!(
         "{}: the model stopped replying; queued again for a fresh attempt",
         m.id

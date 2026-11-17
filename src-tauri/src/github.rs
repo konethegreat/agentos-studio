@@ -529,6 +529,56 @@ pub fn pr_merge(
     pr_merge_with(repo, number, method, delete_branch, approved, None, None)
 }
 
+pub fn merge_method_not_allowed(err: &str) -> bool {
+    let e = err.to_lowercase();
+    e.contains("merges are not allowed")
+        || e.contains("merge commits are not allowed")
+        || e.contains("not allowed on this repository")
+}
+
+/// Merge with `preferred` (`squash`, `merge`, or `rebase`) and fall back to another allowed
+/// method when the repository forbids that merge type (for example Vigil disallows squash).
+#[allow(clippy::too_many_arguments)]
+pub fn pr_merge_with_fallback(
+    repo: &str,
+    number: u64,
+    preferred: &str,
+    delete_branch: bool,
+    approved: bool,
+    subject: Option<&str>,
+    body: Option<&str>,
+) -> Result<String> {
+    match pr_merge_with(
+        repo,
+        number,
+        preferred,
+        delete_branch,
+        approved,
+        subject,
+        body,
+    ) {
+        Ok(out) => Ok(out),
+        Err(err) if preferred == "squash" && merge_method_not_allowed(&format!("{err:#}")) => {
+            match pr_merge_with(
+                repo,
+                number,
+                "merge",
+                delete_branch,
+                approved,
+                subject,
+                body,
+            ) {
+                Ok(out) => Ok(out),
+                Err(err2) if merge_method_not_allowed(&format!("{err2:#}")) => {
+                    pr_merge_with(repo, number, "rebase", delete_branch, approved, None, None)
+                }
+                Err(err2) => Err(err2),
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
 /// Merge with an explicit commit subject and body. The mission gate uses it to keep the pull
 /// request's description and append the provenance trailers to it.
 #[allow(clippy::too_many_arguments)]
@@ -944,6 +994,12 @@ mod tests {
         assert!(!mission.iter().any(|a| a == "--delete-branch"));
         let blank = merge_args("o/r", 7, "--squash", false, Some("  "), Some(""));
         assert!(!blank.iter().any(|a| a == "--subject" || a == "--body"));
+        assert!(merge_method_not_allowed(
+            "GraphQL: Squash merges are not allowed on this repository. (mergePullRequest)"
+        ));
+        assert!(!merge_method_not_allowed(
+            "Required status check is failing"
+        ));
     }
 
     #[test]
