@@ -1164,3 +1164,57 @@ pub async fn self_build_run_candidate(
 pub async fn self_build_send_weekly_ship() -> CmdResult<bool> {
     blocking(|| crate::self_build::maybe_send_weekly_ship(crate::store::now())).await
 }
+
+#[tauri::command]
+pub async fn agency_list_intakes() -> CmdResult<Vec<crate::agency::AgencyIntake>> {
+    blocking(crate::agency::list_intakes).await
+}
+
+#[tauri::command]
+pub async fn agency_create_intake(
+    goal: String,
+    repo: String,
+    deadline: String,
+    client_contact: Option<String>,
+) -> CmdResult<crate::agency::AgencyIntake> {
+    blocking(move || {
+        crate::agency::create_intake(&goal, &repo, &deadline, client_contact.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn agency_request_quote_approval(intake_id: String) -> CmdResult<bool> {
+    blocking(move || crate::agency::request_quote_approval(&intake_id)).await
+}
+
+#[tauri::command]
+pub async fn agency_approve_quote(
+    intake_id: String,
+    approved: bool,
+) -> CmdResult<crate::agency::AgencyIntake> {
+    blocking(move || crate::agency::approve_quote(&intake_id, approved)).await
+}
+
+#[tauri::command]
+pub async fn agency_list_invitations() -> CmdResult<Vec<crate::agency::RepoInvitation>> {
+    blocking(crate::agency::list_invitations).await
+}
+
+#[tauri::command]
+pub async fn agency_accept_invitation(invitation_id: u64) -> CmdResult<()> {
+    blocking(move || crate::agency::accept_invitation(invitation_id)).await
+}
+
+#[tauri::command]
+pub async fn agency_start_client_goal(intake_id: String) -> CmdResult<crate::agency::AgencyIntake> {
+    blocking(move || crate::agency::start_client_goal(&intake_id)).await
+}
+
+#[tauri::command]
+pub async fn agency_deliver_intake(
+    intake_id: String,
+    pr_url: String,
+) -> CmdResult<crate::agency::AgencyDelivery> {
+    blocking(move || crate::agency::deliver_intake(&intake_id, &pr_url)).await
+}
