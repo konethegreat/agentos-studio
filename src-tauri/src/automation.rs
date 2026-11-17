@@ -590,7 +590,7 @@ fn advance_kanban(m: &Mission, task: &str, global_stop: bool) -> anyhow::Result<
     use crate::kanban::{self, Next};
     let view = kanban::show(task)?;
     let spent = crate::usage::metered_cost(&kanban::session_ids(&view));
-    match kanban::next(&view) {
+    match kanban::next_at(&view, crate::store::now()) {
         Next::Wait => {
             if global_stop {
                 // Stop the Hermes worker too, not only Studio's record of it.

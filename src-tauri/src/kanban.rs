@@ -280,6 +280,13 @@ pub fn parse_show(json: &str) -> Result<TaskView> {
             let mut times = vec![epoch(task.get("created_at")), epoch(task.get("started_at"))];
             for key in ["runs", "events", "comments"] {
                 for item in v.get(key).and_then(Value::as_array).into_iter().flatten() {
+                    let idle = item
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .is_some_and(|k| IDLE_EVENT_KINDS.contains(&k));
+                    if idle {
+                        continue;
+                    }
                     times.push(epoch(item.get("started_at")));
                     times.push(epoch(item.get("ended_at")));
                     times.push(epoch(item.get("created_at")));
@@ -378,6 +385,39 @@ pub fn next(view: &TaskView) -> Next {
         _ => Next::Wait,
     }
 }
+
+/// How long kanban's own review pass may sit untouched before Studio's reviewer takes the work.
+pub const REVIEW_HANDOFF_SECS: i64 = 1800;
+
+/// `next`, plus one rule that needs the clock: a worker that asked for review whose kanban
+/// review never started (the dispatcher refuses to respawn, for example `blocker_auth`) is
+/// handed to Studio's reviewer after `REVIEW_HANDOFF_SECS`. Studio's review is the real gate,
+/// so this never approves anything; it only stops finished work from waiting forever. Pure.
+pub fn next_at(view: &TaskView, now: i64) -> Next {
+    let stalled_review = view.status == "review"
+        && view
+            .runs
+            .last()
+            .is_some_and(|r| r.outcome.as_deref() == Some("review_requested"))
+        && view
+            .last_activity
+            .is_some_and(|t| now - t >= REVIEW_HANDOFF_SECS);
+    if stalled_review {
+        return Next::Review(
+            view.runs
+                .iter()
+                .filter_map(|r| r.summary.clone())
+                .chain(view.result.clone())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
+    next(view)
+}
+
+/// Event kinds the dispatcher writes while it is NOT making progress. Counting them as signs
+/// of life hid a task that had been refused a respawn every minute for a day.
+const IDLE_EVENT_KINDS: [&str; 1] = ["respawn_guarded"];
 
 /// Every Hermes session the task's runs used (workers and kanban's own reviewer).
 pub fn session_ids(view: &TaskView) -> Vec<String> {
@@ -694,6 +734,38 @@ mod tests {
         m.review_verdict = Some("reject".into());
         m.review_note = Some("Missing test for 404".into());
         assert!(task_body(&m).contains("Missing test for 404"));
+    }
+
+    #[test]
+    fn a_review_kanban_never_starts_goes_to_studio_and_guard_events_are_not_life() {
+        // The shape of t_1de25653: the worker asked for review, then the dispatcher refused a
+        // respawn every minute (respawn_guarded) for a day.
+        let shown = r#"{"task":{"status":"review","created_at":1000},"runs":[
+            {"status":"review","outcome":"review_requested","summary":"Verified PR #30 https://github.com/o/r/pull/30","ended_at":2000}],
+            "events":[{"kind":"review_requested","created_at":2000},
+                      {"kind":"respawn_guarded","payload":{"reason":"blocker_auth"},"created_at":90000}]}"#;
+        let v = parse_show(shown).unwrap();
+        assert_eq!(v.last_activity, Some(2000), "guard events are not progress");
+        assert_eq!(
+            next_at(&v, 2000 + 60),
+            Next::Wait,
+            "kanban gets its review window"
+        );
+        match next_at(&v, 2000 + REVIEW_HANDOFF_SECS) {
+            Next::Review(s) => assert!(s.contains("/pull/30")),
+            other => panic!("expected Studio review, got {other:?}"),
+        }
+        // A review kanban is actively running stays with kanban.
+        let busy = TaskView {
+            status: "review".into(),
+            runs: vec![Run {
+                outcome: Some("running".into()),
+                ..Default::default()
+            }],
+            last_activity: Some(0),
+            ..Default::default()
+        };
+        assert_eq!(next_at(&busy, 1_000_000), Next::Wait);
     }
 
     #[test]

@@ -521,6 +521,14 @@ pub fn sync_checkout(dir: &Path) -> bool {
     crate::fleet::git(dir, &["rev-parse", "HEAD"]) != before
 }
 
+/// Seconds between fetches of a repository that is not opted in, looking for an opt-in.
+const OPTIN_CHECK_SECS: i64 = 1800;
+
+/// Whether a repository that reads as not opted in is due a fetch to look again. Pure.
+pub fn optin_check_due(last: i64, now: i64) -> bool {
+    now - last >= OPTIN_CHECK_SECS
+}
+
 /// Only a clean checkout of the default branch is fast-forwarded. Pure.
 pub fn may_fast_forward(current: &str, base: &str, dirty: bool) -> bool {
     !dirty && !current.trim().is_empty() && current.trim() == base
@@ -772,7 +780,23 @@ pub fn pass(v: &Vault) -> Result<PassReport> {
     let cap = max_active(&c);
     for (slug, dir) in &all {
         if !config_of(dir).enabled {
-            continue;
+            // The opt-in is read from origin, and only enabled repositories fetch below, so an
+            // opt-in merged on GitHub (the web, gh, another machine) stays invisible until
+            // something fetches. Check those repositories again every half hour.
+            let key = format!("autonomy.optin_check.{slug}");
+            let last = store::kv_get(&c, &key)
+                .ok()
+                .flatten()
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0);
+            if !optin_check_due(last, now) {
+                continue;
+            }
+            let _ = store::kv_set(&c, &key, &now.to_string());
+            let _ = crate::fleet::git(dir, &["fetch", "-q", "origin"]);
+            if !config_of(dir).enabled {
+                continue;
+            }
         }
         rep.considered += 1;
         let room = active < cap;
@@ -1267,6 +1291,13 @@ mod tests {
         assert!(all
             .iter()
             .any(|s| s.slug == "agentos-studio" && s.hermes_project));
+    }
+
+    #[test]
+    fn a_repository_not_yet_opted_in_is_fetched_again_every_half_hour() {
+        assert!(optin_check_due(0, 1_700_000_000));
+        assert!(!optin_check_due(1_700_000_000, 1_700_000_000 + 60));
+        assert!(optin_check_due(1_700_000_000, 1_700_000_000 + 1800));
     }
 
     #[test]

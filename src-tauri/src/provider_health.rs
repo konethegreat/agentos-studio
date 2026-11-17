@@ -21,6 +21,18 @@ pub const HEALTH_KEY: &str = "provider.health";
 pub const AUTOFIX_LOG_KEY: &str = "provider.autofix.log";
 const AUTOFIX_COOLDOWN_SECS: i64 = 900;
 const DEGRADED_TTL_SECS: i64 = 1800;
+/// Failure kinds that a fresh attempt usually clears on its own.
+const TRANSIENT_KINDS: [&str; 3] = ["timeout", "broken_pipe", "server_error"];
+
+/// How many credentials `hermes auth reset` touched ("Reset status on 2 <provider> credentials").
+/// Pure; 0 when the line is missing, so an empty pool never counts as a fix.
+fn reset_count(out: &str) -> usize {
+    out.split("Reset status on ")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0)
+}
 
 pub struct Known {
     pub id: &'static str,
@@ -668,22 +680,42 @@ fn auto_heal_with(
                         out.push(entry);
                         continue;
                     }
-                    refreshed = ok_ref || ok_rst;
+                    // `auth reset` exits 0 even when the pool is empty (plugin-backed
+                    // subscriptions), so only a reset that touched a credential counts.
+                    refreshed = ok_ref || (ok_rst && reset_count(&msg_rst) > 0);
                 }
-                if refreshed && !has_healthy_other(&h.id) {
-                    clear_degraded_in(c, &h.id);
-                    (
-                        "fixed".to_string(),
-                        format!("Refreshed and reset {} credentials/cooldowns", h.label),
-                    )
-                } else if has_healthy_other(&h.id) {
+                let transient = h
+                    .last_failure
+                    .as_ref()
+                    .is_some_and(|f| TRANSIENT_KINDS.contains(&f.kind.as_str()));
+                if has_healthy_other(&h.id) {
                     set_degraded_in(c, &h.id, now + DEGRADED_TTL_SECS, &h.detail);
-                    ("switched_fallback".to_string(), format!("Reset {} and marked it degraded for 30m so quota grid steers to a healthy fallback", h.label))
+                    (
+                        "switched_fallback".to_string(),
+                        format!(
+                            "Marked {} degraded for 30 minutes so missions use a healthy fallback",
+                            h.label
+                        ),
+                    )
                 } else if refreshed {
                     clear_degraded_in(c, &h.id);
                     (
-                        "fixed".to_string(),
-                        format!("Refreshed and reset {} credentials/cooldowns", h.label),
+                        "retrying".to_string(),
+                        format!(
+                            "Refreshed {} credentials and cleared cooldowns; the next attempt retries",
+                            h.label
+                        ),
+                    )
+                } else if transient {
+                    // No fallback to steer to: closing the only lane would hold every
+                    // mission, so leave it open and let the mission retry absorb it.
+                    clear_degraded_in(c, &h.id);
+                    (
+                        "retrying".to_string(),
+                        format!(
+                            "{} had a transient failure and no healthy fallback; missions retry automatically",
+                            h.label
+                        ),
                     )
                 } else {
                     set_degraded_in(c, &h.id, now + DEGRADED_TTL_SECS, &h.detail);
@@ -979,6 +1011,66 @@ mod tests {
         assert_eq!(autofix_log_in(&c).len(), 2);
         // Cooldown prevents re-running immediately.
         assert!(auto_heal_with(&c, &report, now + 10, false, |_| (true, "ok".into())).is_empty());
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn an_empty_credential_pool_is_never_reported_as_fixed() {
+        assert_eq!(
+            reset_count("Reset status on 0 antigravity-subscription-directsdk credentials"),
+            0
+        );
+        assert_eq!(reset_count("Reset status on 2 openai credentials"), 2);
+        assert_eq!(reset_count("nothing"), 0);
+
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let c = crate::store::open().unwrap();
+        let now = 1_700_000_000;
+        let fail = |kind: &str| Failure {
+            at: now - 60,
+            provider: KNOWN[0].id.into(),
+            kind: kind.into(),
+            summary: "x".into(),
+            resets: None,
+        };
+        // The real Hermes answers for a plugin-backed subscription: refresh fails, reset is a no-op.
+        let real = |args: &[&str]| match args {
+            ["auth", "refresh", id] => (false, format!("No {id} credentials in the pool.")),
+            ["auth", "reset", id] => (true, format!("Reset status on 0 {id} credentials")),
+            ["auth", "status", id] => (true, format!("{id}: logged in")),
+            _ => (false, "unexpected".into()),
+        };
+        // Transient, only provider: stays open and retries, never "fixed".
+        let r = Report {
+            providers: vec![judge(
+                &KNOWN[0],
+                true,
+                Some(true),
+                Some(true),
+                Some(fail("broken_pipe")),
+                now,
+            )],
+            ..Default::default()
+        };
+        let e = auto_heal_with(&c, &r, now, true, real);
+        assert_eq!(e[0].outcome, "retrying");
+        assert!(is_degraded_in(&c, KNOWN[0].id, now + 10).is_none());
+        // Not transient, only provider, nothing changed: degraded, not fixed.
+        let r = Report {
+            providers: vec![judge(
+                &KNOWN[0],
+                true,
+                Some(true),
+                Some(true),
+                Some(fail("auth")),
+                now,
+            )],
+            ..Default::default()
+        };
+        let e = auto_heal_with(&c, &r, now, true, real);
+        assert_ne!(e[0].outcome, "fixed");
         crate::store::set_test_db(None);
     }
 }
