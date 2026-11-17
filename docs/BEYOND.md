@@ -164,9 +164,9 @@ Goal: every merge carries a receipt anyone can verify.
   ed25519 key made on this machine (`keys/receipts.seed`; not the updater key, whose private half
   lives in CI). Verification names the first receipt that was edited, removed, reordered, re-signed
   with another key or forged. Safety screen: Proof of every merge, with Verify the chain.
-- [ ] B5.3 Public ledger on the website: totals and per-repository receipts for public
+- [x] B5.3 Public ledger on the website: totals and per-repository receipts for public
   repositories only (the sandboxes are private), with the public key and a verify page.
-- [ ] B5.4 `prove-it` probes in the receipt (the Hermes plugin that checks completion claims
+- [x] B5.4 `prove-it` probes in the receipt (the Hermes plugin that checks completion claims
   against git and the file system).
 
 ## B6: Ouroboros, Studio builds Studio (1.6.0 for B6.1)

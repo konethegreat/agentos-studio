@@ -671,6 +671,15 @@ export interface MergeReceipt {
   signature: string;
 }
 
+export interface PublicLedger {
+  ok: boolean;
+  total_receipts: number;
+  public_key: string | null;
+  repos: { repo: string; receipts: number }[];
+  receipts: MergeReceipt[];
+  generated_at: number;
+}
+
 export interface ReceiptVerification {
   ok: boolean;
   receipts: number;
@@ -1351,6 +1360,7 @@ export const api = {
   benchClear: () => invoke<BenchStatus>("bench_clear"),
   receipts: (limit = 100) => invoke<MergeReceipt[]>("receipts_list", { limit }),
   verifyReceipts: () => invoke<ReceiptVerification>("receipts_verify"),
+  publicLedger: (publicRepos: string[] = []) => invoke<PublicLedger>("public_ledger", { publicRepos }),
   modelChanges: () => invoke<ModelChanges>("model_changes"),
   shadowSet: (p: { enabled?: boolean; windowMinutes?: number; cls?: string; answer?: string }) =>
     invoke<ShadowStatus>("shadow_set", { enabled: p.enabled, windowMinutes: p.windowMinutes, class: p.cls, answer: p.answer }),

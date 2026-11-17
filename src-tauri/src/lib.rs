@@ -404,6 +404,7 @@ pub fn run_gui() {
             ops::bench_clear,
             ops::receipts_list,
             ops::receipts_verify,
+            ops::public_ledger,
             ops::explorer_files,
             ops::explorer_read,
             ops::explorer_status,
