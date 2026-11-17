@@ -35,6 +35,16 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.0.1
+
+Self-healing providers and a fleet that no longer stalls silently.
+
+- **Provider auto-heal.** Broken pipes, timeouts and upstream 5xx errors are classified as provider failures. Every health check troubleshoots unhealthy providers on its own (enable a disabled plugin, refresh and reset credentials, learn spent models) with a 15 minute cooldown, marks a provider that cannot be restored as degraded for 30 minutes so the quota grid steers missions to a healthy fallback, and logs every action. Connections has a Troubleshoot & fix button and the recent actions. An empty credential pool is never reported as fixed.
+- **Transient provider errors are retried.** Missions that die on a broken pipe, connection reset, 502, 503, 504 or an overloaded provider get a fresh attempt instead of an escalation.
+- **Repositories that disallow squash merges.** The merge gate falls back from squash to merge commit to rebase only when GitHub rejects the method (Vigil).
+- **Opt-ins merged on GitHub are seen.** A repository that reads as not opted in is fetched again every half hour, so an opt-in merged outside Studio starts its plan goal instead of sitting idle.
+- **Finished work no longer waits on a stalled kanban review.** A worker that asked for review whose kanban review never starts goes to Studio's reviewer after 30 minutes, and dispatcher guard events no longer count as worker activity.
+
 ## What is new in 2.0.0
 
 Completes the Beyond roadmap (docs/BEYOND.md) from Shadow Kone and the Dreaming Brain to Proof-carrying Work, Ouroboros, and Agency in a Box.
