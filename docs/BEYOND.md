@@ -83,10 +83,10 @@ not have taken. Design: `docs/SHADOW.md`.
 - [x] **B1.5 Self-demotion.** An owner overrule is itself his newest answer, so it breaks the streak
   and retires the rule at once (stricter than the two overrules first planned); three new
   consistent answers bring it back.
-- [ ] **B1.6 Judge for novel questions.** For a question with no rule, a Claude turn with the
+- [x] **B1.6 Judge for novel questions.** For a question with no rule, a Claude turn with the
   constitution and the nearest precedents proposes an answer with a confidence; only reversible
   answers (retry) above 0.8 are announced, everything else waits for the owner.
-- [ ] **B1.7 Voice escalation (opt-in).** Urgent questions near their deadline go out as a phone call
+- [x] **B1.7 Voice escalation (opt-in).** Urgent questions near their deadline go out as a phone call
   through the `hermes-phone` plugin, with the owner's explicit per-call approval as the plugin
   requires.
 

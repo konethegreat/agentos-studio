@@ -391,6 +391,7 @@ pub fn run_gui() {
             ops::explorer_checkouts,
             ops::shadow_status,
             ops::shadow_set,
+            ops::shadow_set_voice_enabled,
             ops::quota_lanes,
             ops::quota_forecast,
             ops::autostart_get,

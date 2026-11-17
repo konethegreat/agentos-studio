@@ -952,6 +952,11 @@ pub async fn shadow_set(
     blocking(move || crate::shadow::set(enabled, window_minutes, standing)).await
 }
 
+#[tauri::command]
+pub async fn shadow_set_voice_enabled(enabled: bool) -> CmdResult<()> {
+    blocking(move || crate::shadow::set_voice_enabled(enabled)).await
+}
+
 /// The quota grid: Hermes' primary and fallback routes, each open or closed and why (Beyond B2).
 #[tauri::command]
 pub async fn quota_lanes(refresh: Option<bool>) -> CmdResult<Vec<crate::quota_grid::Lane>> {

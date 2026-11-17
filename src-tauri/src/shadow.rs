@@ -42,6 +42,13 @@ pub const OWNER_SOURCES: [&str; 3] = ["studio", "phone", "notion"];
 
 const ENABLED_KEY: &str = "shadow.enabled";
 const WINDOW_KEY: &str = "shadow.window_minutes";
+const VOICE_ENABLED_KEY: &str = "shadow.voice_enabled";
+const VOICE_LAST_CALL_KEY: &str = "shadow.voice_last_call_at";
+const VOICE_COOLDOWN_SECS: i64 = 3600;
+const QUIET_START_HOUR: u32 = 22;
+const QUIET_END_HOUR: u32 = 7;
+
+pub type JudgeTurn<'a> = dyn Fn(&str) -> Result<String> + 'a;
 
 pub fn plan_key(escalation_id: &str) -> String {
     format!("shadow.plan.{escalation_id}")
@@ -253,9 +260,15 @@ pub fn step(now: i64) -> Result<Vec<(Option<String>, String)>> {
             Some(_) => {}
             None => {
                 let class = reason_class(&e.kind, &e.question);
-                let Some((answer, source, reason)) =
-                    decide(e, &history, standing(class).as_deref())
-                else {
+                let decided = decide(e, &history, standing(class).as_deref())
+                    .map(|(a, s, r)| (a, s.to_string(), r));
+                let proposal = if let Some(d) = decided {
+                    Some(d)
+                } else {
+                    judge_novel(e, &history, &run_judge_turn)
+                };
+                let Some((answer, source, reason)) = proposal else {
+                    let _ = maybe_voice_escalate(e, now, local_hour(), &call_hermes_phone);
                     continue;
                 };
                 let p = Plan {
@@ -324,6 +337,7 @@ pub struct Record {
 #[derive(Debug, Clone, Serialize)]
 pub struct Status {
     pub enabled: bool,
+    pub voice_enabled: bool,
     pub window_minutes: i64,
     pub rules: Vec<Rule>,
     pub record: Vec<Record>,
@@ -401,6 +415,7 @@ pub fn status() -> Result<Status> {
     });
     Ok(Status {
         enabled: enabled(),
+        voice_enabled: is_voice_enabled(),
         window_minutes: window_minutes(),
         rules,
         record,
@@ -442,6 +457,188 @@ pub fn set(
     }
     drop(c);
     status()
+}
+
+pub fn is_voice_enabled() -> bool {
+    kv(VOICE_ENABLED_KEY).as_deref() == Some("1")
+}
+
+pub fn set_voice_enabled(on: bool) -> Result<()> {
+    let c = store::open()?;
+    store::kv_set(&c, VOICE_ENABLED_KEY, if on { "1" } else { "0" })
+}
+
+fn call_hermes_phone(msg: &str) -> Result<()> {
+    let exe =
+        crate::procs::find("hermes").ok_or_else(|| anyhow::anyhow!("hermes is not installed"))?;
+    let prompt = format!("Call the owner via hermes-phone: {msg}");
+    let out = crate::procs::command(&exe)
+        .args(["chat", "-Q", "--oneshot", "-q", &prompt])
+        .env("NO_COLOR", "1")
+        .output()?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "hermes-phone call failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    Ok(())
+}
+
+/// Quiet hours check (wraps around midnight, e.g. 22..7). Pure.
+pub fn is_quiet_hour(hour: u32, start: u32, end: u32) -> bool {
+    if start <= end {
+        hour >= start && hour < end
+    } else {
+        hour >= start || hour < end
+    }
+}
+
+fn local_hour() -> u32 {
+    chrono::Local::now()
+        .format("%H")
+        .to_string()
+        .parse()
+        .unwrap_or(12)
+}
+
+/// Only reversible retry answers are eligible for the novel-question judge (B1.6). Pure.
+pub fn is_reversible_answer(answer: &str) -> bool {
+    let lower = answer.trim().to_lowercase();
+    lower == "retry" || lower.starts_with("retry ")
+}
+
+/// Second-opinion policy guard: blocks hard-refuse classes and non-reversible answers. Pure.
+pub fn violates_shadow_policy(e: &Escalation, answer: &str) -> bool {
+    let class = reason_class(&e.kind, &e.question);
+    NEVER.contains(&class)
+        || !is_reversible_answer(answer)
+        || !e.options.iter().any(|o| o == answer)
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct JudgeResponse {
+    answer: String,
+    confidence: f64,
+    #[serde(default)]
+    violates_policy: bool,
+    #[serde(default)]
+    reason: String,
+}
+
+pub fn parse_judge_response(raw: &str) -> Option<(String, f64, bool, String)> {
+    let start = raw.find('{')?;
+    let end = raw.rfind('}')?;
+    let parsed: JudgeResponse = serde_json::from_str(&raw[start..=end]).ok()?;
+    Some((
+        parsed.answer,
+        parsed.confidence,
+        parsed.violates_policy,
+        parsed.reason,
+    ))
+}
+
+fn run_judge_turn(prompt: &str) -> Result<String> {
+    let exe =
+        crate::procs::find("claude").ok_or_else(|| anyhow::anyhow!("claude is not installed"))?;
+    let out = crate::procs::command(&exe)
+        .args([
+            "-p",
+            "--output-format",
+            "text",
+            "--permission-mode",
+            "plan",
+            prompt,
+        ])
+        .env("NO_COLOR", "1")
+        .output()?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "claude judge failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+/// B1.6: propose a reversible answer (> 0.8 confidence) for a novel question with no rule.
+pub fn judge_novel(
+    e: &Escalation,
+    history: &[Escalation],
+    turn: &JudgeTurn<'_>,
+) -> Option<(String, String, String)> {
+    let class = reason_class(&e.kind, &e.question);
+    if NEVER.contains(&class) {
+        return None;
+    }
+    let tried_key = format!("shadow.judge.{}", e.id);
+    if kv(&tried_key).is_some() {
+        return None;
+    }
+    if let Ok(c) = store::open() {
+        let _ = store::kv_set(&c, &tried_key, "1");
+    }
+    let prec: Vec<String> = precedents(history, class, &e.id)
+        .into_iter()
+        .take(5)
+        .map(|p| format!("- {}: {}", p.question, p.answer.as_deref().unwrap_or("")))
+        .collect();
+    let prompt = format!(
+        "You are Shadow Kone's second-opinion judge. Never violate SHADOW.md or invent a policy.\n\
+Never answer budget, destructive, or merge-allow-list questions.\n\
+Only propose a reversible retry option if confidence > 0.8; otherwise set violates_policy=true or confidence <= 0.8.\n\
+Question ({}): {}\nOptions: {:?}\nNearest precedents:\n{}\nReturn JSON only: {{\"answer\":\"...\",\"confidence\":0.0,\"violates_policy\":false,\"reason\":\"...\"}}",
+        class,
+        e.question,
+        e.options,
+        prec.join("\n")
+    );
+    let raw = turn(&prompt).ok()?;
+    let (answer, confidence, violates, reason) = parse_judge_response(&raw)?;
+    if violates || confidence <= 0.8 || violates_shadow_policy(e, &answer) {
+        return None;
+    }
+    let why = if reason.trim().is_empty() {
+        format!("judge ({:.0}% confidence)", confidence * 100.0)
+    } else {
+        format!("judge ({:.0}%): {}", confidence * 100.0, reason.trim())
+    };
+    Some((answer, "judge".to_string(), why))
+}
+
+/// B1.7: opt-in voice escalation for urgent blocks, rate-limited to 1/hour and quiet hours.
+pub fn maybe_voice_escalate(
+    e: &Escalation,
+    now: i64,
+    hour: u32,
+    caller: &dyn Fn(&str) -> Result<()>,
+) -> Result<bool> {
+    if !is_voice_enabled() || is_quiet_hour(hour, QUIET_START_HOUR, QUIET_END_HOUR) {
+        return Ok(false);
+    }
+    let called_key = format!("shadow.voice.called.{}", e.id);
+    if kv(&called_key).is_some() {
+        return Ok(false);
+    }
+    if let Some(last) = kv(VOICE_LAST_CALL_KEY).and_then(|s| s.parse::<i64>().ok()) {
+        if now - last < VOICE_COOLDOWN_SECS {
+            return Ok(false);
+        }
+    }
+    let class = reason_class(&e.kind, &e.question);
+    let urgent = NEVER.contains(&class) || (now - e.created_at) >= window_minutes() * 60;
+    if !urgent {
+        return Ok(false);
+    }
+    let msg = format!(
+        "Urgent AgentOS Studio escalation {} ({}): {}",
+        e.id, e.kind, e.question
+    );
+    caller(&msg)?;
+    let c = store::open()?;
+    store::kv_set(&c, &called_key, "1")?;
+    store::kv_set(&c, VOICE_LAST_CALL_KEY, &now.to_string())?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -800,6 +997,84 @@ mod tests {
                 .standing,
             None
         );
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn judge_allows_reversible_retry_above_threshold_and_blocks_stop() {
+        let _g = crate::store::test_env_lock();
+        let d = tempfile::tempdir().unwrap();
+        crate::store::set_test_db(Some(d.path().join("s.db")));
+        let e = Escalation {
+            id: "E-101".into(),
+            goal_id: None,
+            mission_id: Some("M-1".into()),
+            kind: "no_pr".into(),
+            question: "Agent finished without opening a pull request".into(),
+            options: vec!["retry".into(), "stop".into()],
+            safe_answer: "stop".into(),
+            deadline_at: 3700,
+            status: "open".into(),
+            answer: None,
+            answered_by: None,
+            created_at: 100,
+            answered_at: None,
+        };
+        let res = judge_novel(&e, &[], &|_| {
+            Ok(r#"{"answer":"retry","confidence":0.88,"violates_policy":false,"reason":"safe retry"}"#
+                .into())
+        });
+        assert_eq!(res.as_ref().map(|r| r.0.as_str()), Some("retry"));
+
+        let e2 = Escalation {
+            id: "E-102".into(),
+            ..e
+        };
+        let blocked =
+            judge_novel(&e2, &[], &|_| {
+                Ok(r#"{"answer":"stop","confidence":0.95,"violates_policy":false,"reason":"stop"}"#
+                .into())
+            });
+        assert!(blocked.is_none());
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn voice_escalation_respects_opt_in_quiet_hours_and_cooldown() {
+        let _g = crate::store::test_env_lock();
+        let d = tempfile::tempdir().unwrap();
+        crate::store::set_test_db(Some(d.path().join("s.db")));
+        let e = Escalation {
+            id: "E-201".into(),
+            goal_id: None,
+            mission_id: Some("M-1".into()),
+            kind: "budget".into(),
+            question: "Budget exceeded".into(),
+            options: vec!["Approve".into(), "Deny".into()],
+            safe_answer: "Deny".into(),
+            deadline_at: 4600,
+            status: "open".into(),
+            answer: None,
+            answered_by: None,
+            created_at: 1000,
+            answered_at: None,
+        };
+        let calls = std::cell::Cell::new(0usize);
+        let bump = |_: &str| {
+            calls.set(calls.get() + 1);
+            Ok(())
+        };
+        assert!(!maybe_voice_escalate(&e, 2000, 14, &bump).unwrap());
+        set_voice_enabled(true).unwrap();
+        assert!(!maybe_voice_escalate(&e, 2000, 23, &bump).unwrap());
+        assert!(maybe_voice_escalate(&e, 2000, 14, &bump).unwrap());
+        let e2 = Escalation {
+            id: "E-202".into(),
+            ..e
+        };
+        assert!(!maybe_voice_escalate(&e2, 2500, 14, &bump).unwrap());
+        assert!(maybe_voice_escalate(&e2, 6000, 14, &bump).unwrap());
+        assert_eq!(calls.get(), 2);
         crate::store::set_test_db(None);
     }
 }
