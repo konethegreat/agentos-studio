@@ -918,6 +918,13 @@ The next eight phases, B0 to B7, live in [BEYOND.md](BEYOND.md): nothing waits o
 the quota grid, the dreaming brain, the time machine, proof-carrying work, Studio building Studio,
 and the agency. Each phase there lists its tasks and the evidence that closes them.
 
+## After 2.0 (planned)
+
+B0 to B7 shipped in 2.0.0. The next phases, S0 to S5, live in [SELF-HEALING.md](SELF-HEALING.md):
+honest provider health and automatic repair (S0, 2.0.1), canary probes, a fleet doctor that acts on
+kanban diagnostics, a self-built fallback chain, a troubleshooter agent limited to a fixed set of
+repairs, and a daily fleet health report.
+
 ## Ideas worth considering
 
 - Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.
