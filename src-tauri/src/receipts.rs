@@ -254,13 +254,17 @@ pub fn record(
     checks: &[crate::github::CheckRun],
 ) -> Result<Receipt> {
     let merge = crate::github::pr_shas(repo, pr).ok().and_then(|(_, m)| m);
-    let checks = checks
+    let mut checks: Vec<Check> = checks
         .iter()
         .map(|c| Check {
             name: c.name.clone(),
             state: c.state.clone(),
         })
         .collect();
+    let repo_path = std::path::Path::new(&m.repo);
+    if repo_path.is_dir() {
+        checks.extend(prove_it_checks(repo_path, head));
+    }
     let r = draft(
         m,
         crate::goals::goal_of(&m.id),
@@ -275,6 +279,108 @@ pub fn record(
 
 pub fn verify() -> Result<Verification> {
     Ok(verify_chain(&all()?))
+}
+
+/// B5.4: prove-it probes checking completion claims against git and the file system.
+pub fn prove_it_checks(repo_dir: &std::path::Path, head: &str) -> Vec<Check> {
+    let mut out = Vec::new();
+    let git = crate::procs::find("git").unwrap_or_else(|| std::path::PathBuf::from("git"));
+    let commit_ok = crate::procs::command(&git)
+        .args([
+            "-C",
+            &repo_dir.to_string_lossy(),
+            "cat-file",
+            "-e",
+            &format!("{head}^{{commit}}"),
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    out.push(Check {
+        name: "prove-it:git-commit".into(),
+        state: if commit_ok { "pass" } else { "fail" }.into(),
+    });
+    let clean = crate::procs::command(&git)
+        .args(["-C", &repo_dir.to_string_lossy(), "status", "--porcelain"])
+        .output()
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim().is_empty())
+        .unwrap_or(false);
+    out.push(Check {
+        name: "prove-it:clean-tree".into(),
+        state: if clean { "pass" } else { "warn" }.into(),
+    });
+    out
+}
+
+/// B5.3: anonymized public ledger for public repositories only (private sandboxes excluded).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PublicRepoSummary {
+    pub repo: String,
+    pub receipts: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PublicLedgerReceipt {
+    pub seq: u64,
+    pub at: i64,
+    pub repo: String,
+    pub pr: u64,
+    pub pr_url: String,
+    pub head_commit: String,
+    pub merge_commit: Option<String>,
+    pub checks: Vec<Check>,
+    pub hash: String,
+    pub signature: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PublicLedger {
+    pub ok: bool,
+    pub total_receipts: usize,
+    pub public_key: Option<String>,
+    pub repos: Vec<PublicRepoSummary>,
+    pub receipts: Vec<PublicLedgerReceipt>,
+    pub generated_at: i64,
+}
+
+pub fn public_ledger_from(chain: &[Receipt], public_repos: &[String]) -> PublicLedger {
+    let v = verify_chain(chain);
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut receipts = Vec::new();
+    for r in chain {
+        if !public_repos.iter().any(|p| p == &r.repo) {
+            continue;
+        }
+        *counts.entry(r.repo.clone()).or_default() += 1;
+        receipts.push(PublicLedgerReceipt {
+            seq: r.seq,
+            at: r.at,
+            repo: r.repo.clone(),
+            pr: r.pr,
+            pr_url: r.pr_url.clone(),
+            head_commit: r.head_commit.clone(),
+            merge_commit: r.merge_commit.clone(),
+            checks: r.checks.clone(),
+            hash: r.hash.clone(),
+            signature: r.signature.clone(),
+        });
+    }
+    let repos = counts
+        .into_iter()
+        .map(|(repo, receipts)| PublicRepoSummary { repo, receipts })
+        .collect();
+    PublicLedger {
+        ok: v.ok,
+        total_receipts: chain.len(),
+        public_key: v.public_key,
+        repos,
+        receipts,
+        generated_at: store::now(),
+    }
+}
+
+pub fn public_ledger(public_repos: &[String]) -> Result<PublicLedger> {
+    Ok(public_ledger_from(&all()?, public_repos))
 }
 
 #[cfg(test)]
@@ -380,5 +486,67 @@ mod tests {
         assert_eq!(r.verdict, "approve");
         assert_eq!(r.head_commit, "abc123");
         assert_eq!(r.checks[0].state, "SUCCESS");
+    }
+
+    #[test]
+    fn public_ledger_filters_private_repos_and_keeps_public_key() {
+        let k = key_from(5);
+        let mut m_pub = mission();
+        m_pub.repo = "konethegreat/agentos-studio".into();
+        let mut m_priv = mission();
+        m_priv.repo = "private-sandbox".into();
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("r.jsonl");
+        append(&path, draft(&m_pub, None, 1, "h1", None, checks(), 10), &k).unwrap();
+        append(&path, draft(&m_priv, None, 2, "h2", None, checks(), 11), &k).unwrap();
+        let chain = read_from(&path).unwrap();
+        let ledger = public_ledger_from(&chain, &["konethegreat/agentos-studio".into()]);
+        assert!(ledger.ok);
+        assert_eq!(ledger.total_receipts, 2);
+        assert!(ledger.public_key.is_some());
+        assert_eq!(ledger.receipts.len(), 1);
+        assert_eq!(ledger.receipts[0].repo, "konethegreat/agentos-studio");
+        assert_eq!(ledger.repos.len(), 1);
+    }
+
+    #[test]
+    fn prove_it_checks_verify_git_commit_and_clean_tree() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path();
+        let git = crate::procs::find("git").unwrap_or_else(|| std::path::PathBuf::from("git"));
+        assert!(crate::procs::command(&git)
+            .args(["init", &dir.to_string_lossy()])
+            .output()
+            .unwrap()
+            .status
+            .success());
+        std::fs::write(dir.join("a.txt"), "hi").unwrap();
+        assert!(crate::procs::command(&git)
+            .args(["-C", &dir.to_string_lossy(), "add", "."])
+            .output()
+            .unwrap()
+            .status
+            .success());
+        assert!(crate::procs::command(&git)
+            .args([
+                "-C",
+                &dir.to_string_lossy(),
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-m",
+                "init",
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success());
+        let c = prove_it_checks(dir, "HEAD");
+        assert_eq!(c[0].name, "prove-it:git-commit");
+        assert_eq!(c[0].state, "pass");
+        assert_eq!(c[1].name, "prove-it:clean-tree");
+        assert_eq!(c[1].state, "pass");
     }
 }

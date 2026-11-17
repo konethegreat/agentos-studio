@@ -1068,6 +1068,11 @@ pub async fn receipts_verify() -> CmdResult<crate::receipts::Verification> {
     blocking(crate::receipts::verify).await
 }
 
+#[tauri::command]
+pub async fn public_ledger(public_repos: Vec<String>) -> CmdResult<crate::receipts::PublicLedger> {
+    blocking(move || crate::receipts::public_ledger(&public_repos)).await
+}
+
 /// The repository and its worktrees (one per mission attempt).
 #[tauri::command]
 pub async fn explorer_checkouts(
