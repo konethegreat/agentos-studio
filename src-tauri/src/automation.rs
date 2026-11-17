@@ -694,6 +694,7 @@ pub fn start_scheduler(vault_root: std::path::PathBuf) {
             // for it even with Automations off; the tick itself starts no standalone mission then.
             // The digest goes out at its times whatever else is on.
             let _ = crate::digest::tick(&Vault::new(&vault_root));
+            let _ = crate::self_build::maybe_send_weekly_ship(crate::store::now());
             let goals_active = crate::goals::any_active();
             if !enabled() && !goals_active {
                 keep_awake(false);

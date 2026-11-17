@@ -1361,6 +1361,9 @@ export const api = {
   receipts: (limit = 100) => invoke<MergeReceipt[]>("receipts_list", { limit }),
   verifyReceipts: () => invoke<ReceiptVerification>("receipts_verify"),
   publicLedger: (publicRepos: string[] = []) => invoke<PublicLedger>("public_ledger", { publicRepos }),
+  selfBuildStatus: () => invoke<{ last_run_at: number | null; last_candidate: string | null; last_weekly_ship_at: number | null }>("self_build_status"),
+  selfBuildRunCandidate: (repoDir: string, version: string) => invoke<{ version: string; installer_path: string; health_ok: boolean; pr_url: string | null }>("self_build_run_candidate", { repoDir, version }),
+  selfBuildSendWeeklyShip: () => invoke<boolean>("self_build_send_weekly_ship"),
   modelChanges: () => invoke<ModelChanges>("model_changes"),
   shadowSet: (p: { enabled?: boolean; windowMinutes?: number; cls?: string; answer?: string }) =>
     invoke<ShadowStatus>("shadow_set", { enabled: p.enabled, windowMinutes: p.windowMinutes, class: p.cls, answer: p.answer }),

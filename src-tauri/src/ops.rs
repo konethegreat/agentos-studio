@@ -1143,3 +1143,24 @@ pub async fn explorer_open_editor(
     let r = explorer_root(&state, &root)?;
     blocking(move || crate::explorer::open_in_editor(&r, path.as_deref(), line)).await
 }
+
+#[tauri::command]
+pub async fn self_build_status() -> CmdResult<crate::self_build::SelfBuildStatus> {
+    blocking(crate::self_build::status).await
+}
+
+#[tauri::command]
+pub async fn self_build_run_candidate(
+    repo_dir: String,
+    version: String,
+) -> CmdResult<crate::self_build::CandidateReport> {
+    blocking(move || {
+        crate::self_build::run_candidate_release(std::path::Path::new(&repo_dir), &version)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn self_build_send_weekly_ship() -> CmdResult<bool> {
+    blocking(|| crate::self_build::maybe_send_weekly_ship(crate::store::now())).await
+}

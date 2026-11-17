@@ -10,6 +10,178 @@
 
 use crate::constitution_gate::{ChangedFile, Finding};
 use crate::missions::Mission;
+use crate::store;
+use anyhow::{anyhow, bail, Result};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+const KEY_LAST_RUN_AT: &str = "self_build.last_run_at";
+const KEY_LAST_CANDIDATE: &str = "self_build.last_candidate";
+const KEY_LAST_WEEKLY_SHIP_AT: &str = "self_build.last_weekly_ship_at";
+const WEEKLY_COOLDOWN_SECS: i64 = 7 * 24 * 3600;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SelfBuildStatus {
+    pub last_run_at: Option<i64>,
+    pub last_candidate: Option<String>,
+    pub last_weekly_ship_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CandidateReport {
+    pub version: String,
+    pub installer_path: String,
+    pub health_ok: bool,
+    pub pr_url: Option<String>,
+}
+
+pub fn status() -> Result<SelfBuildStatus> {
+    let conn = store::open()?;
+    let last_run_at = store::kv_get(&conn, KEY_LAST_RUN_AT)?.and_then(|s| s.parse::<i64>().ok());
+    let last_candidate = store::kv_get(&conn, KEY_LAST_CANDIDATE)?;
+    let last_weekly_ship_at =
+        store::kv_get(&conn, KEY_LAST_WEEKLY_SHIP_AT)?.and_then(|s| s.parse::<i64>().ok());
+    Ok(SelfBuildStatus {
+        last_run_at,
+        last_candidate,
+        last_weekly_ship_at,
+    })
+}
+
+/// B6.2: runs the candidate release flow with injectable build, verify, and PR steps.
+pub fn run_candidate_release_with<B, V, P>(
+    repo_dir: &Path,
+    version: &str,
+    now: i64,
+    build_fn: B,
+    verify_fn: V,
+    pr_fn: P,
+) -> Result<CandidateReport>
+where
+    B: FnOnce(&Path, &str) -> Result<String>,
+    V: FnOnce(&Path) -> Result<bool>,
+    P: FnOnce(&Path, &str) -> Result<Option<String>>,
+{
+    if !is_self(&repo_dir.to_string_lossy()) {
+        bail!("candidate release is only for the agentos-studio repository");
+    }
+    let installer_path = build_fn(repo_dir, version)?;
+    let health_ok = verify_fn(Path::new(&installer_path))?;
+    if !health_ok {
+        bail!("candidate installer failed live template or health verification");
+    }
+    let pr_url = pr_fn(repo_dir, version)?;
+    let conn = store::open()?;
+    store::kv_set(&conn, KEY_LAST_RUN_AT, &now.to_string())?;
+    store::kv_set(&conn, KEY_LAST_CANDIDATE, version)?;
+    Ok(CandidateReport {
+        version: version.to_string(),
+        installer_path,
+        health_ok,
+        pr_url,
+    })
+}
+
+/// B6.2: default candidate release flow for `agentos-studio`.
+pub fn run_candidate_release(repo_dir: &Path, version: &str) -> Result<CandidateReport> {
+    if cargo_busy() {
+        bail!("another cargo or rustc build is already running");
+    }
+    run_candidate_release_with(
+        repo_dir,
+        version,
+        store::now(),
+        |dir, ver| {
+            let npm = crate::procs::find("npm").unwrap_or_else(|| std::path::PathBuf::from("npm"));
+            let out = crate::procs::command(&npm)
+                .current_dir(dir)
+                .env("CARGO_TARGET_DIR", dir.join("src-tauri/target-0.9.1"))
+                .args(["run", "tauri", "build"])
+                .output()?;
+            if !out.status.success() {
+                bail!("tauri build failed");
+            }
+            Ok(dir
+                .join(format!(
+                    "src-tauri/target-0.9.1/release/bundle/nsis/AgentOS Studio_{ver}_x64-setup.exe"
+                ))
+                .to_string_lossy()
+                .into_owned())
+        },
+        |installer| Ok(installer.exists()),
+        |dir, ver| {
+            let gh = crate::procs::find("gh").unwrap_or_else(|| std::path::PathBuf::from("gh"));
+            let title = format!("chore(release): candidate v{ver}");
+            let body = format!("Automated candidate release v{ver} verified by Ouroboros.");
+            let out = crate::procs::command(&gh)
+                .current_dir(dir)
+                .args(["pr", "create", "--title", &title, "--body", &body])
+                .output()?;
+            if out.status.success() {
+                Ok(Some(
+                    String::from_utf8_lossy(&out.stdout).trim().to_string(),
+                ))
+            } else {
+                Ok(None)
+            }
+        },
+    )
+}
+
+/// B6.3: builds the weekly ship summary from receipts merged in the last 7 days.
+pub fn format_weekly_ship(receipts: &[crate::receipts::Receipt], now: i64) -> Option<String> {
+    let cutoff = now - WEEKLY_COOLDOWN_SECS;
+    let recent: Vec<&crate::receipts::Receipt> =
+        receipts.iter().filter(|r| r.at >= cutoff).collect();
+    if recent.is_empty() {
+        return None;
+    }
+    let mut repos: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for r in &recent {
+        *repos.entry(r.repo.as_str()).or_default() += 1;
+    }
+    let breakdown = repos
+        .into_iter()
+        .map(|(repo, n)| format!("{repo}: {n}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!(
+        "AgentOS Studio weekly ship: {} PR(s) merged ({breakdown}). Reply \"ship\" to tag.",
+        recent.len()
+    ))
+}
+
+/// B6.3: sends the weekly ship summary via `send_fn` if outside the 7-day cooldown.
+pub fn maybe_send_weekly_ship_with<F>(now: i64, send_fn: F) -> Result<bool>
+where
+    F: FnOnce(&str) -> Result<()>,
+{
+    let conn = store::open()?;
+    if let Some(last) =
+        store::kv_get(&conn, KEY_LAST_WEEKLY_SHIP_AT)?.and_then(|s| s.parse::<i64>().ok())
+    {
+        if now - last < WEEKLY_COOLDOWN_SECS {
+            return Ok(false);
+        }
+    }
+    let receipts = crate::receipts::all()?;
+    let Some(msg) = format_weekly_ship(&receipts, now) else {
+        return Ok(false);
+    };
+    send_fn(&msg)?;
+    store::kv_set(&conn, KEY_LAST_WEEKLY_SHIP_AT, &now.to_string())?;
+    Ok(true)
+}
+
+/// B6.3: sends the weekly ship summary to the owner's phone via Hermes.
+pub fn maybe_send_weekly_ship(now: i64) -> Result<bool> {
+    maybe_send_weekly_ship_with(now, |msg| {
+        let Some(target) = crate::hermes_surfaces::notify_target() else {
+            return Err(anyhow!("no notify target configured"));
+        };
+        crate::hermes_surfaces::send(&target, msg).map(|_| ())
+    })
+}
 
 /// The repository name of Studio itself.
 pub const SELF_REPO: &str = "agentos-studio";
@@ -194,5 +366,69 @@ mod tests {
         assert!(heavy_build_in("/usr/bin/cargo\nbash\n"));
         assert!(!heavy_build_in("\"cargo-watch-helper.exe\",\"3\"\nnode\n"));
         assert!(!heavy_build_in(""));
+    }
+
+    #[test]
+    fn candidate_release_records_version_and_requires_self_repo() {
+        let d = tempfile::TempDir::new().unwrap();
+        store::set_test_db(Some(d.path().join("s.db")));
+        let studio = d.path().join("agentos-studio");
+        let other = d.path().join("other-repo");
+        assert!(run_candidate_release_with(
+            &other,
+            "1.7.0",
+            1000,
+            |_, _| Ok("setup.exe".into()),
+            |_| Ok(true),
+            |_, _| Ok(None),
+        )
+        .is_err());
+        let rep = run_candidate_release_with(
+            &studio,
+            "1.7.0",
+            1000,
+            |_, _| Ok("setup.exe".into()),
+            |_| Ok(true),
+            |_, _| {
+                Ok(Some(
+                    "https://github.com/konethegreat/agentos-studio/pull/202".into(),
+                ))
+            },
+        )
+        .unwrap();
+        assert_eq!(rep.version, "1.7.0");
+        assert!(rep.health_ok);
+        let st = status().unwrap();
+        assert_eq!(st.last_run_at, Some(1000));
+        assert_eq!(st.last_candidate.as_deref(), Some("1.7.0"));
+        store::set_test_db(None);
+    }
+
+    #[test]
+    fn weekly_ship_formats_summary() {
+        let r = crate::receipts::Receipt {
+            seq: 1,
+            at: 1000,
+            mission: "m1".into(),
+            goal: None,
+            repo: "konethegreat/agentos-studio".into(),
+            pr: 201,
+            pr_url: "https://github.com/konethegreat/agentos-studio/pull/201".into(),
+            head_commit: "abc".into(),
+            merge_commit: None,
+            checks: vec![],
+            implementer: "claude".into(),
+            reviewer: "hermes".into(),
+            verdict: "approve".into(),
+            verify: "pass".into(),
+            spent_usd: 0.0,
+            prev_hash: String::new(),
+            public_key: "pk".into(),
+            hash: "h".into(),
+            signature: "s".into(),
+        };
+        let msg = format_weekly_ship(&[r], 2000).unwrap();
+        assert!(msg.contains("1 PR(s) merged"));
+        assert!(msg.contains("konethegreat/agentos-studio: 1"));
     }
 }
