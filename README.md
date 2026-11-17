@@ -35,6 +35,16 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.0.0
+
+Completes the Beyond roadmap (docs/BEYOND.md) from Shadow Kone and the Dreaming Brain to Proof-carrying Work, Ouroboros, and Agency in a Box.
+
+- **Shadow Kone judge and voice escalation (B1.6, B1.7).** Novel questions are judged against constitution rules, and urgent blocks can trigger an opt-in voice call via Hermes outside quiet hours.
+- **Quota forecast and Dreaming Brain proof (B2.6, B2.7, B3.2, B3.4).** Per-lane login forecast, near-duplicate memory merging, and a proof-of-learning chart.
+- **Public proof ledger and prove-it probes (B5.3, B5.4).** Anonymized public ledger for public repositories with Ed25519 verification on the website (`/verify/` and `/api/ledger`), plus git commit and clean-tree probes in receipts.
+- **Ouroboros candidate releases and weekly ship (B6.2, B6.3).** Automated candidate installer build/verify/PR flow and weekly ship summaries sent to the owner's phone.
+- **Agency in a box (B7.1-B7.4).** Client intake (`/intake/` and `POST /api/intake`), scorecard-based quotes with owner phone approval, GitHub repository invitation handling with `ask` autonomy enforced, and delivery reports with signed receipts.
+
 ## What is new in 1.6.1
 
 - **Antigravity DirectSDK support.** AgentOS Studio now uses `antigravity-subscription-directsdk` as the primary Antigravity provider across quota reading, provider health, usage, and Time Machine replays, while keeping `antigravity-oauth` as a fallback.
