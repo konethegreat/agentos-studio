@@ -189,10 +189,10 @@ Goal: the fleet improves AgentOS Studio itself, with the owner approving release
 
 Goal: K-ONE IT SOLUTIONS can take a client's goal and deliver a reviewed pull request with proof.
 
-- [ ] B7.1 Intake on the website: goal, repository, deadline.
-- [ ] B7.2 Quote from scorecards and history (time, confidence), approved by the owner on the phone.
-- [ ] B7.3 Client repository through a GitHub invitation; work on the fleet like any goal.
-- [ ] B7.4 Delivery: the PR, its receipt and a client report.
+- [x] B7.1 Intake on the website: goal, repository, deadline.
+- [x] B7.2 Quote from scorecards and history (time, confidence), approved by the owner on the phone.
+- [x] B7.3 Client repository through a GitHub invitation; work on the fleet like any goal.
+- [x] B7.4 Delivery: the PR, its receipt and a client report.
 
 ## What this roadmap will not do
 

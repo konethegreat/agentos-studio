@@ -1364,6 +1364,20 @@ export const api = {
   selfBuildStatus: () => invoke<{ last_run_at: number | null; last_candidate: string | null; last_weekly_ship_at: number | null }>("self_build_status"),
   selfBuildRunCandidate: (repoDir: string, version: string) => invoke<{ version: string; installer_path: string; health_ok: boolean; pr_url: string | null }>("self_build_run_candidate", { repoDir, version }),
   selfBuildSendWeeklyShip: () => invoke<boolean>("self_build_send_weekly_ship"),
+  agencyListIntakes: () => invoke<unknown[]>("agency_list_intakes"),
+  agencyCreateIntake: (goal: string, repo: string, deadline: string, clientContact?: string) =>
+    invoke<unknown>("agency_create_intake", { goal, repo, deadline, clientContact }),
+  agencyRequestQuoteApproval: (intakeId: string) =>
+    invoke<boolean>("agency_request_quote_approval", { intakeId }),
+  agencyApproveQuote: (intakeId: string, approved: boolean) =>
+    invoke<unknown>("agency_approve_quote", { intakeId, approved }),
+  agencyListInvitations: () => invoke<unknown[]>("agency_list_invitations"),
+  agencyAcceptInvitation: (invitationId: number) =>
+    invoke<void>("agency_accept_invitation", { invitationId }),
+  agencyStartClientGoal: (intakeId: string) =>
+    invoke<unknown>("agency_start_client_goal", { intakeId }),
+  agencyDeliverIntake: (intakeId: string, prUrl: string) =>
+    invoke<unknown>("agency_deliver_intake", { intakeId, prUrl }),
   modelChanges: () => invoke<ModelChanges>("model_changes"),
   shadowSet: (p: { enabled?: boolean; windowMinutes?: number; cls?: string; answer?: string }) =>
     invoke<ShadowStatus>("shadow_set", { enabled: p.enabled, windowMinutes: p.windowMinutes, class: p.cls, answer: p.answer }),

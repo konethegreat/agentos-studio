@@ -2,6 +2,7 @@
 
 pub mod acp;
 pub mod acp_host;
+pub mod agency;
 pub mod agent_limits;
 pub mod agent_log;
 pub mod agent_packs;
@@ -597,6 +598,14 @@ pub fn run_gui() {
             commands::extension_run,
             commands::extension_register_mcp,
             commands::extension_list_runs,
+            ops::agency_list_intakes,
+            ops::agency_create_intake,
+            ops::agency_request_quote_approval,
+            ops::agency_approve_quote,
+            ops::agency_list_invitations,
+            ops::agency_accept_invitation,
+            ops::agency_start_client_goal,
+            ops::agency_deliver_intake,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentOS Studio")
