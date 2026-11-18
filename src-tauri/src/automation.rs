@@ -564,6 +564,7 @@ pub fn tick(v: &Vault) -> TickReport {
         let _ = crate::bench::step(v, chrono::Utc::now().timestamp());
         // 6. Canary probes (S1): a tiny known question per flat-rate lane, in the background.
         crate::canary::step();
+        crate::fleet_doctor::step();
         crate::fallback_chain::step();
         crate::fleet_report::step();
         if let Some(changed) = crate::playbook::nightly(v) {

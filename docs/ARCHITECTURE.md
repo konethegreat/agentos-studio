@@ -568,3 +568,14 @@ route in `quota_grid::lanes`, one success reopens it, and provider-side failures
 - `src-tauri/src/fleet_report.rs`: sends one morning digest after 07:00 local time via
   `hermes_surfaces::send` summarizing open/closed lanes, repairs, stalled missions (6h+), and
   active/completed repositories.
+
+## Fleet doctor (S2)
+
+`src-tauri/src/fleet_doctor.rs` runs on every `automation::step` pass and on demand from the
+Today screen (`fleet_doctor_run_now`):
+
+- Reads `hermes kanban diagnostics --json`: re-pins `repeated_crashes` with model errors to the
+  first open lane and reclaims them; archives `stuck_in_blocked` tasks whose mission is failed or
+  deleted; and triggers `provider_health::auto_heal_one_in` for `repeated_failures` on entitlement.
+- Computes 6-hour stalled mission verdicts (`waiting_on`, `action_taken`, `action_needed`) and
+  opted-in repositories with no goal started within 1 hour, surfaced in `Today.tsx`.

@@ -38,6 +38,7 @@ pub mod explorer;
 pub mod extension_runtime;
 pub mod fallback_chain;
 pub mod fleet;
+pub mod fleet_doctor;
 pub mod fleet_report;
 pub mod fork;
 pub mod github;
@@ -411,6 +412,8 @@ pub fn run_gui() {
             ops::troubleshooter_run,
             ops::fleet_report_status,
             ops::fleet_report_send_now,
+            ops::fleet_doctor_status,
+            ops::fleet_doctor_run_now,
             ops::autostart_get,
             ops::autostart_set,
             ops::playbook_learned,

@@ -69,14 +69,15 @@ Health today is read from logs after a mission has already failed. A canary asks
 
 Hermes already diagnoses its board (`hermes kanban diagnostics`); nothing acts on it.
 
-- [ ] S2.1 Read the diagnostics every pass and map each kind to an action: `repeated_crashes` with
+- [x] S2.1 Read the diagnostics every pass and map each kind to an action: `repeated_crashes` with
   a model error re-pins the task to the first open lane and reclaims it; `stuck_in_blocked` whose
   mission is already failed or deleted is archived; `repeated_failures` on entitlement runs S0.2
-  for that provider.
-- [ ] S2.2 Any mission with no state change for 6 hours, whatever its status, gets a doctor
-  verdict on the Today screen: what it waits on, and the action taken or needed.
-- [ ] S2.3 A repository opted in with no goal started within an hour is reported with the reason
-  (fetch failed, not a Hermes project, no default branch).
+  for that provider (`fleet_doctor::act_on_diagnostics_with`).
+- [x] S2.2 Any mission with no state change for 6 hours, whatever its status, gets a doctor
+  verdict on the Today screen: what it waits on, and the action taken or needed
+  (`fleet_doctor::compute_stalled_verdicts`, `Today.tsx`).
+- [x] S2.3 A repository opted in with no goal started within an hour is reported with the reason
+  (fetch failed, not a Hermes project, no default branch) (`fleet_doctor::compute_idle_repos`).
 - Done when: the four blocked tasks of 2026-11-17 would each be retried, re-pinned or archived by
   the doctor in a replay test built from their real `kanban show` output.
 

@@ -208,6 +208,37 @@ export type DailyFleetReport = {
   message: string;
 };
 
+export type DiagnosticAction = {
+  taskId: string;
+  kind: string;
+  action: string;
+  detail: string;
+};
+
+export type StalledVerdict = {
+  missionId: string;
+  repo: string;
+  status: string;
+  stalledHours: number;
+  waitingOn: string;
+  actionTaken: string;
+  actionNeeded: string;
+};
+
+export type IdleRepoReport = {
+  slug: string;
+  path: string;
+  reason: string;
+};
+
+export type FleetDoctorReport = {
+  checkedAt: number;
+  diagnosticActions: DiagnosticAction[];
+  stalledVerdicts: StalledVerdict[];
+  idleRepos: IdleRepoReport[];
+  lastError: string | null;
+};
+
 export interface AutoFixEntry {
   at: number;
   provider: string;
@@ -1422,6 +1453,8 @@ export const api = {
     invoke<TroubleshootResult>("troubleshooter_run", { provider, recentLogs }),
   fleetReportStatus: () => invoke<DailyFleetReport | null>("fleet_report_status"),
   fleetReportSendNow: () => invoke<DailyFleetReport>("fleet_report_send_now"),
+  fleetDoctorStatus: () => invoke<FleetDoctorReport | null>("fleet_doctor_status"),
+  fleetDoctorRunNow: () => invoke<FleetDoctorReport>("fleet_doctor_run_now"),
   autostartGet: () => invoke<boolean>("autostart_get"),
   autostartSet: (enabled: boolean) => invoke<boolean>("autostart_set", { enabled }),
   playbookLearned: (hours = 24) => invoke<Learned[]>("playbook_learned", { hours }),
