@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, BookOpenCheck, CircleDollarSign, FileText, Flag, Pause, Play, RefreshCw, Sunrise, UserCheck, UserRoundCog, Users } from "lucide-react";
+import { ArrowRight, BookOpenCheck, CircleDollarSign, FileText, Flag, Pause, Play, RefreshCw, Stethoscope, Sunrise, UserCheck, UserRoundCog, Users } from "lucide-react";
 import {
   api,
   errorText,
   type Escalation,
+  type FleetDoctorReport,
   type FleetPause,
   type GoalDetail,
   type Learned,
@@ -82,12 +83,13 @@ export function Today() {
   const [digest, setDigest] = useState<string | null>(null);
   const [shadow, setShadow] = useState<ShadowRecord[]>([]);
   const [learned, setLearned] = useState<Learned[]>([]);
+  const [doctor, setDoctor] = useState<FleetDoctorReport | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState(0);
 
   const load = useCallback(async () => {
     try {
-      const [g, e, m, w, p, d, s, l] = await Promise.all([
+      const [g, e, m, w, p, d, s, l, fd] = await Promise.all([
         api.goals(),
         api.escalations(100).catch(() => [] as Escalation[]),
         api.missions().catch(() => [] as Mission[]),
@@ -96,6 +98,7 @@ export function Today() {
         api.digestLatest().catch(() => null as string | null),
         api.shadowStatus().then((x) => x.record).catch(() => [] as ShadowRecord[]),
         api.playbookLearned(24).catch(() => [] as Learned[]),
+        api.fleetDoctorStatus().catch(() => null as FleetDoctorReport | null),
       ]);
       setRows(g);
       setAsks(e);
@@ -105,6 +108,7 @@ export function Today() {
       setDigest(d);
       setShadow(s);
       setLearned(l);
+      setDoctor(fd);
       setUpdatedAt(Date.now());
     } catch (e) {
       toast("error", errorText(e));
@@ -154,6 +158,19 @@ export function Today() {
     } finally {
       setBusy(null);
       await load();
+    }
+  }
+
+  async function runDoctor() {
+    setBusy("doctor");
+    try {
+      const rep = await api.fleetDoctorRunNow();
+      setDoctor(rep);
+      toast("ok", "Fleet doctor pass complete");
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -375,6 +392,60 @@ export function Today() {
         </div>
 
         <div className="min-w-0 space-y-4">
+          <Card className="p-0">
+            <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Stethoscope className="size-4 text-sky-300" />
+                <h2 className="text-sm font-semibold text-slate-100">Fleet doctor</h2>
+              </div>
+              <Button size="sm" variant="ghost" disabled={busy === "doctor"} onClick={() => void runDoctor()}>
+                {busy === "doctor" ? "Checking..." : "Run doctor"}
+              </Button>
+            </div>
+            <div className="space-y-2.5 px-4 py-3">
+              {!doctor ? (
+                <p className="text-label text-slate-500">
+                  No doctor pass yet. Runs each automation tick to check kanban diagnostics, 6h stalled missions, and idle repos.
+                </p>
+              ) : (
+                <>
+                  {doctor.stalledVerdicts.length === 0 &&
+                    doctor.diagnosticActions.length === 0 &&
+                    doctor.idleRepos.length === 0 && (
+                      <p className="text-label text-emerald-300">
+                        All clear: no stalled missions (6h+), blocked kanban tasks, or idle opted-in repos.
+                      </p>
+                    )}
+                  {doctor.stalledVerdicts.map((v) => (
+                    <div key={v.missionId} className="rounded border border-amber-500/25 bg-amber-500/5 px-2.5 py-2 text-label">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-amber-200">
+                          {v.missionId} ({v.repo})
+                        </span>
+                        <span className="text-slate-400">
+                          {v.status} · {v.stalledHours}h
+                        </span>
+                      </div>
+                      <p className="mt-1 text-slate-300">Waits on: {v.waitingOn}</p>
+                      <p className="text-slate-400">Action: {v.actionTaken} | Next: {v.actionNeeded}</p>
+                    </div>
+                  ))}
+                  {doctor.idleRepos.map((r) => (
+                    <div key={r.slug} className="rounded border border-line bg-slate-900/40 px-2.5 py-1.5 text-label">
+                      <span className="font-medium text-slate-200">{r.slug}</span>
+                      <span className="text-slate-400">: {r.reason}</span>
+                    </div>
+                  ))}
+                  {doctor.diagnosticActions.map((a) => (
+                    <div key={`${a.taskId}-${a.kind}`} className="text-label text-slate-300">
+                      <span className="font-mono text-sky-300">{a.taskId}</span> ({a.kind}): {a.action} - {a.detail}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </Card>
+
           <Card className="p-0">
             <div className="flex items-center gap-2 border-b border-line px-4 py-3">
               <CircleDollarSign className="size-4 text-emerald-300" />

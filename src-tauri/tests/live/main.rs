@@ -23,6 +23,7 @@ mod live_computer_use;
 mod live_council;
 mod live_eval;
 mod live_first_run;
+mod live_fleet_doctor;
 mod live_fork;
 mod live_handoff;
 mod live_hermes_surfaces;

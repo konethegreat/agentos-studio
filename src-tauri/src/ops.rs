@@ -1263,3 +1263,13 @@ pub fn fleet_report_status() -> Option<crate::fleet_report::DailyFleetReport> {
 pub fn fleet_report_send_now() -> crate::fleet_report::DailyFleetReport {
     crate::fleet_report::send_now()
 }
+
+#[tauri::command]
+pub fn fleet_doctor_status() -> Option<crate::fleet_doctor::FleetDoctorReport> {
+    crate::fleet_doctor::status()
+}
+
+#[tauri::command]
+pub fn fleet_doctor_run_now() -> crate::fleet_doctor::FleetDoctorReport {
+    crate::fleet_doctor::run_now()
+}
