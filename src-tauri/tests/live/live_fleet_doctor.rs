@@ -46,11 +46,12 @@ fn fleet_doctor_catches_starving_mission_and_steers_to_healthy_lane() {
     .unwrap();
 
     let show_json = format!(
-        r#"{{"id":"KT-LIVE-1","status":"blocked","runs":[{{"provider":"{}","model":"{}","error":"model not found 404"}},{{"provider":"{}","model":"{}","error":"model not found 404"}}]}}"#,
+        r#"{{"status":"blocked","runs":[{{"error":"model not found 404","metadata":{{"provider":"{}","model":"{}"}}}},{{"error":"model not found 404","metadata":{{"provider":"{}","model":"{}"}}}}]}}"#,
         bad_lane.provider, bad_lane.model, bad_lane.provider, bad_lane.model
     );
     let view = kanban::parse_show(&show_json).unwrap();
-    let diag = fleet_doctor::diag_from_task_view(&view).expect("expected repeated_crashes diag");
+    let diag = fleet_doctor::diag_from_task_view("KT-LIVE-1", &view)
+        .expect("expected repeated_crashes diag");
     let lanes = quota_grid::lanes(false);
     let mut repinned_to = None;
     let actions = fleet_doctor::act_on_diagnostics_with(

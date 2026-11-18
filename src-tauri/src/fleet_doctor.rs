@@ -109,7 +109,7 @@ pub fn run_now() -> FleetDoctorReport {
             let Ok(c) = store::open() else {
                 return "store unavailable".into();
             };
-            let rep = provider_health::read();
+            let rep = provider_health::check_all_in(Some(&c));
             let entries = provider_health::auto_heal_in(&c, &rep, now, true);
             let filtered: Vec<_> = entries
                 .into_iter()
@@ -187,10 +187,11 @@ pub fn parse_diagnostics(raw: &str) -> Vec<KanbanDiag> {
                     out.push(parsed);
                 }
             }
-        } else if item.get("kind").is_some()
-            && let Some(parsed) = parse_diag_entry(&item, &top_task)
-        {
-            out.push(parsed);
+        } else if item.get("kind").is_some() {
+            #[allow(clippy::collapsible_else_if)]
+            if let Some(parsed) = parse_diag_entry(&item, &top_task) {
+                out.push(parsed);
+            }
         }
     }
     out
@@ -315,7 +316,10 @@ where
                         let (action, detail) = match (set_res, rec_res) {
                             (Ok(()), Ok(())) => (
                                 "repinned_and_reclaimed",
-                                format!("re-pinned to {}/{} and reclaimed", lane.provider, lane.model),
+                                format!(
+                                    "re-pinned to {}/{} and reclaimed",
+                                    lane.provider, lane.model
+                                ),
                             ),
                             (e1, e2) => (
                                 "repin_failed",
@@ -344,8 +348,16 @@ where
                     actions.push(DiagnosticAction {
                         task_id: d.task_id.clone(),
                         kind: d.kind.clone(),
-                        action: if rec_res.is_ok() { "reclaimed" } else { "reclaim_failed" }.into(),
-                        detail: rec_res.err().map(|e| e.to_string()).unwrap_or_else(|| "reclaimed".into()),
+                        action: if rec_res.is_ok() {
+                            "reclaimed"
+                        } else {
+                            "reclaim_failed"
+                        }
+                        .into(),
+                        detail: rec_res
+                            .err()
+                            .map(|e| e.to_string())
+                            .unwrap_or_else(|| "reclaimed".into()),
                     });
                 }
             }
@@ -359,7 +371,12 @@ where
                     actions.push(DiagnosticAction {
                         task_id: d.task_id.clone(),
                         kind: d.kind.clone(),
-                        action: if res.is_ok() { "archived" } else { "archive_failed" }.into(),
+                        action: if res.is_ok() {
+                            "archived"
+                        } else {
+                            "archive_failed"
+                        }
+                        .into(),
                         detail: res
                             .err()
                             .map(|e| e.to_string())
@@ -436,7 +453,10 @@ pub fn compute_stalled_verdicts(missions: &[Mission], now: i64) -> Vec<StalledVe
                     "verify open lanes on Quota grid or unpause fleet".to_string(),
                 ),
                 "running" => (
-                    format!("worker progress on {} ({note})", m.task_id.as_deref().unwrap_or("local runner")),
+                    format!(
+                        "worker progress on {} ({note})",
+                        m.task_id.as_deref().unwrap_or("local runner")
+                    ),
                     "checked kanban diagnostics and heartbeat".to_string(),
                     "reclaim or restart stuck worker if no heartbeat".to_string(),
                 ),
@@ -482,10 +502,7 @@ pub fn compute_idle_repos(
             let recent_mission = missions
                 .iter()
                 .any(|m| m.repo == r.slug && (now - m.updated_at).max(0) < IDLE_REPO_SECS);
-            let recent_log = r
-                .log
-                .iter()
-                .any(|ev| (now - ev.at).max(0) < IDLE_REPO_SECS);
+            let recent_log = r.log.iter().any(|ev| (now - ev.at).max(0) < IDLE_REPO_SECS);
             if recent_mission || recent_log {
                 return None;
             }
@@ -508,34 +525,44 @@ pub fn compute_idle_repos(
 }
 
 /// Helper for S2 replay test: derive a `KanbanDiag` from a `kanban show --json` TaskView.
-pub fn diag_from_task_view(view: &kanban::TaskView) -> Option<KanbanDiag> {
+pub fn diag_from_task_view(task_id: &str, view: &kanban::TaskView) -> Option<KanbanDiag> {
     let last_err = view
         .runs
         .iter()
         .rev()
         .find_map(|r| r.error.as_deref())
         .unwrap_or_default();
-    if view.status == "blocked" && view.runs.len() >= 2 && is_model_error(last_err) {
+    let last_meta = view.runs.last().and_then(|r| r.metadata.as_ref());
+    let provider = last_meta
+        .and_then(|m| m.get("provider"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let model = last_meta
+        .and_then(|m| m.get("model"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let blocked = view.status.as_deref() == Some("blocked");
+    if blocked && view.runs.len() >= 2 && is_model_error(last_err) {
         return Some(KanbanDiag {
-            task_id: view.id.clone(),
+            task_id: task_id.to_string(),
             kind: "repeated_crashes".into(),
             detail: last_err.to_string(),
-            provider: view.runs.last().and_then(|r| r.provider.clone()),
-            model: view.runs.last().and_then(|r| r.model.clone()),
+            provider,
+            model,
         });
     }
-    if view.status == "blocked" && is_entitlement_error(last_err) {
+    if blocked && is_entitlement_error(last_err) {
         return Some(KanbanDiag {
-            task_id: view.id.clone(),
+            task_id: task_id.to_string(),
             kind: "repeated_failures".into(),
             detail: last_err.to_string(),
-            provider: view.runs.last().and_then(|r| r.provider.clone()),
+            provider,
             model: None,
         });
     }
-    if view.status == "blocked" {
+    if blocked {
         return Some(KanbanDiag {
-            task_id: view.id.clone(),
+            task_id: task_id.to_string(),
             kind: "stuck_in_blocked".into(),
             detail: last_err.to_string(),
             provider: None,
@@ -572,7 +599,11 @@ mod tests {
             name: model.into(),
             flat_rate: true,
             used_pct: 10,
-            state: if open { "ready".into() } else { "exhausted".into() },
+            state: if open {
+                "ready".into()
+            } else {
+                "exhausted".into()
+            },
             open,
             reason: None,
             resets_at: None,
@@ -587,16 +618,23 @@ mod tests {
         // 2) stuck_in_blocked with failed mission -> archived
         // 3) stuck_in_blocked with deleted mission -> archived
         // 4) repeated_failures on entitlement -> S0.2 auto-heal for that provider
-        let t1 = r#"{"id":"KT-101","status":"blocked","runs":[{"provider":"openrouter","model":"bad-model","error":"model not found 404"},{"provider":"openrouter","model":"bad-model","error":"model not found 404"}]}"#;
-        let t2 = r#"{"id":"KT-102","status":"blocked","runs":[{"error":"worker exited"}]}"#;
-        let t3 = r#"{"id":"KT-103","status":"blocked","runs":[{"error":"orphan task"}]}"#;
-        let t4 = r#"{"id":"KT-104","status":"blocked","runs":[{"provider":"claude","error":"entitlement quota 403"}]}"#;
+        let t1 = r#"{"status":"blocked","runs":[{"error":"model not found 404","metadata":{"provider":"openrouter","model":"bad-model"}},{"error":"model not found 404","metadata":{"provider":"openrouter","model":"bad-model"}}]}"#;
+        let t2 = r#"{"status":"blocked","runs":[{"error":"worker exited"}]}"#;
+        let t3 = r#"{"status":"blocked","runs":[{"error":"orphan task"}]}"#;
+        let t4 = r#"{"status":"blocked","runs":[{"error":"entitlement quota 403","metadata":{"provider":"claude"}}]}"#;
 
-        let views: Vec<kanban::TaskView> = [t1, t2, t3, t4]
-            .iter()
-            .map(|s| kanban::parse_show(s).expect("valid show json"))
-            .collect();
-        let diags: Vec<KanbanDiag> = views.iter().filter_map(diag_from_task_view).collect();
+        let diags: Vec<KanbanDiag> = [
+            ("KT-101", t1),
+            ("KT-102", t2),
+            ("KT-103", t3),
+            ("KT-104", t4),
+        ]
+        .iter()
+        .filter_map(|(id, s)| {
+            let v = kanban::parse_show(s).expect("valid show json");
+            diag_from_task_view(id, &v)
+        })
+        .collect();
         assert_eq!(diags.len(), 4);
 
         let missions = vec![
@@ -638,7 +676,14 @@ mod tests {
         );
 
         assert_eq!(actions.len(), 4);
-        assert_eq!(repinned, vec![("KT-101".into(), "antigravity-oauth".into(), "gemini-4-hydrogen".into())]);
+        assert_eq!(
+            repinned,
+            vec![(
+                "KT-101".into(),
+                "antigravity-oauth".into(),
+                "gemini-4-hydrogen".into()
+            )]
+        );
         assert_eq!(reclaimed, vec!["KT-101".to_string()]);
         assert_eq!(archived, vec!["KT-102".to_string(), "KT-103".to_string()]);
         assert_eq!(healed, vec!["claude".to_string()]);
