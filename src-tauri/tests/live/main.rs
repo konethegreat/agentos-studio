@@ -15,6 +15,7 @@ mod live_agy_mission;
 mod live_ask;
 mod live_auto_review;
 mod live_brain;
+mod live_canary;
 mod live_chat;
 mod live_checkpoints;
 mod live_claude_mission;

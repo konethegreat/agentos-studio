@@ -52,14 +52,18 @@ Owner: Kone Tshivhinda, K-ONE IT SOLUTIONS. Written 2026-11-17 from the live fle
 
 Health today is read from logs after a mission has already failed. A canary asks first.
 
-- [ ] S1.1 Every 30 minutes, one tiny prompt per flat-rate lane (`hermes -z` with the lane's
+- [x] S1.1 Every 30 minutes, one tiny prompt per flat-rate lane (`hermes -z` with the lane's
   provider and model pinned, a fixed question with a known answer, 60 second cap). Never on a
-  metered provider unless the owner turns it on.
-- [ ] S1.2 Result per lane: ok, slow, wrong answer, malformed tool call, no reply, auth, quota.
-  Two failures in a row close the lane in the quota grid with the reason; one success reopens it.
-- [ ] S1.3 A canary failure runs S0.2 auto-heal for that provider immediately, outside the cooldown.
-- Done when: a lane whose model is made unreachable on a throwaway profile is closed by the canary
-  before any mission is dispatched to it, and reopens on its own after the fault is removed.
+  metered provider unless the owner turns it on (`canary::step`, `canary::run_probe_in`,
+  `automation.rs`, unit tests in `canary::tests`, live test `live_canary`).
+- [x] S1.2 Result per lane: ok, slow, wrong answer, malformed tool call, no reply, auth, quota.
+  Two failures in a row close the lane in the quota grid with the reason; one success reopens it
+  (`canary::record_in`, `quota_grid::lanes`, `QuotaGridCard.tsx`).
+- [x] S1.3 A canary failure runs S0.2 auto-heal for that provider immediately, outside the cooldown
+  (`provider_health::auto_heal_one_in`).
+- Done when: verified 2026-11-18 by `live_canary::canary_closes_unreachable_lane_and_reopens_when_restored`
+  on a throwaway profile (`outcome=no_reply` x2 closed lane and `quota_grid::steer` held/avoided it;
+  subsequent `outcome=ok` in 18 s reopened it).
 
 ## S2: Fleet doctor (2.1.0)
 

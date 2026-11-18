@@ -341,9 +341,10 @@ pub fn lanes(refresh: bool) -> Vec<Lane> {
                 .entry(r.provider.clone())
                 .or_insert_with(|| agents::quota_for(&r.provider, refresh))
                 .clone();
-            let degraded = conn
-                .as_ref()
-                .and_then(|c| crate::provider_health::is_degraded_in(c, &r.provider, now));
+            let degraded = conn.as_ref().and_then(|c| {
+                crate::provider_health::is_degraded_in(c, &r.provider, now)
+                    .or_else(|| crate::canary::closed_reason_in(c, &r.provider, &r.model))
+            });
             lane_with_health(
                 r,
                 i == 0,

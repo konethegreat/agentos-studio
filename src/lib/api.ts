@@ -601,6 +601,20 @@ export interface QuotaLane {
   why: string;
 }
 
+/** Self-healing S1: what the canary last saw on one quota grid lane. */
+export interface CanaryLane {
+  provider: string;
+  model: string;
+  /** ok, slow, wrong_answer, malformed_tool_call, no_reply, auth, quota, fell_back, or "" (never probed). */
+  outcome: string;
+  detail: string;
+  at: number;
+  secs: number;
+  fails: number;
+  closed: boolean;
+  skipped: boolean;
+}
+
 /** Beyond B2.7: when a route frees up. */
 export interface QuotaForecast {
   provider: string;
@@ -1361,6 +1375,8 @@ export const api = {
   shadowStatus: () => invoke<ShadowStatus>("shadow_status"),
   quotaLanes: (refresh = false) => invoke<QuotaLane[]>("quota_lanes", { refresh }),
   quotaForecast: (refresh = false) => invoke<QuotaForecast[]>("quota_forecast", { refresh }),
+  canaryStatus: () => invoke<CanaryLane[]>("canary_status"),
+  canaryRunNow: () => invoke<CanaryLane[]>("canary_run_now"),
   autostartGet: () => invoke<boolean>("autostart_get"),
   autostartSet: (enabled: boolean) => invoke<boolean>("autostart_set", { enabled }),
   playbookLearned: (hours = 24) => invoke<Learned[]>("playbook_learned", { hours }),

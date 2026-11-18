@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Route as RouteIcon } from "lucide-react";
-import { api, errorText, type QuotaForecast, type QuotaLane } from "../lib/api";
+import { Activity, Route as RouteIcon } from "lucide-react";
+import { api, errorText, type CanaryLane, type QuotaForecast, type QuotaLane } from "../lib/api";
 import { Badge, Card } from "./ui";
 
 /**
@@ -39,6 +39,28 @@ export function QuotaGridCard({ tick }: { tick: number }) {
       setError(errorText(e));
     }
   };
+
+  const [canary, setCanary] = useState<CanaryLane[]>([]);
+  const [probing, setProbing] = useState(false);
+
+  useEffect(() => {
+    void api.canaryStatus().then(setCanary).catch(() => setCanary([]));
+  }, [tick, lanes]);
+
+  const probeNow = async () => {
+    setProbing(true);
+    try {
+      setCanary(await api.canaryRunNow());
+      await load(false);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setProbing(false);
+    }
+  };
+
+  const canaryFor = (l: QuotaLane) =>
+    canary.find((c) => c.provider.toLowerCase() === l.provider.toLowerCase() && c.model.toLowerCase() === l.model.toLowerCase());
 
   const first = lanes?.findIndex((l) => l.open) ?? -1;
   const heavy = forecast.find((f) => f.heavy_ready);
@@ -97,10 +119,71 @@ export function QuotaGridCard({ tick }: { tick: number }) {
                 </span>
               )}
               <span className="min-w-0 flex-1 text-label text-slate-500">{l.why}</span>
+              <CanaryNote state={canaryFor(l)} />
             </li>
           ))}
         </ol>
       )}
+      <div className="flex flex-wrap items-center gap-2 border-t border-line pt-2">
+        <Activity className="size-3.5 text-sky-300" />
+        <span className="min-w-0 flex-1 text-label text-slate-500">
+          Canary: every 30 minutes each flat-rate route gets one tiny question with a known answer. Two failures in a
+          row close the route here until a probe passes again. Metered routes are not probed.
+        </span>
+        <button
+          type="button"
+          onClick={() => void probeNow()}
+          disabled={probing}
+          className="h-7 rounded-lg bg-white/[0.06] px-2.5 text-label font-medium text-slate-200 hover:bg-white/[0.1] disabled:opacity-50"
+        >
+          {probing ? "Probing (up to a minute per route)..." : "Probe now"}
+        </button>
+      </div>
     </Card>
+  );
+}
+
+const CANARY_LABEL: Record<string, string> = {
+  ok: "canary ok",
+  slow: "canary slow",
+  wrong_answer: "wrong answer",
+  malformed_tool_call: "malformed tool call",
+  no_reply: "no reply",
+  auth: "sign-in problem",
+  quota: "out of quota",
+  fell_back: "answered by another route",
+};
+
+function ago(at: number): string {
+  const s = Math.max(0, Math.floor(Date.now() / 1000) - at);
+  if (s < 90) return `${s}s ago`;
+  if (s < 5400) return `${Math.round(s / 60)}m ago`;
+  return `${Math.round(s / 3600)}h ago`;
+}
+
+function CanaryNote({ state }: { state: CanaryLane | undefined }) {
+  if (!state) return null;
+  if (state.skipped) return <span className="w-full pl-7 text-label text-slate-600">Canary: metered route, not probed.</span>;
+  if (!state.outcome) return <span className="w-full pl-7 text-label text-slate-600">Canary: not probed yet.</span>;
+  const good = state.outcome === "ok" || state.outcome === "slow";
+  return (
+    <span className="flex w-full items-center gap-2 pl-7 text-label" title={state.detail}>
+      <Badge
+        className={
+          good
+            ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25"
+            : state.closed
+              ? "bg-rose-500/10 text-rose-300 ring-rose-500/25"
+              : "bg-amber-500/10 text-amber-300 ring-amber-500/25"
+        }
+      >
+        {CANARY_LABEL[state.outcome] ?? state.outcome}
+      </Badge>
+      <span className="min-w-0 flex-1 truncate text-slate-500">
+        {state.detail} ({ago(state.at)}
+        {state.fails > 0 ? `, ${state.fails} in a row` : ""}
+        {state.closed ? ", route closed" : ""})
+      </span>
+    </span>
   );
 }

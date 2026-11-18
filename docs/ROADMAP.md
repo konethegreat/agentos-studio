@@ -935,3 +935,9 @@ repairs, and a daily fleet health report.
 
 [`PARITY.md`](PARITY.md) tracks the capability targets this roadmap is measured against, and what we
 deliberately do differently.
+
+## Self-healing progress
+
+- S1 (Canary probes): 30-minute flat-rate route probes (`canary::step`), two-failure circuit
+  breaker in `quota_grid::lanes`, single-success reopen, immediate per-provider auto-heal, and
+  Agents screen status + Probe now control.

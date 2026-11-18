@@ -543,3 +543,13 @@ common dir, so the line covers the primary checkout and every linked worktree), 
 file first and update its Decisions, Next step and Open questions before finishing.
 `evaluate` scores four probes (facts, artifacts, continuation, decisions) comparing each runtime's
 baseline against Studio's anchored summary across real compactions and 60-percent session replays.
+
+## Canary probes (S1)
+
+`src-tauri/src/canary.rs` probes each flat-rate route in `quota_grid::routes()` every 30 minutes
+from `automation::step` using `hermes -z --provider <p> --model <m> -t "" --usage-file <tmp>`
+with a 60-second timeout, deleting the probe session afterwards. Because Hermes can silently
+fall back to another model and still exit 0, `classify` checks the `--usage-file` model against
+the requested model and treats any mismatch as a failure. Two consecutive failures close the
+route in `quota_grid::lanes`, one success reopens it, and provider-side failures trigger
+`provider_health::auto_heal_one_in` immediately outside the normal 15-minute cooldown.
