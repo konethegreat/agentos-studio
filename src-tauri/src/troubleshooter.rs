@@ -86,7 +86,7 @@ pub fn parse_diagnosis_and_command(reply: &str) -> (String, Option<String>) {
 
 pub fn run_for_provider(provider: &str, recent_logs: &str) -> TroubleshootResult {
     let lanes = quota_grid::lanes(false);
-    let healthy = quota_grid::best_open(&lanes);
+    let healthy = lanes.iter().find(|l| l.open);
     let doctor_out = run_readonly_cli(&["doctor"]);
     let auth_out = run_readonly_cli(&["auth", "status"]);
     let diag_out = run_readonly_cli(&["kanban", "diagnostics", "--json"]);
@@ -209,7 +209,7 @@ where
 }
 
 fn run_readonly_cli(args: &[&str]) -> String {
-    match crate::cli_runner::cmd("hermes", args).output() {
+    match crate::cli_runner::hermes(args).output() {
         Ok(out) => {
             let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
             s.chars().take(1500).collect()
@@ -220,12 +220,9 @@ fn run_readonly_cli(args: &[&str]) -> String {
 
 fn run_hermes_readonly_session(prompt: &str, lane: Option<(&str, &str)>) -> Result<String, String> {
     let (prov, model) = lane.ok_or_else(|| "no healthy lane available".to_string())?;
-    let out = crate::cli_runner::cmd(
-        "hermes",
-        &["-z", "--provider", prov, "--model", model, "-p", prompt],
-    )
-    .output()
-    .map_err(|e| format!("hermes -z: {e}"))?;
+    let out = crate::cli_runner::hermes(&["-z", "--provider", prov, "--model", model, "-p", prompt])
+        .output()
+        .map_err(|e| format!("hermes -z: {e}"))?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
@@ -240,7 +237,7 @@ fn execute_allowed_cli(cmd: &str) -> Result<String, String> {
     if parts.first() != Some(&"hermes") || parts.len() < 2 {
         return Err("invalid hermes command".to_string());
     }
-    let out = crate::cli_runner::cmd("hermes", &parts[1..])
+    let out = crate::cli_runner::hermes(&parts[1..])
         .output()
         .map_err(|e| format!("execute `{cmd}`: {e}"))?;
     if !out.status.success() {
