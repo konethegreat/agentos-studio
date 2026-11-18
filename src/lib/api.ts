@@ -1379,6 +1379,9 @@ export const api = {
   canaryRunNow: () => invoke<CanaryLane[]>("canary_run_now"),
   fallbackChainStatus: () => invoke<FallbackChainReport>("fallback_chain_status"),
   fallbackChainSyncNow: () => invoke<FallbackChainReport>("fallback_chain_sync_now"),
+  troubleshooterStatus: () => invoke<TroubleshootResult | null>("troubleshooter_status"),
+  troubleshooterRun: (provider: string, recentLogs: string) =>
+    invoke<TroubleshootResult>("troubleshooter_run", { provider, recentLogs }),
   autostartGet: () => invoke<boolean>("autostart_get"),
   autostartSet: (enabled: boolean) => invoke<boolean>("autostart_set", { enabled }),
   playbookLearned: (hours = 24) => invoke<Learned[]>("playbook_learned", { hours }),

@@ -91,12 +91,13 @@ Hermes already diagnoses its board (`hermes kanban diagnostics`); nothing acts o
 
 ## S4: Troubleshooter agent (2.2.0)
 
-- [ ] S4.1 When rules find no fix, start a read-only Hermes session on a healthy lane with the
+- [x] S4.1 When rules find no fix, start a read-only Hermes session on a healthy lane with the
   failing provider's recent log lines, `hermes doctor`, `hermes auth status` and the kanban
-  diagnostics, and ask for a diagnosis and one proposed command.
-- [ ] S4.2 Run the proposed command only if it is on a fixed allow list (`hermes auth refresh`,
+  diagnostics, and ask for a diagnosis and one proposed command (`troubleshooter::run_for_provider`).
+- [x] S4.2 Run the proposed command only if it is on a fixed allow list (`hermes auth refresh`,
   `hermes auth reset`, `hermes plugins enable`, `hermes kanban reclaim`, `hermes kanban
-  dispatch`); anything else becomes an escalation with the diagnosis attached.
+  dispatch`); anything else becomes an escalation with the diagnosis attached
+  (`troubleshooter::is_allowed_command`, `troubleshooter::troubleshoot_with`).
 
 ## S5: Daily fleet health report (2.2.0)
 
