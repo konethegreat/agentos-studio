@@ -82,10 +82,12 @@ Hermes already diagnoses its board (`hermes kanban diagnostics`); nothing acts o
 
 ## S3: Self-built fallback chain (2.2.0)
 
-- [ ] S3.1 Build Hermes' `fallback_providers` from lanes the canary proves healthy, flat-rate
-  first, through `hermes fallback` (never by editing `config.yaml`), and show the owner the change.
-- [ ] S3.2 Demote a fallback that produces malformed tool calls or empty replies in long tool loops
-  (the Gemini pattern) below one that does not, using canary and mission outcomes.
+- [x] S3.1 Build Hermes' `fallback_providers` from lanes the canary proves healthy, flat-rate
+  first, through `hermes fallback` (never by editing `config.yaml`), and show the owner the change
+  (`fallback_chain::build_chain`, `fallback_chain::sync_now`, `QuotaGridCard.tsx`).
+- [x] S3.2 Demote a fallback that produces malformed tool calls or empty replies in long tool loops
+  (the Gemini pattern) below one that does not, using canary and mission outcomes
+  (`fallback_chain::collect_demoted`).
 
 ## S4: Troubleshooter agent (2.2.0)
 
