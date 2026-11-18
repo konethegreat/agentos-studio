@@ -5,8 +5,8 @@
 use serde::Serialize;
 use std::sync::{Mutex, OnceLock};
 
-use crate::asks;
-use crate::audit;
+use crate::agent_log::{self, NewEvent};
+use crate::hermes_surfaces;
 use crate::quota_grid;
 
 const ALLOWED_PREFIXES: &[&str] = &[
@@ -53,9 +53,9 @@ pub fn is_allowed_command(cmd: &str) -> bool {
     {
         return false;
     }
-    ALLOWED_PREFIXES.iter().any(|prefix| {
-        trimmed == *prefix || trimmed.starts_with(&format!("{prefix} "))
-    })
+    ALLOWED_PREFIXES
+        .iter()
+        .any(|prefix| trimmed == *prefix || trimmed.starts_with(&format!("{prefix} ")))
 }
 
 pub fn parse_diagnosis_and_command(reply: &str) -> (String, Option<String>) {
@@ -98,11 +98,14 @@ pub fn run_for_provider(provider: &str, recent_logs: &str) -> TroubleshootResult
     let res = troubleshoot_with(
         provider,
         &context,
-        healthy.as_ref().map(|l| (l.provider.as_str(), l.model.as_str())),
+        healthy
+            .as_ref()
+            .map(|l| (l.provider.as_str(), l.model.as_str())),
         run_hermes_readonly_session,
         execute_allowed_cli,
         |msg| {
-            let _ = asks::open("fleet-troubleshooter", msg, &["Acknowledge".into()]);
+            let target = hermes_surfaces::notify_target().unwrap_or_else(|| "whatsapp".into());
+            let _ = hermes_surfaces::send(&target, msg);
         },
     );
     *last_lock().lock().unwrap() = Some(res.clone());
@@ -128,7 +131,14 @@ where
         Err(e) => {
             let msg = format!("Troubleshooter session failed for {provider}: {e}");
             escalate(&msg);
-            let _ = audit::record("troubleshooter", &msg);
+            let _ = agent_log::record(&NewEvent {
+                kind: "note",
+                from_agent: "troubleshooter",
+                to_agent: "fleet",
+                summary: "Troubleshooter",
+                detail: &msg,
+                ..Default::default()
+            });
             return TroubleshootResult {
                 provider: provider.to_string(),
                 diagnosis: msg,
@@ -162,7 +172,9 @@ where
                 Err(e) => {
                     execution_output = Some(e.clone());
                     escalated = true;
-                    escalate(&format!("Allowed fix `{cmd}` failed for {provider}: {e}. Diagnosis: {diagnosis}"));
+                    escalate(&format!(
+                        "Allowed fix `{cmd}` failed for {provider}: {e}. Diagnosis: {diagnosis}"
+                    ));
                 }
             }
         }
@@ -174,10 +186,15 @@ where
         ));
     }
 
-    let _ = audit::record(
-        "troubleshooter",
-        &format!("{provider}: executed={executed} escalated={escalated} diag={diagnosis}"),
-    );
+    let detail = format!("{provider}: executed={executed} escalated={escalated} diag={diagnosis}");
+    let _ = agent_log::record(&NewEvent {
+        kind: "note",
+        from_agent: "troubleshooter",
+        to_agent: "fleet",
+        summary: "Troubleshooter",
+        detail: &detail,
+        ..Default::default()
+    });
 
     TroubleshootResult {
         provider: provider.to_string(),
@@ -201,10 +218,7 @@ fn run_readonly_cli(args: &[&str]) -> String {
     }
 }
 
-fn run_hermes_readonly_session(
-    prompt: &str,
-    lane: Option<(&str, &str)>,
-) -> Result<String, String> {
+fn run_hermes_readonly_session(prompt: &str, lane: Option<(&str, &str)>) -> Result<String, String> {
     let (prov, model) = lane.ok_or_else(|| "no healthy lane available".to_string())?;
     let out = crate::cli_runner::cmd(
         "hermes",
@@ -242,7 +256,9 @@ mod tests {
     #[test]
     fn allowlist_accepts_only_five_safe_hermes_commands_without_shell_meta() {
         assert!(is_allowed_command("hermes auth refresh"));
-        assert!(is_allowed_command("hermes auth reset --provider openrouter"));
+        assert!(is_allowed_command(
+            "hermes auth reset --provider openrouter"
+        ));
         assert!(is_allowed_command("hermes plugins enable antigravity"));
         assert!(is_allowed_command("hermes kanban reclaim task-123"));
         assert!(is_allowed_command("hermes kanban dispatch"));
@@ -260,8 +276,11 @@ mod tests {
             "antigravity",
             "prompt",
             Some(("claude", "claude-sonnet-5-5")),
-            |_, _| Ok("Plugin disabled.
-COMMAND: hermes plugins enable antigravity".into()),
+            |_, _| {
+                Ok("Plugin disabled.
+COMMAND: hermes plugins enable antigravity"
+                    .into())
+            },
             |c| Ok(format!("ran {c}")),
             |_| escalated = true,
         );
@@ -274,8 +293,11 @@ COMMAND: hermes plugins enable antigravity".into()),
             "antigravity",
             "prompt",
             Some(("claude", "claude-sonnet-5-5")),
-            |_, _| Ok("Need manual token.
-COMMAND: open browser and login".into()),
+            |_, _| {
+                Ok("Need manual token.
+COMMAND: open browser and login"
+                    .into())
+            },
             |_| unreachable!(),
             |m| escalated_msg = m.to_string(),
         );

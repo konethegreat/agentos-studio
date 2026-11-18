@@ -170,6 +170,44 @@ export interface ProviderHealthReport {
   checked_at: number;
 }
 
+export type FallbackEntry = {
+  provider: string;
+  model: string;
+  flatRate: boolean;
+  demoted: boolean;
+  reason: string;
+};
+
+export type FallbackChainReport = {
+  lastSyncedAt: number | null;
+  entries: FallbackEntry[];
+  changed: boolean;
+  summary: string;
+  lastError: string | null;
+};
+
+export type TroubleshootResult = {
+  provider: string;
+  diagnosis: string;
+  proposedCommand: string | null;
+  allowed: boolean;
+  executed: boolean;
+  executionOutput: string | null;
+  escalated: boolean;
+  at: number;
+};
+
+export type DailyFleetReport = {
+  date: string;
+  sentAt: number | null;
+  openLanes: number;
+  closedLanes: number;
+  repairs: string[];
+  stalledMissions: string[];
+  movedRepos: string[];
+  message: string;
+};
+
 export interface AutoFixEntry {
   at: number;
   provider: string;
