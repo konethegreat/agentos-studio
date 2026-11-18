@@ -6,12 +6,13 @@ use serde::Serialize;
 use std::sync::{Mutex, OnceLock};
 
 use crate::agent_log::{self, NewEvent};
-use crate::autonomy;
+use crate::autonomy::{self, RepoStatus};
 use crate::hermes_surfaces;
 use crate::missions::{self, Mission};
 use crate::quota_grid::{self, Lane};
 
 const MORNING_HOUR: u32 = 7;
+const STALLED_SECS: i64 = 6 * 3600;
 
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -57,10 +58,8 @@ pub fn send_now() -> DailyFleetReport {
     let today = Local::now().format("%Y-%m-%d").to_string();
     let now = chrono::Utc::now().timestamp();
     let lanes = quota_grid::lanes(false);
-    let doc = fleet_doctor::status();
-    let verdicts = doc.map(|d| d.verdicts).unwrap_or_default();
-    let missions_all = missions::list(None).unwrap_or_default();
-    let repos = autonomy::list().unwrap_or_default();
+    let missions_all = missions::list(200).unwrap_or_default();
+    let repos = autonomy::statuses().unwrap_or_default();
     let repairs = crate::fallback_chain::status()
         .entries
         .into_iter()
@@ -73,11 +72,11 @@ pub fn send_now() -> DailyFleetReport {
         now,
         &lanes,
         &repairs,
-        &verdicts,
         &missions_all,
         &repos,
         |msg| {
-            whatsapp::notify(msg);
+            let target = hermes_surfaces::notify_target().unwrap_or_else(|| "whatsapp".into());
+            let _ = hermes_surfaces::send(&target, msg);
         },
     );
     *report_lock().lock().unwrap() = Some(rep.clone());
@@ -89,7 +88,7 @@ pub fn build_report(
     lanes: &[Lane],
     repairs: &[String],
     missions: &[Mission],
-    repos: &[autonomy::RepoRow],
+    repos: &[RepoStatus],
     now_ts: i64,
 ) -> DailyFleetReport {
     let open_lanes = lanes.iter().filter(|l| l.open).count();
@@ -100,11 +99,7 @@ pub fn build_report(
         .filter(|m| (now_ts - m.updated_at).max(0) >= STALLED_SECS)
         .map(|m| {
             let hrs = (now_ts - m.updated_at).max(0) / 3600;
-            let why = m
-                .review_notes
-                .as_deref()
-                .or(m.last_error.as_deref())
-                .unwrap_or(m.status.as_str());
+            let why = m.review_note.as_deref().unwrap_or(m.status.as_str());
             format!("{} ({}h): {}", m.id, hrs, why)
         })
         .collect();
@@ -115,8 +110,8 @@ pub fn build_report(
         .map(|m| m.repo.clone())
         .collect();
     for r in repos {
-        if r.active_goal.is_some() && !moved_repos.contains(&r.repo) {
-            moved_repos.push(r.repo.clone());
+        if r.goal.is_some() && r.enabled && !r.paused_here && !moved_repos.contains(&r.path) {
+            moved_repos.push(r.path.clone());
         }
     }
     moved_repos.sort();
@@ -160,7 +155,7 @@ pub fn build_and_send<F>(
     lanes: &[Lane],
     repairs: &[String],
     missions: &[Mission],
-    repos: &[autonomy::RepoRow],
+    repos: &[RepoStatus],
     send_fn: F,
 ) -> DailyFleetReport
 where
@@ -209,29 +204,29 @@ mod tests {
                 why: "exhausted".into(),
             },
         ];
-        let verdicts = vec![DoctorVerdict {
-            mission_id: "M-12".into(),
-            repo: "app".into(),
-            title: "Fix".into(),
-            status: "blocked".into(),
-            stalled_hours: 7,
-            waiting_on: "auth refresh".into(),
-            action: "retry".into(),
-        }];
-        let missions = vec![Mission {
-            id: "M-11".into(),
-            repo: "C:/repos/alpha".into(),
-            status: "done".into(),
-            updated_at: 999_000,
-            ..Default::default()
-        }];
+        let missions = vec![
+            Mission {
+                id: "M-12".into(),
+                repo: "app".into(),
+                status: "blocked".into(),
+                updated_at: 1_000_000 - (7 * 3600),
+                review_note: Some("auth refresh".into()),
+                ..Default::default()
+            },
+            Mission {
+                id: "M-11".into(),
+                repo: "C:/repos/alpha".into(),
+                status: "done".into(),
+                updated_at: 999_000,
+                ..Default::default()
+            },
+        ];
         let mut sent = String::new();
         let rep = build_and_send(
             "2026-11-18",
             1_000_000,
             &lanes,
             &["re-enabled plugin".into()],
-            &verdicts,
             &missions,
             &[],
             |m| sent = m.to_string(),
