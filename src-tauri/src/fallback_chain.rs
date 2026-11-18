@@ -116,8 +116,8 @@ pub fn build_chain(
     candidates.sort_by(|a, b| {
         let a_dem = demoted.contains(&(a.provider.clone(), a.model.clone()));
         let b_dem = demoted.contains(&(b.provider.clone(), b.model.clone()));
-        let a_flat = canary::is_flat_rate(&a.provider);
-        let b_flat = canary::is_flat_rate(&b.provider);
+        let a_flat = canary::probe_allowed(&a.provider, false);
+        let b_flat = canary::probe_allowed(&b.provider, false);
         a_dem
             .cmp(&b_dem)
             .then_with(|| b_flat.cmp(&a_flat))
@@ -134,7 +134,7 @@ pub fn build_chain(
         .into_iter()
         .map(|l| {
             let is_dem = demoted.contains(&(l.provider.clone(), l.model.clone()));
-            let is_flat = canary::is_flat_rate(&l.provider);
+            let is_flat = canary::probe_allowed(&l.provider, false);
             let reason = if is_dem {
                 "demoted (tool-loop glitch)".to_string()
             } else if is_flat {
@@ -235,7 +235,8 @@ pub fn parse_fallback_list(raw: &str) -> Vec<(String, String)> {
 }
 
 fn read_current_cli_chain() -> Result<Vec<(String, String)>, String> {
-    let out = crate::cli_runner::hermes(&["fallback", "list"])
+    let out = std::process::Command::new("hermes")
+        .args(["fallback", "list"])
         .output()
         .map_err(|e| format!("hermes fallback list: {e}"))?;
     if !out.status.success() {
@@ -246,7 +247,8 @@ fn read_current_cli_chain() -> Result<Vec<(String, String)>, String> {
 
 fn apply_cli_chain(entries: &[FallbackEntry]) -> Result<(), String> {
     if entries.is_empty() {
-        let out = crate::cli_runner::hermes(&["fallback", "clear"])
+        let out = std::process::Command::new("hermes")
+            .args(["fallback", "clear"])
             .output()
             .map_err(|e| format!("hermes fallback clear: {e}"))?;
         if !out.status.success() {
@@ -264,7 +266,8 @@ fn apply_cli_chain(entries: &[FallbackEntry]) -> Result<(), String> {
         })
         .collect();
     let json_arg = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
-    let out = crate::cli_runner::hermes(&["config", "set", "fallback_providers", &json_arg])
+    let out = std::process::Command::new("hermes")
+        .args(["config", "set", "fallback_providers", &json_arg])
         .output()
         .map_err(|e| format!("hermes config set fallback_providers: {e}"))?;
     if !out.status.success() {
