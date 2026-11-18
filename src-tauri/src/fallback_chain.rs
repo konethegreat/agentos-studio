@@ -6,8 +6,8 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
-use crate::audit;
-use crate::canary::{self, LaneState, Outcome};
+use crate::agent_log::{self, NewEvent};
+use crate::canary::{self, LaneState};
 use crate::missions::{self, Mission};
 use crate::quota_grid::{self, Lane};
 
@@ -79,18 +79,26 @@ fn is_loop_glitch(text: &str) -> bool {
 pub fn collect_demoted(canaries: &[LaneState], missions: &[Mission]) -> HashSet<(String, String)> {
     let mut demoted = HashSet::new();
     for c in canaries {
-        if matches!(c.last_outcome, Some(Outcome::MalformedToolCall | Outcome::NoReply)) {
+        if matches!(
+            c.last_outcome,
+            Some(Outcome::MalformedToolCall | Outcome::NoReply)
+        ) {
             demoted.insert((c.provider.clone(), c.model.clone()));
         }
     }
     for m in missions {
-        let note = m.review_note.as_deref().unwrap_or("");
+        let note = m
+            .review_notes
+            .as_deref()
+            .or(m.last_error.as_deref())
+            .unwrap_or("");
         if !is_loop_glitch(note) {
             continue;
         }
-        if let (Some(p), Some(mod_name)) = (m.pinned_provider.as_deref(), m.pinned_model.as_deref()) {
+        if let (Some(p), Some(mod_name)) = (m.provider.as_deref(), m.model.as_deref()) {
             demoted.insert((p.to_string(), mod_name.to_string()));
         }
+    }
     }
     demoted
 }
@@ -183,7 +191,14 @@ where
                 .map(|e| format!("{} ({})", e.model, e.provider))
                 .collect();
             let msg = format!("Updated fallback chain: {}", desc.join(" -> "));
-            let _ = audit::record("fallback_chain", &msg);
+            let _ = agent_log::record(&NewEvent {
+                kind: "note",
+                from_agent: "fallback_chain",
+                to_agent: "fleet",
+                summary: "Self-built fallback chain",
+                detail: &msg,
+                ..Default::default()
+            });
             msg
         }
     } else {
@@ -206,7 +221,12 @@ pub fn parse_fallback_list(raw: &str) -> Vec<(String, String)> {
         let Some(rest) = t.split_once('.').map(|(_, r)| r.trim()) else {
             continue;
         };
-        if !t.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        if !t
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+        {
             continue;
         }
         if let (Some(open), Some(close)) = (rest.rfind("(via "), rest.rfind(')')) {
@@ -285,9 +305,24 @@ mod tests {
     fn orders_flat_rate_first_and_demotes_tool_loop_glitch_lanes() {
         let lanes = vec![
             lane("openrouter", "anthropic/claude-sonnet-4", 100.0, true),
-            lane("antigravity-subscription-directsdk", "gemini-4-hydrogen-high", 100.0, true),
-            lane("claude-subscription-directsdk-experimental", "claude-sonnet-5-5", 90.0, true),
-            lane("antigravity-subscription-directsdk", "gemini-4-broken", 100.0, false),
+            lane(
+                "antigravity-subscription-directsdk",
+                "gemini-4-hydrogen-high",
+                100.0,
+                true,
+            ),
+            lane(
+                "claude-subscription-directsdk-experimental",
+                "claude-sonnet-5-5",
+                90.0,
+                true,
+            ),
+            lane(
+                "antigravity-subscription-directsdk",
+                "gemini-4-broken",
+                100.0,
+                false,
+            ),
         ];
         let canaries = vec![LaneState {
             provider: "antigravity-subscription-directsdk".into(),
@@ -299,7 +334,10 @@ mod tests {
         let chain = build_chain(&lanes, &canaries, &[]);
         assert_eq!(chain.len(), 3);
         // Healthy flat-rate non-demoted comes first
-        assert_eq!(chain[0].provider, "claude-subscription-directsdk-experimental");
+        assert_eq!(
+            chain[0].provider,
+            "claude-subscription-directsdk-experimental"
+        );
         assert!(!chain[0].demoted);
         // Healthy metered non-demoted comes before demoted flat-rate
         assert_eq!(chain[1].provider, "openrouter");
@@ -319,20 +357,40 @@ mod tests {
         assert_eq!(
             parsed,
             vec![
-                ("antigravity-subscription-directsdk".into(), "gemini-4-hydrogen-high".into()),
-                ("claude-subscription-directsdk-experimental".into(), "claude-sonnet-5-5".into()),
+                (
+                    "antigravity-subscription-directsdk".into(),
+                    "gemini-4-hydrogen-high".into()
+                ),
+                (
+                    "claude-subscription-directsdk-experimental".into(),
+                    "claude-sonnet-5-5".into()
+                ),
             ]
         );
     }
 
     #[test]
     fn sync_with_only_applies_when_chain_differs() {
-        let lanes = vec![lane("claude-subscription-directsdk-experimental", "claude-sonnet-5-5", 90.0, true)];
+        let lanes = vec![lane(
+            "claude-subscription-directsdk-experimental",
+            "claude-sonnet-5-5",
+            90.0,
+            true,
+        )];
         let mut called = 0;
-        let rep1 = sync_with(&lanes, &[], &[], &[( "claude-subscription-directsdk-experimental".into(), "claude-sonnet-5-5".into() )], |_| {
-            called += 1;
-            Ok(())
-        });
+        let rep1 = sync_with(
+            &lanes,
+            &[],
+            &[],
+            &[(
+                "claude-subscription-directsdk-experimental".into(),
+                "claude-sonnet-5-5".into(),
+            )],
+            |_| {
+                called += 1;
+                Ok(())
+            },
+        );
         assert!(!rep1.changed);
         assert_eq!(called, 0);
 

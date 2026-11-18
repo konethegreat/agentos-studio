@@ -5,12 +5,11 @@ use chrono::{Local, Timelike};
 use serde::Serialize;
 use std::sync::{Mutex, OnceLock};
 
-use crate::audit;
+use crate::agent_log::{self, NewEvent};
 use crate::autonomy;
-use crate::fleet_doctor::{self, DoctorVerdict};
+use crate::hermes_surfaces;
 use crate::missions::{self, Mission};
 use crate::quota_grid::{self, Lane};
-use crate::whatsapp;
 
 const MORNING_HOUR: u32 = 7;
 
@@ -69,9 +68,18 @@ pub fn send_now() -> DailyFleetReport {
         .map(|e| format!("demoted {} ({})", e.model, e.provider))
         .collect::<Vec<_>>();
 
-    let rep = build_and_send(&today, now, &lanes, &repairs, &verdicts, &missions_all, &repos, |msg| {
-        whatsapp::notify(msg);
-    });
+    let rep = build_and_send(
+        &today,
+        now,
+        &lanes,
+        &repairs,
+        &verdicts,
+        &missions_all,
+        &repos,
+        |msg| {
+            whatsapp::notify(msg);
+        },
+    );
     *report_lock().lock().unwrap() = Some(rep.clone());
     rep
 }
@@ -80,16 +88,25 @@ pub fn build_report(
     date: &str,
     lanes: &[Lane],
     repairs: &[String],
-    verdicts: &[DoctorVerdict],
     missions: &[Mission],
     repos: &[autonomy::RepoRow],
     now_ts: i64,
 ) -> DailyFleetReport {
     let open_lanes = lanes.iter().filter(|l| l.open).count();
     let closed_lanes = lanes.len().saturating_sub(open_lanes);
-    let stalled_missions: Vec<String> = verdicts
+    let stalled_missions: Vec<String> = missions
         .iter()
-        .map(|v| format!("{} ({}h): {}", v.mission_id, v.stalled_hours, v.waiting_on))
+        .filter(|m| !matches!(m.status.as_str(), "done" | "failed"))
+        .filter(|m| (now_ts - m.updated_at).max(0) >= STALLED_SECS)
+        .map(|m| {
+            let hrs = (now_ts - m.updated_at).max(0) / 3600;
+            let why = m
+                .review_notes
+                .as_deref()
+                .or(m.last_error.as_deref())
+                .unwrap_or(m.status.as_str());
+            format!("{} ({}h): {}", m.id, hrs, why)
+        })
         .collect();
     let cutoff = now_ts - 24 * 3600;
     let mut moved_repos: Vec<String> = missions
@@ -142,7 +159,6 @@ pub fn build_and_send<F>(
     now_ts: i64,
     lanes: &[Lane],
     repairs: &[String],
-    verdicts: &[DoctorVerdict],
     missions: &[Mission],
     repos: &[autonomy::RepoRow],
     send_fn: F,
@@ -150,10 +166,18 @@ pub fn build_and_send<F>(
 where
     F: FnOnce(&str),
 {
-    let mut rep = build_report(date, lanes, repairs, verdicts, missions, repos, now_ts);
+    let mut rep = build_report(date, lanes, repairs, missions, repos, now_ts);
     send_fn(&rep.message);
     rep.sent_at = Some(now_ts);
-    let _ = audit::record("fleet_report", &format!("sent daily report for {date}"));
+    let detail = format!("sent daily report for {date}");
+    let _ = agent_log::record(&NewEvent {
+        kind: "note",
+        from_agent: "fleet_report",
+        to_agent: "owner",
+        summary: "Daily fleet report",
+        detail: &detail,
+        ..Default::default()
+    });
     rep
 }
 
