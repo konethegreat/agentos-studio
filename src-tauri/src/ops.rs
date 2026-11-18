@@ -1230,3 +1230,36 @@ pub async fn agency_deliver_intake(
 ) -> CmdResult<crate::agency::AgencyDelivery> {
     blocking(move || crate::agency::deliver_intake(&intake_id, &pr_url)).await
 }
+
+#[tauri::command]
+pub fn fallback_chain_status() -> crate::fallback_chain::FallbackChainReport {
+    crate::fallback_chain::status()
+}
+
+#[tauri::command]
+pub fn fallback_chain_sync_now() -> crate::fallback_chain::FallbackChainReport {
+    crate::fallback_chain::sync_now()
+}
+
+#[tauri::command]
+pub fn troubleshooter_status() -> Option<crate::troubleshooter::TroubleshootResult> {
+    crate::troubleshooter::status()
+}
+
+#[tauri::command]
+pub fn troubleshooter_run(
+    provider: String,
+    recent_logs: String,
+) -> crate::troubleshooter::TroubleshootResult {
+    crate::troubleshooter::run_for_provider(&provider, &recent_logs)
+}
+
+#[tauri::command]
+pub fn fleet_report_status() -> Option<crate::fleet_report::DailyFleetReport> {
+    crate::fleet_report::status()
+}
+
+#[tauri::command]
+pub fn fleet_report_send_now() -> crate::fleet_report::DailyFleetReport {
+    crate::fleet_report::send_now()
+}
