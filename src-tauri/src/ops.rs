@@ -973,6 +973,18 @@ pub async fn quota_forecast(refresh: Option<bool>) -> CmdResult<Vec<crate::quota
     .await
 }
 
+/// What the S1 canary last saw on each quota grid lane (never probes).
+#[tauri::command]
+pub async fn canary_status() -> CmdResult<Vec<crate::canary::LaneState>> {
+    blocking(|| Ok(crate::canary::status())).await
+}
+
+/// Probe every quota grid lane now (S1), one at a time, up to a minute each.
+#[tauri::command]
+pub async fn canary_run_now() -> CmdResult<Vec<crate::canary::LaneState>> {
+    blocking(|| Ok(crate::canary::run_now())).await
+}
+
 /// Whether AgentOS Studio starts at Windows login (Beyond B2.6).
 #[tauri::command]
 pub async fn autostart_get() -> CmdResult<bool> {

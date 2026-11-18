@@ -18,6 +18,7 @@ pub mod bootstrapper;
 pub mod broadcast;
 pub mod budget;
 pub mod bus;
+pub mod canary;
 pub mod catalog;
 pub mod chat_stream;
 pub mod cli_runner;
@@ -399,6 +400,8 @@ pub fn run_gui() {
             ops::shadow_set_voice_enabled,
             ops::quota_lanes,
             ops::quota_forecast,
+            ops::canary_status,
+            ops::canary_run_now,
             ops::autostart_get,
             ops::autostart_set,
             ops::playbook_learned,

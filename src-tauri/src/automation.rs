@@ -562,6 +562,8 @@ pub fn tick(v: &Vault) -> TickReport {
     // 5. The time machine: measure new models on real work, one replay at a time.
     if !cfg!(test) {
         let _ = crate::bench::step(v, chrono::Utc::now().timestamp());
+        // 6. Canary probes (S1): a tiny known question per flat-rate lane, in the background.
+        crate::canary::step();
         if let Some(changed) = crate::playbook::nightly(v) {
             if !changed.is_empty() {
                 let _ = crate::agent_log::record(&crate::agent_log::NewEvent {

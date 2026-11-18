@@ -537,7 +537,18 @@ pub fn auto_heal_in(
     now: i64,
     bypass_cooldown: bool,
 ) -> Vec<AutoFixEntry> {
-    auto_heal_with(c, report, now, bypass_cooldown, run_hermes_ok)
+    auto_heal_with(c, report, now, bypass_cooldown, None, run_hermes_ok)
+}
+
+/// The auto-heal for one provider only, outside its cooldown (the S1 canary calls this when a
+/// probe fails). Other providers in `report` are read for the fallback decision, never repaired.
+pub fn auto_heal_one_in(
+    c: &rusqlite::Connection,
+    report: &Report,
+    provider: &str,
+    now: i64,
+) -> Vec<AutoFixEntry> {
+    auto_heal_with(c, report, now, true, Some(provider), run_hermes_ok)
 }
 
 fn auto_heal_with(
@@ -545,6 +556,7 @@ fn auto_heal_with(
     report: &Report,
     now: i64,
     bypass_cooldown: bool,
+    only: Option<&str>,
     mut exec: impl FnMut(&[&str]) -> (bool, String),
 ) -> Vec<AutoFixEntry> {
     let mut out = Vec::new();
@@ -555,6 +567,9 @@ fn auto_heal_with(
             .any(|p| p.id != id && p.state == "ok")
     };
     for h in &report.providers {
+        if only.is_some_and(|p| p != h.id) {
+            continue;
+        }
         if matches!(h.state.as_str(), "ok" | "not_set_up") {
             clear_degraded_in(c, &h.id);
             continue;
@@ -994,7 +1009,7 @@ mod tests {
         };
         assert_eq!(report.providers[0].state, "failing");
         assert_eq!(report.providers[1].state, "plugin_disabled");
-        let entries = auto_heal_with(&c, &report, now, false, |args| match args {
+        let entries = auto_heal_with(&c, &report, now, false, None, |args| match args {
             ["plugins", "enable", _] => (true, "enabled".into()),
             ["plugins", "show", _] => (true, "Status: enabled".into()),
             ["auth", "refresh", _] => (true, "ok".into()),
@@ -1010,7 +1025,9 @@ mod tests {
         assert!(is_degraded_in(&c, KNOWN[1].id, now + 10).is_none());
         assert_eq!(autofix_log_in(&c).len(), 2);
         // Cooldown prevents re-running immediately.
-        assert!(auto_heal_with(&c, &report, now + 10, false, |_| (true, "ok".into())).is_empty());
+        assert!(
+            auto_heal_with(&c, &report, now + 10, false, None, |_| (true, "ok".into())).is_empty()
+        );
         crate::store::set_test_db(None);
     }
 
@@ -1054,7 +1071,7 @@ mod tests {
             )],
             ..Default::default()
         };
-        let e = auto_heal_with(&c, &r, now, true, real);
+        let e = auto_heal_with(&c, &r, now, true, None, real);
         assert_eq!(e[0].outcome, "retrying");
         assert!(is_degraded_in(&c, KNOWN[0].id, now + 10).is_none());
         // Not transient, only provider, nothing changed: degraded, not fixed.
@@ -1069,8 +1086,41 @@ mod tests {
             )],
             ..Default::default()
         };
-        let e = auto_heal_with(&c, &r, now, true, real);
+        let e = auto_heal_with(&c, &r, now, true, None, real);
         assert_ne!(e[0].outcome, "fixed");
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn healing_one_provider_leaves_the_others_alone() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let c = crate::store::open().unwrap();
+        let now = 1_000_000;
+        let failing = |id: &str| Health {
+            id: id.into(),
+            label: id.into(),
+            in_use: true,
+            signed_in: Some(true),
+            plugin_enabled: Some(true),
+            state: "failing".into(),
+            detail: "canary: no reply".into(),
+            last_failure: None,
+            fix: None,
+        };
+        let report = Report {
+            providers: vec![failing(KNOWN[0].id), failing(KNOWN[1].id)],
+            ..Default::default()
+        };
+        let mut calls = Vec::new();
+        let e = auto_heal_with(&c, &report, now, true, Some(KNOWN[1].id), |a| {
+            calls.push(a.join(" "));
+            (false, String::new())
+        });
+        assert_eq!(e.len(), 1);
+        assert_eq!(e[0].provider, KNOWN[1].id);
+        assert!(calls.iter().all(|a| !a.contains(KNOWN[0].id)), "{calls:?}");
         crate::store::set_test_db(None);
     }
 }
