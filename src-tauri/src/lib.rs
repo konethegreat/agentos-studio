@@ -36,7 +36,9 @@ pub mod escalation;
 pub mod eval;
 pub mod explorer;
 pub mod extension_runtime;
+pub mod fallback_chain;
 pub mod fleet;
+pub mod fleet_report;
 pub mod fork;
 pub mod github;
 pub mod goal_loop;
@@ -95,6 +97,7 @@ pub mod store;
 pub mod stuck;
 pub mod timeline;
 pub mod tray;
+pub mod troubleshooter;
 pub mod updates;
 pub mod usage;
 pub mod vault;
@@ -402,6 +405,12 @@ pub fn run_gui() {
             ops::quota_forecast,
             ops::canary_status,
             ops::canary_run_now,
+            ops::fallback_chain_status,
+            ops::fallback_chain_sync_now,
+            ops::troubleshooter_status,
+            ops::troubleshooter_run,
+            ops::fleet_report_status,
+            ops::fleet_report_send_now,
             ops::autostart_get,
             ops::autostart_set,
             ops::playbook_learned,
