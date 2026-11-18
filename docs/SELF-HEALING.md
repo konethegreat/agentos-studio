@@ -101,8 +101,8 @@ Hermes already diagnoses its board (`hermes kanban diagnostics`); nothing acts o
 
 ## S5: Daily fleet health report (2.2.0)
 
-- [ ] S5.1 One message to the phone each morning: lanes open and closed, repairs made, missions
-  stalled and why, repositories that moved.
+- [x] S5.1 One message to the phone each morning: lanes open and closed, repairs made, missions
+  stalled and why, repositories that moved (`fleet_report::step`, `fleet_report::build_report`).
 
 ## What this roadmap will not do
 

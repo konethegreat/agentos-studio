@@ -1382,6 +1382,8 @@ export const api = {
   troubleshooterStatus: () => invoke<TroubleshootResult | null>("troubleshooter_status"),
   troubleshooterRun: (provider: string, recentLogs: string) =>
     invoke<TroubleshootResult>("troubleshooter_run", { provider, recentLogs }),
+  fleetReportStatus: () => invoke<DailyFleetReport | null>("fleet_report_status"),
+  fleetReportSendNow: () => invoke<DailyFleetReport>("fleet_report_send_now"),
   autostartGet: () => invoke<boolean>("autostart_get"),
   autostartSet: (enabled: boolean) => invoke<boolean>("autostart_set", { enabled }),
   playbookLearned: (hours = 24) => invoke<Learned[]>("playbook_learned", { hours }),
