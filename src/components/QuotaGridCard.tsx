@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, Route as RouteIcon } from "lucide-react";
-import { api, errorText, type CanaryLane, type QuotaForecast, type QuotaLane } from "../lib/api";
+import { Activity, RefreshCw, Route as RouteIcon } from "lucide-react";
+import { api, errorText, type CanaryLane, type FallbackChainReport, type QuotaForecast, type QuotaLane } from "../lib/api";
 import { Badge, Card } from "./ui";
 
 /**
@@ -42,10 +42,25 @@ export function QuotaGridCard({ tick }: { tick: number }) {
 
   const [canary, setCanary] = useState<CanaryLane[]>([]);
   const [probing, setProbing] = useState(false);
+  const [chain, setChain] = useState<FallbackChainReport | null>(null);
+  const [syncingChain, setSyncingChain] = useState(false);
 
   useEffect(() => {
     void api.canaryStatus().then(setCanary).catch(() => setCanary([]));
+    void api.fallbackChainStatus().then(setChain).catch(() => setChain(null));
   }, [tick, lanes]);
+
+  const syncChainNow = async () => {
+    setSyncingChain(true);
+    try {
+      setChain(await api.fallbackChainSyncNow());
+      setError("");
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setSyncingChain(false);
+    }
+  };
 
   const probeNow = async () => {
     setProbing(true);
@@ -139,6 +154,24 @@ export function QuotaGridCard({ tick }: { tick: number }) {
           {probing ? "Probing (up to a minute per route)..." : "Probe now"}
         </button>
       </div>
+      {chain && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-2">
+          <RefreshCw className="size-3.5 text-sky-300" />
+          <span className="min-w-0 flex-1 text-label text-slate-500">
+            Fallback chain ({chain.entries.length}): {chain.summary}
+            {chain.lastSyncedAt ? ` (${ago(chain.lastSyncedAt)})` : ""}
+            {chain.lastError ? ` - ${chain.lastError}` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => void syncChainNow()}
+            disabled={syncingChain}
+            className="h-7 rounded-lg bg-white/[0.06] px-2.5 text-label font-medium text-slate-200 hover:bg-white/[0.1] disabled:opacity-50"
+          >
+            {syncingChain ? "Syncing..." : "Sync fallback"}
+          </button>
+        </div>
+      )}
     </Card>
   );
 }
