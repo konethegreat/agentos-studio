@@ -316,9 +316,13 @@ mod tests {
         let canaries = vec![LaneState {
             provider: "antigravity-subscription-directsdk".into(),
             model: "gemini-4-hydrogen-high".into(),
-            open: true,
-            last_outcome: Some(Outcome::MalformedToolCall),
-            ..Default::default()
+            outcome: "malformed_tool_call".into(),
+            detail: "malformed tool call".into(),
+            at: 1,
+            secs: 1.0,
+            fails: 1,
+            closed: false,
+            skipped: false,
         }];
         let chain = build_chain(&lanes, &canaries, &[]);
         assert_eq!(chain.len(), 3);

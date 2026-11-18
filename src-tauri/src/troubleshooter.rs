@@ -220,9 +220,10 @@ fn run_readonly_cli(args: &[&str]) -> String {
 
 fn run_hermes_readonly_session(prompt: &str, lane: Option<(&str, &str)>) -> Result<String, String> {
     let (prov, model) = lane.ok_or_else(|| "no healthy lane available".to_string())?;
-    let out = crate::cli_runner::hermes(&["-z", "--provider", prov, "--model", model, "-p", prompt])
-        .output()
-        .map_err(|e| format!("hermes -z: {e}"))?;
+    let out =
+        crate::cli_runner::hermes(&["-z", "--provider", prov, "--model", model, "-p", prompt])
+            .output()
+            .map_err(|e| format!("hermes -z: {e}"))?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
