@@ -59,7 +59,7 @@ pub fn step() {
 pub fn sync_now() -> FallbackChainReport {
     let lanes = quota_grid::lanes(false);
     let canaries = canary::status();
-    let missions_all = missions::list(None).unwrap_or_default();
+    let missions_all = missions::list(200).unwrap_or_default();
     let current = read_current_cli_chain().unwrap_or_default();
     let rep = sync_with(&lanes, &canaries, &missions_all, &current, apply_cli_chain);
     *report_lock().lock().unwrap() = rep.clone();
@@ -79,26 +79,18 @@ fn is_loop_glitch(text: &str) -> bool {
 pub fn collect_demoted(canaries: &[LaneState], missions: &[Mission]) -> HashSet<(String, String)> {
     let mut demoted = HashSet::new();
     for c in canaries {
-        if matches!(
-            c.last_outcome,
-            Some(Outcome::MalformedToolCall | Outcome::NoReply)
-        ) {
+        if matches!(c.outcome.as_str(), "malformed_tool_call" | "no_reply") {
             demoted.insert((c.provider.clone(), c.model.clone()));
         }
     }
     for m in missions {
-        let note = m
-            .review_notes
-            .as_deref()
-            .or(m.last_error.as_deref())
-            .unwrap_or("");
+        let note = m.review_note.as_deref().unwrap_or("");
         if !is_loop_glitch(note) {
             continue;
         }
-        if let (Some(p), Some(mod_name)) = (m.provider.as_deref(), m.model.as_deref()) {
-            demoted.insert((p.to_string(), mod_name.to_string()));
+        if !m.provider.is_empty() && !m.model.is_empty() {
+            demoted.insert((m.provider.clone(), m.model.clone()));
         }
-    }
     }
     demoted
 }
@@ -116,7 +108,7 @@ pub fn build_chain(
             canaries
                 .iter()
                 .find(|c| c.provider == l.provider && c.model == l.model)
-                .map(|c| c.open)
+                .map(|c| !c.closed)
                 .unwrap_or(true)
         })
         .collect();
@@ -124,8 +116,8 @@ pub fn build_chain(
     candidates.sort_by(|a, b| {
         let a_dem = demoted.contains(&(a.provider.clone(), a.model.clone()));
         let b_dem = demoted.contains(&(b.provider.clone(), b.model.clone()));
-        let a_flat = quota_grid::is_flat_rate(&a.provider);
-        let b_flat = quota_grid::is_flat_rate(&b.provider);
+        let a_flat = canary::is_flat_rate(&a.provider);
+        let b_flat = canary::is_flat_rate(&b.provider);
         a_dem
             .cmp(&b_dem)
             .then_with(|| b_flat.cmp(&a_flat))
@@ -142,7 +134,7 @@ pub fn build_chain(
         .into_iter()
         .map(|l| {
             let is_dem = demoted.contains(&(l.provider.clone(), l.model.clone()));
-            let is_flat = quota_grid::is_flat_rate(&l.provider);
+            let is_flat = canary::is_flat_rate(&l.provider);
             let reason = if is_dem {
                 "demoted (tool-loop glitch)".to_string()
             } else if is_flat {
@@ -243,7 +235,7 @@ pub fn parse_fallback_list(raw: &str) -> Vec<(String, String)> {
 }
 
 fn read_current_cli_chain() -> Result<Vec<(String, String)>, String> {
-    let out = crate::cli_runner::cmd("hermes", &["fallback", "list"])
+    let out = crate::cli_runner::hermes(&["fallback", "list"])
         .output()
         .map_err(|e| format!("hermes fallback list: {e}"))?;
     if !out.status.success() {
@@ -254,7 +246,7 @@ fn read_current_cli_chain() -> Result<Vec<(String, String)>, String> {
 
 fn apply_cli_chain(entries: &[FallbackEntry]) -> Result<(), String> {
     if entries.is_empty() {
-        let out = crate::cli_runner::cmd("hermes", &["fallback", "clear"])
+        let out = crate::cli_runner::hermes(&["fallback", "clear"])
             .output()
             .map_err(|e| format!("hermes fallback clear: {e}"))?;
         if !out.status.success() {
@@ -272,12 +264,9 @@ fn apply_cli_chain(entries: &[FallbackEntry]) -> Result<(), String> {
         })
         .collect();
     let json_arg = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
-    let out = crate::cli_runner::cmd(
-        "hermes",
-        &["config", "set", "fallback_providers", &json_arg],
-    )
-    .output()
-    .map_err(|e| format!("hermes config set fallback_providers: {e}"))?;
+    let out = crate::cli_runner::hermes(&["config", "set", "fallback_providers", &json_arg])
+        .output()
+        .map_err(|e| format!("hermes config set fallback_providers: {e}"))?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
