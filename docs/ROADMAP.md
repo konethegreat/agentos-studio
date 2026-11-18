@@ -941,3 +941,13 @@ deliberately do differently.
 - S1 (Canary probes): 30-minute flat-rate route probes (`canary::step`), two-failure circuit
   breaker in `quota_grid::lanes`, single-success reopen, immediate per-provider auto-heal, and
   Agents screen status + Probe now control.
+- S3 (Self-built fallback chain): builds Hermes `fallback_providers` from canary-healthy lanes
+  (flat-rate first, demoting malformed-tool-call / empty-reply lanes) via `hermes config set` and
+  `hermes fallback`, with Agents screen status + Sync fallback control (`fallback_chain.rs`,
+  `QuotaGridCard.tsx`).
+- S4 (Troubleshooter agent): read-only Hermes session on a healthy lane when rules find no fix;
+  executes only allow-listed CLI repair commands (`hermes auth refresh/reset`, `hermes plugins
+  enable`, `hermes kanban reclaim/dispatch`) and escalates anything else (`troubleshooter.rs`).
+- S5 (Daily fleet health report): morning digest at 07:00 local via `hermes_surfaces::send`
+  covering open/closed lanes, repairs, stalled missions (6h+), and active/done repos
+  (`fleet_report.rs`).

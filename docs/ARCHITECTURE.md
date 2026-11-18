@@ -553,3 +553,18 @@ fall back to another model and still exit 0, `classify` checks the `--usage-file
 the requested model and treats any mismatch as a failure. Two consecutive failures close the
 route in `quota_grid::lanes`, one success reopens it, and provider-side failures trigger
 `provider_health::auto_heal_one_in` immediately outside the normal 15-minute cooldown.
+
+## Self-built fallback chain, troubleshooter and fleet report (S3 to S5)
+
+- `src-tauri/src/fallback_chain.rs`: builds Hermes `fallback_providers` from canary-healthy lanes
+  (flat-rate first, demoting lanes that produced malformed tool calls or empty replies) and
+  applies changes via `hermes config set fallback_providers` / `hermes fallback clear`. Surfaced
+  in `QuotaGridCard.tsx` with a Sync fallback action.
+- `src-tauri/src/troubleshooter.rs`: when deterministic rules find no fix, starts a read-only
+  Hermes session on a healthy lane with recent logs, `hermes doctor`, `hermes auth status`, and
+  kanban diagnostics; executes only allow-listed repair commands (`hermes auth refresh`,
+  `hermes auth reset`, `hermes plugins enable`, `hermes kanban reclaim`, `hermes kanban dispatch`)
+  and escalates anything else.
+- `src-tauri/src/fleet_report.rs`: sends one morning digest after 07:00 local time via
+  `hermes_surfaces::send` summarizing open/closed lanes, repairs, stalled missions (6h+), and
+  active/completed repositories.
