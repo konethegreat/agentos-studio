@@ -19,6 +19,16 @@ fn native_probe_lists_every_hub_tool() {
             "--vault".into(),
             d.path().display().to_string(),
         ],
+        env: [
+            (
+                "AGENTOS_STUDIO_DB".into(),
+                d.path().join("studio.db").display().to_string(),
+            ),
+            ("AGENTOS_HUB_TOKEN".into(), String::new()),
+            ("AGENTOS_REPO".into(), String::new()),
+        ]
+        .into_iter()
+        .collect(),
         enabled: true,
         ..Default::default()
     };

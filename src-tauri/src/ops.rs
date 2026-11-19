@@ -1270,6 +1270,6 @@ pub fn fleet_doctor_status() -> Option<crate::fleet_doctor::FleetDoctorReport> {
 }
 
 #[tauri::command]
-pub fn fleet_doctor_run_now() -> crate::fleet_doctor::FleetDoctorReport {
-    crate::fleet_doctor::run_now()
+pub async fn fleet_doctor_run_now() -> CmdResult<crate::fleet_doctor::FleetDoctorReport> {
+    blocking(|| Ok(crate::fleet_doctor::run_now())).await
 }

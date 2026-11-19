@@ -604,11 +604,41 @@ pub fn tool_definitions() -> Value {
 mod tests {
     use super::*;
 
-    fn vault() -> (tempfile::TempDir, Vault) {
+    struct TestScope {
+        repo: Option<std::ffi::OsString>,
+        _directory: tempfile::TempDir,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for TestScope {
+        fn drop(&mut self) {
+            crate::store::set_test_db(None);
+            crate::memory_index::set_test_index_dir(None);
+            set_thread_caller(None);
+            match &self.repo {
+                Some(repo) => std::env::set_var(crate::permissions::REPO_ENV, repo),
+                None => std::env::remove_var(crate::permissions::REPO_ENV),
+            }
+        }
+    }
+
+    fn vault() -> (TestScope, Vault) {
+        let lock = crate::store::test_env_lock();
         let d = tempfile::tempdir().unwrap();
         let v = Vault::new(d.path());
         v.scaffold().unwrap();
-        (d, v)
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        crate::memory_index::set_test_index_dir(Some(d.path().to_path_buf()));
+        let repo = std::env::var_os(crate::permissions::REPO_ENV);
+        std::env::remove_var(crate::permissions::REPO_ENV);
+        (
+            TestScope {
+                repo,
+                _directory: d,
+                _lock: lock,
+            },
+            v,
+        )
     }
 
     fn call(v: &Vault, id: u64, method: &str, params: Value) -> Value {
@@ -661,9 +691,7 @@ mod tests {
 
     #[test]
     fn scoped_policy_hides_and_refuses_a_denied_tool_for_one_agent() {
-        let d = tempfile::tempdir().unwrap();
-        let _g = crate::store::test_env_lock();
-        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let (_scope, v) = vault();
         crate::permissions::set_scoped(
             "agent",
             "qoder",
@@ -672,7 +700,6 @@ mod tests {
             Some("deny"),
         )
         .unwrap();
-        let (_vdir, v) = vault();
         set_thread_caller(Some(crate::hub_identity::Caller::known("qoder")));
 
         let tools = call(&v, 50, "tools/list", json!({}));
@@ -714,9 +741,7 @@ mod tests {
 
     #[test]
     fn a_declared_repo_scope_applies_to_the_hub_session() {
-        let d = tempfile::tempdir().unwrap();
-        let _g = crate::store::test_env_lock();
-        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let (_scope, v) = vault();
         crate::permissions::set_scoped(
             "repo",
             "hub-repo-scope-test",
@@ -726,7 +751,6 @@ mod tests {
         )
         .unwrap();
         std::env::set_var(crate::permissions::REPO_ENV, "hub-repo-scope-test");
-        let (_vdir, v) = vault();
         set_thread_caller(Some(crate::hub_identity::Caller::known("hermes")));
 
         let tools = call(&v, 60, "tools/list", json!({}));
@@ -750,7 +774,15 @@ mod tests {
 
     #[test]
     fn memory_tools_round_trip() {
-        let (_d, v) = vault();
+        let (scope, v) = vault();
+        v.write_note(
+            "01_Projects/agentos-studio.md",
+            &format!(
+                "---\npath: {}\n---\n\nIsolated project for the MCP memory round trip.\n",
+                scope._directory.path().display()
+            ),
+        )
+        .unwrap();
         set_thread_caller(Some(crate::hub_identity::Caller::known("hermes")));
         let wrote = call(
             &v,
@@ -784,6 +816,7 @@ mod tests {
             json!({"name": "project_brief", "arguments": {"repo": "agentos-studio"}}),
         );
         let brief_text = brief["result"]["content"][0]["text"].as_str().unwrap_or("");
+        assert!(brief_text.contains("Isolated project for the MCP memory round trip."));
         assert!(brief_text.contains("## Gotchas"));
         assert!(brief_text.contains("## Open tasks"));
     }

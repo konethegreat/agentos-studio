@@ -350,22 +350,16 @@ pub fn dispatch_pass() -> Result<()> {
 }
 
 pub fn diagnostics_json() -> Result<String> {
-    hermes(&board_args(&["diagnostics", "--json"]))
-}
-
-pub fn set_model(task_id: &str, provider: &str, model: &str) -> Result<()> {
-    hermes(&board_args(&[
-        "set-model",
-        strip(task_id),
-        model,
-        "--provider",
-        provider,
-    ]))
-    .map(|_| ())
-}
-
-pub fn archive(task_id: &str) -> Result<()> {
-    hermes(&board_args(&["archive", strip(task_id)])).map(|_| ())
+    let args = board_args(&["diagnostics", "--json"]);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let (code, stdout, stderr) =
+        procs::run_with_timeout("hermes", &args, None, None, Duration::from_secs(30))?;
+    anyhow::ensure!(
+        code == Some(0),
+        "kanban diagnostics failed: {}",
+        stderr.trim()
+    );
+    Ok(stdout)
 }
 
 pub fn show(task_id: &str) -> Result<TaskView> {

@@ -951,7 +951,9 @@ deliberately do differently.
 - S5 (Daily fleet health report): morning digest at 07:00 local via `hermes_surfaces::send`
   covering open/closed lanes, repairs, stalled missions (6h+), and active/done repos
   (`fleet_report.rs`).
-- S2 (Fleet doctor): reads `hermes kanban diagnostics --json` every pass to re-pin/reclaim
-  repeated model crashes, archive failed/deleted blocked tasks, and run S0.2 auto-heal on
-  entitlement failures; computes 6h stalled mission verdicts for the Today screen and reports
-  opted-in repos with no goal started within an hour (`fleet_doctor.rs`, `Today.tsx`).
+- S2 (Fleet doctor, unreleased stabilization): bounded Hermes diagnostics produce linked recovery
+  advisories, 6h stalled mission verdicts and idle reports for opted-in registered Git repositories
+  (`fleet_doctor.rs`, `Today.tsx`). No recovery commands are requested; Hermes may maintain its
+  board database during diagnostics. Incomplete inputs remain visible and suppress idle inferences.
+  Automatic recovery through scheduler controls, historical replay and isolated live acceptance
+  remain pending; see [`SELF-HEALING.md`](SELF-HEALING.md).
