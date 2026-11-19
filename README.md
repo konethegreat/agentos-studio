@@ -35,6 +35,22 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## Unreleased: Fleet Doctor stabilization
+
+Fleet Doctor now reports recovery advisories against real `kanban:<id>` mission links.
+Its direct recovery path was removed because it bypassed scheduler controls and could reclaim
+workers or archive worktrees. Existing scheduler recovery and S0/S1 provider repair are unchanged.
+The pass requests no recovery commands, but is not strictly read-only: Hermes diagnostics can
+initialize, migrate or repair its own board database. Today displays that boundary explicitly.
+Today shows incomplete checks instead of a false all-clear and distinguishes recorded mission
+state from checks still needed. Idle checks cover registered Git repositories using strict local
+Git and stored-state reads, not the broad repository scanner; ordinary project folders are excluded.
+Diagnostics have a 30-second timeout; repository Git reads share a 15-second deadline with lazy
+fetching disabled. Manual checks run off the desktop command thread. MCP protocol tests now isolate
+both their vault and Studio database; unit fixtures also isolate the memory index and restore caller scope.
+Automatic S2 recovery, historical replay and isolated live acceptance remain pending; see
+[the S2 checklist](docs/SELF-HEALING.md#s2-fleet-doctor-unreleased-stabilization).
+
 ## What is new in 2.0.1
 
 Self-healing providers and a fleet that no longer stalls silently.

@@ -168,6 +168,16 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Mission> {
 }
 
 pub fn list(limit: usize) -> Result<Vec<Mission>> {
+    Ok(list_rows(limit)?.into_iter().flatten().collect())
+}
+
+pub(crate) fn list_checked(limit: usize) -> Result<Vec<Mission>> {
+    Ok(list_rows(limit)?
+        .into_iter()
+        .collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+fn list_rows(limit: usize) -> Result<Vec<rusqlite::Result<Mission>>> {
     let c = store::open()?;
     let mut st = c.prepare(
         "SELECT id, repo, goal, acceptance, role, agent, status, provider, model,
@@ -179,7 +189,7 @@ pub fn list(limit: usize) -> Result<Vec<Mission>> {
          LIMIT ?1",
     )?;
     let rows = st.query_map(params![limit as i64], row)?;
-    Ok(rows.flatten().collect())
+    Ok(rows.collect())
 }
 
 fn set_status(c: &Connection, id: &str, from: &[&str], to: &str) -> Result<()> {
@@ -726,6 +736,46 @@ mod tests {
         let out = f();
         crate::store::set_test_db(None);
         out
+    }
+
+    #[test]
+    fn list_reports_malformed_rows_instead_of_hiding_missions() {
+        with_db(|| {
+            let c = store::open().unwrap();
+            c.execute(
+                "INSERT INTO missions (id, repo, goal, acceptance, role, agent, status, provider, model, budget_usd, spent_usd, created_at, updated_at) VALUES ('M-1', 'r', 'goal', 'tests pass', 'implementer', 'hermes', 'running', '', '', 'invalid-number', 0, 1, 1)",
+                [],
+            ).unwrap();
+            let result = list_checked(300);
+            assert!(result.is_err(), "malformed mission was silently omitted");
+        });
+    }
+
+    #[test]
+    fn list_keeps_valid_running_missions_when_a_finished_row_is_malformed() {
+        with_db(|| {
+            let c = store::open().unwrap();
+            c.execute(
+                "INSERT INTO missions (id, repo, goal, acceptance, role, agent, status, provider, model, budget_usd, spent_usd, created_at, updated_at) VALUES ('M-bad', 'r', 'goal', 'tests pass', 'implementer', 'hermes', 'done', '', '', 'invalid-number', 0, 1, 1)",
+                [],
+            ).unwrap();
+            let m = create(
+                "r",
+                "active",
+                "tests pass",
+                "implementer",
+                "hermes",
+                "",
+                "",
+                0.0,
+            )
+            .unwrap();
+            dispatch(&m.id, "kanban:t-active").unwrap();
+            let rows = list(300).expect("a malformed finished mission must not hide running work");
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].id, m.id);
+            assert_eq!(rows[0].status, "running");
+        });
     }
 
     #[test]

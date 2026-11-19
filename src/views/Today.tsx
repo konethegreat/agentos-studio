@@ -166,7 +166,7 @@ export function Today() {
     try {
       const rep = await api.fleetDoctorRunNow();
       setDoctor(rep);
-      toast("ok", "Fleet doctor pass complete");
+      toast(rep.lastError ? "error" : "ok", rep.lastError ?? "Fleet doctor check complete");
     } catch (e) {
       toast("error", errorText(e));
     } finally {
@@ -403,17 +403,23 @@ export function Today() {
               </Button>
             </div>
             <div className="space-y-2.5 px-4 py-3">
+              <p className="text-label text-slate-400">Advisory check. No recovery commands are requested. Hermes may maintain its board database while reading diagnostics.</p>
               {!doctor ? (
                 <p className="text-label text-slate-500">
                   No doctor pass yet. Runs each automation tick to check kanban diagnostics, 6h stalled missions, and idle repos.
                 </p>
               ) : (
                 <>
-                  {doctor.stalledVerdicts.length === 0 &&
+                  {doctor.lastError && (
+                    <p role="alert" className="rounded border border-red-500/30 bg-red-500/5 px-2.5 py-2 text-label text-red-300">
+                      Check incomplete: {doctor.lastError}
+                    </p>
+                  )}
+                  {!doctor.lastError && doctor.stalledVerdicts.length === 0 &&
                     doctor.diagnosticActions.length === 0 &&
                     doctor.idleRepos.length === 0 && (
                       <p className="text-label text-emerald-300">
-                        All clear: no stalled missions (6h+), blocked kanban tasks, or idle opted-in repos.
+                        No findings in the inspected missions and registered repositories.
                       </p>
                     )}
                   {doctor.stalledVerdicts.map((v) => (

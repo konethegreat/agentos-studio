@@ -65,21 +65,43 @@ Health today is read from logs after a mission has already failed. A canary asks
   on a throwaway profile (`outcome=no_reply` x2 closed lane and `quota_grid::steer` held/avoided it;
   subsequent `outcome=ok` in 18 s reopened it).
 
-## S2: Fleet doctor (2.1.0)
+## S2: Fleet doctor (unreleased stabilization)
 
-Hermes already diagnoses its board (`hermes kanban diagnostics`); nothing acts on it.
+Originally targeted for 2.1.0; the initial implementation landed after the 2.2.0 release.
+Implementation checkboxes below do not mean live acceptance or release delivery is complete.
 
-- [x] S2.1 Read the diagnostics every pass and map each kind to an action: `repeated_crashes` with
-  a model error re-pins the task to the first open lane and reclaims it; `stuck_in_blocked` whose
-  mission is already failed or deleted is archived; `repeated_failures` on entitlement runs S0.2
-  for that provider (`fleet_doctor::act_on_diagnostics_with`).
-- [x] S2.2 Any mission with no state change for 6 hours, whatever its status, gets a doctor
-  verdict on the Today screen: what it waits on, and the action taken or needed
-  (`fleet_doctor::compute_stalled_verdicts`, `Today.tsx`).
-- [x] S2.3 A repository opted in with no goal started within an hour is reported with the reason
-  (fetch failed, not a Hermes project, no default branch) (`fleet_doctor::compute_idle_repos`).
-- Done when: the four blocked tasks of 2026-11-17 would each be retried, re-pinned or archived by
-  the doctor in a replay test built from their real `kanban show` output.
+- [x] Diagnostic foundation: parse Hermes' diagnostics task array, match raw task IDs to Studio's
+  `kanban:<id>` links, and report one advisory per task. Actual errors take precedence over generic
+  recovery hints. Unknown, ambiguous, held and terminal mission links need review. Doctor requests
+  no repin, reclaim, archive, credential repair, or provider probe. It is not strictly read-only:
+  Hermes' diagnostics entry point may initialize, migrate or repair its own board database.
+  Today warns about that boundary; isolated acceptance must account for those maintenance writes.
+- [ ] S2.1 Automatic recovery through the scheduler's existing policy and retry controls.
+  The direct doctor mutation path was removed during stabilization: it bypassed pinned routes,
+  retry budgets, owner holds and provider repair cooldowns. Hermes reclaim can terminate a worker;
+  archive can remove a worktree. Recovery needs authoritative task-state/ownership checks, guarded
+  transitions, spending permission and isolated acceptance before it can be enabled. S0/S1 provider
+  repair and the scheduler's existing recovery behavior are unchanged.
+- [x] S2.2 Non-terminal missions with no state change for 6 hours receive a verdict on Today.
+  Verdicts describe recorded state and proposed checks, not unperformed heartbeat or PR checks.
+  Invalid diagnostics, query errors or more than 300 missions produce a visible incomplete report,
+  not an all-clear. Manual checks run off the desktop command thread; the diagnostics subprocess
+  has a 30-second timeout. Doctor uses a strict mission query without changing the scheduler's
+  existing tolerant query (`fleet_doctor::compute_stalled_verdicts`, `Today.tsx`).
+- [x] S2.3 Report opted-in, unpaused registered Git repositories with no current goal,
+  running/review mission, or goal start within the past hour. Failed/blocked mission updates and
+  error log entries do not hide idle repositories. Ordinary project folders are excluded, while
+  missing or broken repository paths and registry/state/query errors are reported. Local Git reads
+  share a 15-second deadline with lazy fetching disabled. Unregistered repositories are not
+  inspected by this pass (`fleet_doctor::compute_idle_repos`).
+- [ ] Acceptance: replay the four blocked tasks of 2026-11-17 from captured diagnostics and mission
+  linkage. Existing unit fixtures are synthetic, not evidence of that historical replay.
+- [ ] Live diagnostic acceptance: run `live_fleet_doctor::isolated_diagnostics_produce_a_linked_advisory`
+  under the live-machine lock after the pre-test backup. A caller must provision a `doctor-*`
+  profile with a model-error task on its `agentos-doctor-test` board, then set
+  `AGENTOS_DOCTOR_TEST_PROFILE` and `AGENTOS_DOCTOR_TEST_TASK`. The ignored test invokes diagnostics
+  and checks the advisory; Hermes may perform maintenance writes on that isolated board. It does
+  not create missions, write Studio state, or run a model. This is not automatic recovery acceptance.
 
 ## S3: Self-built fallback chain (2.2.0)
 

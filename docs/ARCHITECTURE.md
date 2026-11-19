@@ -574,8 +574,14 @@ route in `quota_grid::lanes`, one success reopens it, and provider-side failures
 `src-tauri/src/fleet_doctor.rs` runs on every `automation::step` pass and on demand from the
 Today screen (`fleet_doctor_run_now`):
 
-- Reads `hermes kanban diagnostics --json`: re-pins `repeated_crashes` with model errors to the
-  first open lane and reclaims them; archives `stuck_in_blocked` tasks whose mission is failed or
-  deleted; and triggers `provider_health::auto_heal_one_in` for `repeated_failures` on entitlement.
+- Runs bounded Hermes kanban diagnostics and links findings to recorded `kanban:` mission IDs.
+  Returns advisories only: no repin, reclaim, archive, credential repair or model probe commands
+  are requested. Hermes diagnostics may initialize, migrate or repair its own board database.
 - Computes 6-hour stalled mission verdicts (`waiting_on`, `action_taken`, `action_needed`) and
-  opted-in repositories with no goal started within 1 hour, surfaced in `Today.tsx`.
+  opted-in registered Git repositories with no goal started within 1 hour, surfaced in `Today.tsx`.
+  Ordinary project folders are excluded. Failed registry, configuration, state or mission reads
+  produce an incomplete report and suppress idle inferences rather than imply healthy state.
+- Diagnostics have a 30-second timeout; local Git reads share a 15-second deadline with lazy
+  fetching disabled. The manual desktop command runs on a blocking worker, not the UI thread.
+- Automatic recovery through scheduler controls, historical replay and isolated live acceptance
+  remain pending. This stabilization is unreleased.
