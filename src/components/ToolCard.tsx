@@ -1,4 +1,4 @@
-import { ChevronRight, CircleAlert, CircleCheck, Loader2, Plug, Wrench } from "lucide-react";
+import { ChevronRight, CircleAlert, CircleCheck, CircleHelp, Loader2, Plug, Wrench } from "lucide-react";
 import { useState } from "react";
 import type { ToolItem } from "../lib/chat";
 
@@ -13,8 +13,8 @@ function clip(s: string, max: number) {
 }
 
 /** Collapsible card for one MCP or built-in tool call: which server, which tool, what went in, what came out. */
-export function ToolCard({ tool }: { tool: ToolItem }) {
-  const [open, setOpen] = useState(false);
+export function ToolCard({ tool, initiallyOpen = false }: { tool: ToolItem; initiallyOpen?: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen);
   const tone = tool.server ? (SERVER_TONES[tool.server] ?? "bg-sky-500/10 text-sky-300 ring-sky-500/25") : "bg-white/5 text-slate-300 ring-white/10";
   const firstArg = (() => {
     try {
@@ -27,12 +27,14 @@ export function ToolCard({ tool }: { tool: ToolItem }) {
   })();
   return (
     <div className={`my-2 overflow-hidden rounded-xl border bg-card/60 ${tool.status === "error" ? "border-red-500/30" : "border-line"}`}>
-      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-white/[0.02]">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex w-full flex-wrap items-center gap-2.5 px-3 py-2 text-left hover:bg-white/[0.02]">
         <ChevronRight className={`size-3.5 shrink-0 text-slate-500 transition-transform ${open ? "rotate-90" : ""}`} />
         {tool.status === "running" ? (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-sky-300" />
         ) : tool.status === "error" ? (
           <CircleAlert className="size-3.5 shrink-0 text-danger" />
+        ) : tool.status === "unknown" ? (
+          <CircleHelp className="size-3.5 shrink-0 text-slate-400" />
         ) : (
           <CircleCheck className="size-3.5 shrink-0 text-ok" />
         )}
@@ -42,6 +44,9 @@ export function ToolCard({ tool }: { tool: ToolItem }) {
         </span>
         <span className="shrink-0 font-mono text-xs text-slate-200">{tool.name}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-label text-slate-500">{firstArg}</span>
+        <span className={`shrink-0 text-label ${tool.status === "error" ? "text-danger" : "text-slate-400"}`}>
+          {tool.status === "running" ? "Running" : tool.status === "error" ? "Reported error" : tool.status === "unknown" ? "No result recorded" : "Result recorded"}
+        </span>
         {tool.durationMs !== null && <span className="shrink-0 text-label tabular-nums text-slate-500">{tool.durationMs} ms</span>}
       </button>
       {open && (

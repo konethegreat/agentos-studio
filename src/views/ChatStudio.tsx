@@ -1,5 +1,5 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { ArrowUp, Brain, ChevronRight, ClipboardList, Cloud, Code2, FolderOpen, GitFork, GitPullRequest, Loader2, MessageSquarePlus, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Undo2, Workflow } from "lucide-react";
+import { Activity, ArrowUp, Brain, ChevronRight, ClipboardList, Cloud, Code2, FolderOpen, GitFork, GitPullRequest, Loader2, MessageSquarePlus, PanelLeft, Paperclip, Plug, Sparkles, Square, SquareTerminal, Stethoscope, Undo2, Workflow, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api, errorText, events, type HermesStatus, type MemoryEntry, type RepoInfo, type Skill } from "../lib/api";
 import { studio, type Folder, type OrgSnapshot, type PermissionOption, type PlacedChat } from "../lib/studio";
@@ -11,6 +11,7 @@ import { useCli } from "../components/CliDrawer";
 import { Markdown } from "../components/Markdown";
 import { ProviderSwitcher } from "../components/ProviderSwitcher";
 import { ToolCard } from "../components/ToolCard";
+import { ChatEvidence, ToolEvidenceDialog } from "../components/ChatEvidence";
 import { UsageBar } from "../components/UsageBar";
 import { Modal } from "../components/ui";
 import { useToast } from "../components/Toasts";
@@ -95,6 +96,14 @@ export function ChatStudio({
   const [current, setCurrent] = useState<string | null>(null);
   const [claudeSession, setClaudeSession] = useState<string | null>(null);
   const [items, setItems] = useState<ChatItem[]>([]);
+  const [workspaceOpen, setWorkspaceOpen] = useState(() => window.innerWidth >= 1024);
+  const [evidenceOpen, setEvidenceOpen] = useState(() => window.innerWidth >= 1280);
+  const workspaceToggle = useRef<HTMLButtonElement>(null);
+  const evidenceToggle = useRef<HTMLButtonElement>(null);
+  const closeWorkspace = () => { setWorkspaceOpen(false); workspaceToggle.current?.focus(); };
+  const closeEvidence = () => { setEvidenceOpen(false); evidenceToggle.current?.focus(); };
+  const [inspectedToolId, setInspectedToolId] = useState<string | null>(null);
+  const inspectedTool = items.find((item) => item.kind === "tool" && item.id === inspectedToolId);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [streaming, setStreaming] = useState(false);
   // Plan mode: the turn runs as Hermes' /plan (read-only, writes .hermes/plans/), and the plan
@@ -614,9 +623,13 @@ export function ChatStudio({
   );
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-inset/60">
+    <div className="relative flex h-full min-h-0">
+      <aside aria-label="Chat workspace" className={`${workspaceOpen ? "flex" : "hidden"} absolute inset-y-0 left-0 z-20 w-64 shrink-0 flex-col border-r border-line bg-inset lg:static`}>
         <div className="space-y-2 p-3">
+          <div className="flex items-center justify-between pb-1 text-label font-semibold uppercase tracking-wide text-slate-500">
+            Conversations
+            <button type="button" onClick={closeWorkspace} aria-label="Close conversations" className="grid size-7 place-items-center rounded hover:bg-white/5"><X className="size-3.5" /></button>
+          </div>
           <button
             onClick={() => newChat()}
             title="Start a new conversation (Ctrl+K, then New chat)"
@@ -662,8 +675,9 @@ export function ChatStudio({
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-5">
-          <div className="min-w-0 flex-1">
+        <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+          <button ref={workspaceToggle} type="button" onClick={() => setWorkspaceOpen((open) => !open)} aria-label="Toggle conversations" aria-expanded={workspaceOpen} className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-white/5 hover:text-slate-100"><PanelLeft className="size-4" /></button>
+          <div className="min-w-24 flex-1">
             <div className="truncate text-sm font-semibold text-slate-100">{title}</div>
             <div className="flex items-center gap-1.5 truncate text-label text-slate-500" title={cwd}>
               {folderName && <span className="rounded bg-white/5 px-1 text-slate-400">{folderName}</span>}
@@ -739,8 +753,11 @@ export function ChatStudio({
             </button>
           )}
           <ProviderSwitcher backend={backend} hermes={hermes} onSwitched={onStatusChanged} onOpenControl={() => onOpenControl("providers")} />
+          <button ref={evidenceToggle} type="button" onClick={() => setEvidenceOpen((open) => !open)} aria-expanded={evidenceOpen} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-small ring-1 ${evidenceOpen ? "bg-sky-500/10 text-info ring-sky-500/30" : "text-slate-400 ring-line hover:bg-white/5"}`}><Activity className="size-3.5" /> Evidence</button>
         </header>
 
+        <div className="relative flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
         <UsageBar sessionId={current} refresh={streaming ? 0 : items.length} onUsage={setUsageSig} />
         <div
           ref={scroller}
@@ -926,7 +943,14 @@ export function ChatStudio({
             </div>
           </div>
         </div>
+        </div>
+        {evidenceOpen && <aside className="absolute inset-y-0 right-0 z-10 flex w-80 max-w-full flex-col border-l border-line bg-panel shadow-xl xl:static xl:shrink-0 xl:shadow-none">
+          <div className="flex justify-end border-b border-line px-3 py-1"><button type="button" onClick={closeEvidence} aria-label="Close evidence" className="grid size-7 place-items-center rounded text-slate-500 hover:bg-white/5"><X className="size-3.5" /></button></div>
+          <ChatEvidence items={items} streaming={streaming} backend={backend === "hermes" ? "Hermes" : "Claude Code"} onInspect={(tool) => setInspectedToolId(tool.id)} />
+        </aside>}
+        </div>
       </section>
+      {inspectedTool?.kind === "tool" && <ToolEvidenceDialog tool={inspectedTool} onClose={() => setInspectedToolId(null)} />}
       {permission && (
         <Modal
           title="Hermes asks to run this"

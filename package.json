@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "check:dashes": "node scripts/check-dashes.mjs",
-    "test:guides": "node --experimental-strip-types --test scripts/guides.test.ts scripts/explorer.test.ts"
+    "test:guides": "node --experimental-strip-types --test scripts/guides.test.ts scripts/explorer.test.ts",
+    "test:chat": "node --experimental-strip-types --test scripts/chat.test.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",
