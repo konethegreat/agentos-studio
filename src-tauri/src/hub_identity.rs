@@ -10,7 +10,8 @@
 //! `write_shared_memory` refuse another agent's name. A caller with no token or an unknown one is
 //! read-only. `whoami` reports which it is.
 
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
+use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 
 pub const ENV: &str = "AGENTOS_HUB_TOKEN";
@@ -78,17 +79,33 @@ pub fn agent_for(token: &str) -> Option<String> {
     if token.trim().is_empty() {
         return None;
     }
+    let c = crate::store::open_existing_read_only().ok()?;
+    agent_for_in(&c, token).ok().flatten()
+}
+
+/// Resolve a token without hiding corrupt identities or store errors.
+pub fn agent_for_in(c: &Connection, token: &str) -> Result<Option<String>> {
+    if token.trim().is_empty() {
+        return Ok(None);
+    }
     let h = hash(token);
-    let c = crate::store::open().ok()?;
-    AGENTS
-        .iter()
-        .find(|a| {
-            crate::store::kv_get(&c, &format!("{KV_PREFIX}{a}"))
-                .ok()
-                .flatten()
-                .is_some_and(|stored| stored == h)
-        })
-        .map(|a| a.to_string())
+    let mut found = None;
+    for agent in AGENTS {
+        if let Some(stored) = crate::store::kv_get(c, &format!("{KV_PREFIX}{agent}"))? {
+            ensure!(
+                stored.len() == 64
+                    && stored
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+                "invalid stored hub identity for {agent}"
+            );
+            if stored == h {
+                ensure!(found.is_none(), "ambiguous stored hub identity");
+                found = Some(agent.to_string());
+            }
+        }
+    }
+    Ok(found)
 }
 
 /// Resolve the hub's caller from its environment value.
@@ -130,6 +147,77 @@ pub fn check(caller: &Caller, tool: &str, claimed: Option<&str>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_provided_token_does_not_create_missing_store() {
+        let _g = crate::store::test_env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing").join("studio.db");
+        crate::store::set_test_db(Some(path.clone()));
+        let caller = resolve(Some("unknown-test-token"));
+        let agent = agent_for("unknown-test-token");
+        crate::store::set_test_db(None);
+
+        assert!(caller.agent.is_none());
+        assert!(agent.is_none());
+        assert!(!path.exists(), "unknown token must not create a store");
+        assert!(!path.parent().unwrap().exists());
+    }
+
+    #[test]
+    fn checked_identity_uses_trimmed_sha256_and_only_registered_agents() {
+        let c = crate::store::test_conn();
+        let digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        crate::store::kv_set(&c, "hub.token.unknown", digest).unwrap();
+        assert_eq!(agent_for_in(&c, "abc").unwrap(), None);
+        crate::store::kv_set(&c, "hub.token.qoder", digest).unwrap();
+        assert_eq!(
+            agent_for_in(&c, " \tabc\n").unwrap().as_deref(),
+            Some("qoder")
+        );
+        assert_eq!(agent_for_in(&c, "other-token").unwrap(), None);
+        assert_eq!(agent_for_in(&c, " \t\n").unwrap(), None);
+    }
+
+    #[test]
+    fn malformed_or_ambiguous_registered_identity_fails_closed() {
+        let _g = crate::store::test_env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("studio.db");
+        let c = crate::store::open_at(&path).unwrap();
+        crate::store::kv_set(&c, "hub.token.hermes", &hash("abc")).unwrap();
+        for malformed in [
+            "".to_string(),
+            "abc".to_string(),
+            "A".repeat(64),
+            "g".repeat(64),
+        ] {
+            crate::store::kv_set(&c, "hub.token.qoder", &malformed).unwrap();
+            assert!(agent_for_in(&c, "abc").is_err());
+        }
+        crate::store::kv_set(&c, "hub.token.qoder", &hash("abc")).unwrap();
+        assert!(agent_for_in(&c, "abc").is_err());
+        crate::store::set_test_db(Some(path));
+        let agent = agent_for("abc");
+        let caller = resolve(Some("abc"));
+        crate::store::set_test_db(None);
+        assert!(agent.is_none());
+        assert!(caller.agent.is_none());
+    }
+
+    #[test]
+    fn checked_identity_propagates_sql_and_value_type_errors() {
+        let c = crate::store::test_conn();
+        c.execute(
+            "INSERT INTO kv (key, value) VALUES ('hub.token.qoder', X'00')",
+            [],
+        )
+        .unwrap();
+        assert!(agent_for_in(&c, "abc").is_err());
+        c.execute_batch("DROP TABLE kv").unwrap();
+        assert!(agent_for_in(&c, "abc").is_err());
+        assert_eq!(agent_for_in(&c, "").unwrap(), None);
+    }
 
     #[test]
     fn tokens_are_random_and_only_their_hash_is_kept() {

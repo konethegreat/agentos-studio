@@ -5,7 +5,7 @@
 //! user confirmed in the approval modal, `allow` runs straight away. The check lives in
 //! Rust so a UI bug cannot skip it. Every guarded action is written to the audit log.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -479,6 +479,60 @@ fn read_map(c: &Connection, scope: &str, key: &str) -> PolicyMap {
         .unwrap_or_default()
 }
 
+struct UniquePolicyMap<T>(BTreeMap<String, T>);
+
+impl<'de, T: serde::Deserialize<'de>> serde::de::Visitor<'de> for UniquePolicyMap<T> {
+    type Value = Self;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a policy map without duplicate keys")
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(
+        mut self,
+        mut access: A,
+    ) -> std::result::Result<Self, A::Error> {
+        while let Some((key, value)) = access.next_entry::<String, T>()? {
+            if self.0.insert(key, value).is_some() {
+                return Err(serde::de::Error::custom("duplicate scoped policy key"));
+            }
+        }
+        Ok(self)
+    }
+}
+
+impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for UniquePolicyMap<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_map(Self(BTreeMap::new()))
+    }
+}
+
+fn read_map_checked(c: &Connection, scope: &str, key: &str) -> Result<PolicyMap> {
+    let Some(json) = store::kv_get(c, &scoped_key(scope, key))? else {
+        return Ok(PolicyMap::new());
+    };
+    let unique: UniquePolicyMap<UniquePolicyMap<String>> =
+        serde_json::from_str(&json).context("invalid scoped tool policy map")?;
+    let map: PolicyMap = unique
+        .0
+        .into_iter()
+        .map(|(server, tools)| (server, tools.0))
+        .collect();
+    for (server, tools) in &map {
+        if server.trim().is_empty() {
+            bail!("invalid server in scoped tool policy map");
+        }
+        for (tool, policy) in tools {
+            if tool.trim().is_empty() || !valid_policy(policy) {
+                bail!("invalid tool or policy in scoped tool policy map");
+            }
+        }
+    }
+    Ok(map)
+}
+
 fn policy_of(map: &PolicyMap, server: &str, tool: &str) -> Option<String> {
     map.get(server)
         .and_then(|tools| tools.get(tool))
@@ -651,6 +705,24 @@ pub fn decide_scoped(
             source: "global".into(),
         },
     }
+}
+
+/// Read repo, agent and global policies from one connection without hiding invalid data.
+pub fn decide_scoped_checked_in(
+    c: &Connection,
+    server: &str,
+    tool: &str,
+    agent: Option<&str>,
+    repo: Option<&str>,
+) -> Result<String> {
+    for (scope, key) in [("repo", repo), ("agent", agent)] {
+        if let Some(key) = key.map(str::trim).filter(|key| !key.is_empty()) {
+            if let Some(policy) = policy_of(&read_map_checked(c, scope, key)?, server, tool) {
+                return Ok(policy);
+            }
+        }
+    }
+    crate::policy::decide_checked_in(c, server, tool)
 }
 
 fn rule_text(decision: &ToolDecision, server: &str, tool: &str) -> String {
@@ -949,6 +1021,122 @@ mod tests {
         assert!(action_policy("no.such.action").is_err());
 
         crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn checked_scoped_policy_preserves_precedence_and_key_normalization() {
+        let c = store::test_conn();
+        let decide =
+            |agent, repo| decide_scoped_checked_in(&c, "hub", "read", agent, repo).unwrap();
+        assert_eq!(decide(Some("qoder"), Some("MyRepo")), "allow");
+        crate::policy::set_in(&c, "hub", "*", "deny").unwrap();
+        assert_eq!(decide(Some("qoder"), Some("MyRepo")), "deny");
+        crate::policy::set_in(&c, "hub", "read", "ask").unwrap();
+        assert_eq!(decide(Some("qoder"), Some("MyRepo")), "ask");
+        set_scoped_in(&c, "agent", "qoder", "hub", "read", Some("deny")).unwrap();
+        assert_eq!(decide(Some("qoder"), Some("MyRepo")), "deny");
+        set_scoped_in(&c, "repo", " MyRepo ", "hub", "read", Some("allow")).unwrap();
+        assert_eq!(decide(Some(" qoder "), Some(" MyRepo ")), "allow");
+        assert_eq!(decide(Some(" qoder "), Some("myrepo")), "deny");
+        assert_eq!(decide(Some("Qoder"), Some("myrepo")), "ask");
+        assert_eq!(decide(Some("qoder"), None), "deny");
+        assert_eq!(decide(None, Some("MyRepo")), "allow");
+        assert_eq!(decide(None, None), "ask");
+        assert_eq!(decide(Some(" \t"), Some(" \n")), "ask");
+    }
+
+    #[test]
+    fn checked_scoped_policy_keeps_wildcards_global_only() {
+        let c = store::test_conn();
+        set_scoped_in(&c, "repo", "repo", "hub", "*", Some("deny")).unwrap();
+        set_scoped_in(&c, "agent", "qoder", "hub", "*", Some("ask")).unwrap();
+        assert_eq!(
+            decide_scoped_checked_in(&c, "hub", "read", Some("qoder"), Some("repo")).unwrap(),
+            "allow"
+        );
+        assert_eq!(
+            decide_scoped_checked_in(&c, "hub", "*", Some("qoder"), Some("repo")).unwrap(),
+            "deny"
+        );
+    }
+
+    #[test]
+    fn checked_scoped_policy_rejects_bad_json_schema_and_policies() {
+        let c = store::test_conn();
+        for key in ["perm.tool.repo.repo", "perm.tool.agent.qoder"] {
+            for invalid in [
+                "not JSON",
+                "null",
+                "[]",
+                r#"{"hub":[]}"#,
+                r#"{"hub":{"read":null}}"#,
+                r#"{"hub":{"read":true}}"#,
+                r#"{"hub":{"read":"ALLOW"}}"#,
+                r#"{"hub":{"read":"sometimes"}}"#,
+                r#"{"hub":{"read":"allow","other":"invalid"}}"#,
+                r#"{"other":{"read":"invalid"}}"#,
+                r#"{" ":{"read":"allow"}}"#,
+                r#"{"hub":{"":"allow"}}"#,
+            ] {
+                store::kv_set(&c, key, invalid).unwrap();
+                assert!(
+                    decide_scoped_checked_in(&c, "hub", "read", Some("qoder"), Some("repo"))
+                        .is_err(),
+                    "{key}: {invalid}"
+                );
+            }
+            store::kv_set(&c, key, "{}").unwrap();
+            assert_eq!(
+                decide_scoped_checked_in(&c, "hub", "read", Some("qoder"), Some("repo")).unwrap(),
+                "allow"
+            );
+            store::kv_delete(&c, key).unwrap();
+        }
+    }
+
+    #[test]
+    fn checked_scoped_policy_rejects_duplicate_decoded_keys() {
+        let c = store::test_conn();
+        for invalid in [
+            r#"{"hub":{"read":"deny","read":"allow"}}"#,
+            r#"{"hub":{"read":"invalid","read":"allow"}}"#,
+            r#"{"hub":{"read":"deny"},"hub":{}}"#,
+            r#"{"hub":{"read":"deny","\u0072ead":"allow"}}"#,
+            r#"{"hub":{"read":"deny"},"\u0068ub":{}}"#,
+        ] {
+            store::kv_set(&c, "perm.tool.repo.repo", invalid).unwrap();
+            assert!(
+                decide_scoped_checked_in(&c, "hub", "read", Some("qoder"), Some("repo")).is_err(),
+                "ambiguous policy accepted: {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn checked_scoped_policy_propagates_sql_and_value_type_errors() {
+        let c = store::test_conn();
+        c.execute(
+            "INSERT INTO kv (key, value) VALUES ('perm.tool.repo.repo', X'00')",
+            [],
+        )
+        .unwrap();
+        assert!(decide_scoped_checked_in(&c, "hub", "read", Some("qoder"), Some("repo")).is_err());
+        c.execute_batch("DROP TABLE kv").unwrap();
+        assert!(decide_scoped_checked_in(&c, "hub", "read", Some("qoder"), None).is_err());
+        assert!(decide_scoped_checked_in(&c, "hub", "read", None, Some("repo")).is_err());
+        c.execute_batch("DROP TABLE tool_policy").unwrap();
+        assert!(decide_scoped_checked_in(&c, "hub", "read", None, None).is_err());
+    }
+
+    #[test]
+    fn checked_scoped_policy_rejects_invalid_global_fallback() {
+        let c = store::test_conn();
+        c.execute(
+            "INSERT INTO tool_policy (server, tool, policy) VALUES ('hub', '*', 'invalid')",
+            [],
+        )
+        .unwrap();
+        assert!(decide_scoped_checked_in(&c, "hub", "read", Some("qoder"), Some("repo")).is_err());
     }
 
     #[test]

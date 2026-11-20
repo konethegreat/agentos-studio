@@ -68,7 +68,8 @@ on the provider card proves the key and the model together.
 
 ## 6 to 8: connect your agents and send a chat
 
-Studio's built-in `agentos-hub` server gives every agent the same task queue and memory. Setup
+Studio's built-in `agentos-hub` server gives every agent the same task queue and memory, plus read
+access to Studio's goals, missions and notices through six read tools. Setup
 registers it with Hermes and Claude Code, and with Qoder and Antigravity if you have them. Later,
 **MCP and Providers** shows whether each agent runs the current hub, with a one-click update.
 

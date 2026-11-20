@@ -127,6 +127,7 @@ the first paint is never competing with a full probe.
 | `mcp_manager.rs` | MCP registry across four agents, native MCP client, catalog, and `catalog_entries` (metadata-only registry rows for the capability fabric). |
 | `cli_runner.rs` | One-shot command runner (kept for quick actions with captured output). |
 | `vault.rs`, `bus.rs`, `mcp_stdio.rs` | Agent Bus, shared memory and the `agentos-hub` MCP server. `bus.rs` also starts headless workers (Hermes, Claude Code, Antigravity) for the scheduler and the event-driven watcher. |
+| `studio_read.rs` | The six read tools the hub offers for the Studio store (`studio_status`, `list_goals`, `get_goal`, `list_missions`, `get_mission`, `list_notices`). They require a registered token revalidated inside the same SQLite read snapshot, pin the schema version, obey the per-tool policies, page with cursors, and never write. |
 | `worktree.rs` | One git worktree and branch per bus mission attempt, excluded locally, removed when the mission ends. |
 | `stuck.rs` | Heartbeat per running mission (kanban times and session messages, worker process and log, worktree changes); one retry, then blocked. |
 | `hub_identity.rs` | Per-agent hub tokens (hash only in `studio.db`), caller resolution, the write-as-yourself and read-only rules, `whoami`. |

@@ -69,13 +69,6 @@ pub fn run_from_args(args: &[String]) -> i32 {
         ),
     }
     let _ = CALLER.set(me);
-    if let Err(e) = vault.ensure_dirs() {
-        eprintln!(
-            "{SERVER_NAME}: cannot prepare vault {}: {e:#}",
-            vault.root.display()
-        );
-        return 1;
-    }
     eprintln!(
         "{SERVER_NAME} listening on stdio - vault: {}",
         vault.root.display()
@@ -167,31 +160,14 @@ pub fn handle_message(vault: &Vault, msg: Value) -> Option<Value> {
             )
         }
         "ping" => ok(id, json!({})),
-        "tools/list" => {
-            // A tool denied for this caller (repo or agent scope, or globally) is not offered at
-            // all, so the list matches what a call would allow. Ask stays listed and refuses at
-            // call time, because a stdio session has nobody to prompt.
-            let me = caller();
-            let repo = repo_env();
-            let tools: Vec<Value> = tool_definitions()
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|t| {
-                    let name = t.get("name").and_then(Value::as_str).unwrap_or_default();
-                    crate::permissions::decide_scoped(
-                        me.agent.as_deref(),
-                        repo.as_deref(),
-                        "agentos-hub",
-                        name,
-                    )
-                    .policy
-                        != "deny"
-                })
-                .collect();
-            ok(id, json!({"tools": tools}))
-        }
+        "tools/list" => match discovered_tools() {
+            Ok(tools) => ok(id, json!({"tools": tools})),
+            Err(_) => error(
+                id,
+                -32603,
+                "Studio store or tool policies are unavailable; open Studio to check setup.",
+            ),
+        },
         "tools/call" => {
             let name = params
                 .get("name")
@@ -201,6 +177,36 @@ pub fn handle_message(vault: &Vault, msg: Value) -> Option<Value> {
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
+            if !tool_definitions()
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|tool| tool["name"] == name)
+            {
+                return Some(error(id, -32602, "Unknown tool name"));
+            }
+            if crate::studio_read::TOOLS.contains(&name) {
+                let token = std::env::var(crate::hub_identity::ENV).ok();
+                let (content, is_error) = match crate::studio_read::execute(
+                    name,
+                    &args,
+                    token.as_deref(),
+                ) {
+                    Ok(data) => (json!({"ok": true, "data": data}), false),
+                    Err(error) => (
+                        json!({"ok": false, "error": {"code": error.code, "message": error.message}}),
+                        true,
+                    ),
+                };
+                return Some(ok(
+                    id,
+                    json!({
+                        "content": [{"type": "text", "text": content.to_string()}],
+                        "structuredContent": content,
+                        "isError": is_error
+                    }),
+                ));
+            }
             match call_tool(vault, name, &args) {
                 Ok(v) => ok(
                     id,
@@ -238,7 +244,51 @@ fn repo_env() -> Option<String> {
         .filter(|r| !r.is_empty())
 }
 
+fn discovered_tools() -> anyhow::Result<Vec<Value>> {
+    let mut c = crate::store::open_existing_read_only()?;
+    let tx = c.transaction()?;
+    let token = std::env::var(crate::hub_identity::ENV).ok();
+    let verified = crate::hub_identity::agent_for_in(&tx, token.as_deref().unwrap_or(""))?;
+    let legacy = caller();
+    let repo = repo_env();
+    let mut tools = Vec::new();
+    for tool in tool_definitions().as_array().unwrap() {
+        let name = tool["name"].as_str().unwrap();
+        if crate::studio_read::TOOLS.contains(&name) {
+            let Some(agent) = verified.as_deref() else {
+                continue;
+            };
+            let policy = crate::permissions::decide_scoped_checked_in(
+                &tx,
+                "agentos-hub",
+                name,
+                Some(agent),
+                None,
+            )?;
+            // Record-level repo overrides cannot be decided during catalog discovery.
+            if name != "studio_status" || policy != "deny" {
+                tools.push(tool.clone());
+            }
+        } else if crate::permissions::decide_scoped_checked_in(
+            &tx,
+            "agentos-hub",
+            name,
+            legacy.agent.as_deref(),
+            repo.as_deref(),
+        )? != "deny"
+        {
+            tools.push(tool.clone());
+        }
+    }
+    tx.commit()?;
+    Ok(tools)
+}
+
 pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Value> {
+    if crate::studio_read::TOOLS.contains(&name) {
+        let token = std::env::var(crate::hub_identity::ENV).ok();
+        return crate::studio_read::execute(name, args, token.as_deref()).map_err(Into::into);
+    }
     // Tool policy is enforced here, not in the UI, so no client can route around it. The scoped
     // check covers repo and agent overrides and falls back to the global policy.
     let me = caller();
@@ -431,10 +481,60 @@ pub fn call_tool(vault: &Vault, name: &str, args: &Value) -> anyhow::Result<Valu
     }
 }
 
+fn studio_tool_definitions() -> Vec<Value> {
+    let identifier = json!({"type": "string", "minLength": 1, "maxLength": 256});
+    let optional_identifier = json!({"type": ["string", "null"], "minLength": 1, "maxLength": 256});
+    let output = json!({
+        "type": "object",
+        "oneOf": [
+            {"type": "object", "properties": {"ok": {"const": true}, "data": {"type": "object"}}, "required": ["ok", "data"], "additionalProperties": false},
+            {"type": "object", "properties": {"ok": {"const": false}, "error": {
+                "type": "object", "properties": {
+                    "code": {"enum": ["INVALID_ARGUMENT", "NOT_FOUND", "FORBIDDEN", "APPROVAL_REQUIRED", "STORE_UNAVAILABLE"]},
+                    "message": {"type": "string"}
+                }, "required": ["code", "message"], "additionalProperties": false
+            }}, "required": ["ok", "error"], "additionalProperties": false}
+        ]
+    });
+    crate::studio_read::TOOLS.into_iter().map(|name| {
+        let (description, properties, required) = match name {
+            "studio_status" => ("Read the server version, schema, verified identity and persisted fleet pause state. GUI and worker liveness are not available from this process.", json!({}), json!([])),
+            "get_goal" => ("Read one authorized goal with checks and linked mission IDs. Every repository in the goal, checks and linked missions must allow this read.", json!({"id": identifier}), json!(["id"])),
+            "get_mission" => ("Read one authorized mission, including kind and parent goal ID. Its repository and all parent goal repositories must allow this read.", json!({"id": identifier}), json!(["id"])),
+            _ => {
+                let mut properties = json!({
+                    "limit": {"type": ["integer", "null"], "minimum": 1, "maximum": 100, "default": 25},
+                    "cursor": {"type": ["string", "null"], "maxLength": 4096, "description": "Use next_cursor from the preceding page with the same tool, caller and filters."},
+                    "repo": optional_identifier
+                });
+                if name != "list_notices" {
+                    let mut statuses = if name == "list_goals" { json!(crate::goals::STATUSES) } else { json!(crate::missions::STATUSES) };
+                    statuses.as_array_mut().unwrap().push(Value::Null);
+                    properties["status"] = json!({"enum": statuses});
+                }
+                if name == "list_missions" { properties["goal_id"] = optional_identifier.clone(); }
+                let description = match name {
+                    "list_goals" => "Page authorized goal summaries, newest first. Denied or approval-required records are omitted. Narrow filters if the bounded scan cannot finish.",
+                    "list_missions" => "Page authorized mission summaries, newest first. Denied or approval-required records are omitted. Filter by repo, status or parent goal.",
+                    _ => "Page repository-attributed notices with source IDs. Open work remains visible beyond seven days; finished work uses an anchored seven-day window. Excludes global provider alerts and owner unread state."
+                };
+                (description, properties, json!([]))
+            }
+        };
+        json!({
+            "name": name,
+            "description": format!("{description} Requires a registered AGENTOS_HUB_TOKEN revalidated on every call. Reads an existing store without writes or runtime commands; text redaction is best-effort."),
+            "inputSchema": {"type": "object", "properties": properties, "required": required, "additionalProperties": false},
+            "outputSchema": output,
+            "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
+        })
+    }).collect()
+}
+
 pub fn tool_definitions() -> Value {
     let agents: Vec<&str> = AGENTS.to_vec();
     let prios: Vec<&str> = PRIORITIES.to_vec();
-    json!([
+    let mut tools = json!([
         {
             "name": "delegate_task",
             "description": "Create a new task on the Agent Bus and hand it to another agent. Writes a Markdown file with YAML frontmatter to 02_Agent_Bus/Pending/. Use this instead of asking the user to copy a prompt into another tool. hermes = CLI/DevOps/Notion sync; qoder/antigravity/claude-code = coding; human = credentials and approvals.",
@@ -597,7 +697,12 @@ pub fn tool_definitions() -> Value {
                 "required": ["query"]
             }
         }
-    ])
+    ]);
+    tools
+        .as_array_mut()
+        .unwrap()
+        .extend(studio_tool_definitions());
+    tools
 }
 
 #[cfg(test)]
@@ -605,6 +710,7 @@ mod tests {
     use super::*;
 
     struct TestScope {
+        token: Option<std::ffi::OsString>,
         repo: Option<std::ffi::OsString>,
         _directory: tempfile::TempDir,
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -615,6 +721,10 @@ mod tests {
             crate::store::set_test_db(None);
             crate::memory_index::set_test_index_dir(None);
             set_thread_caller(None);
+            match &self.token {
+                Some(token) => std::env::set_var(crate::hub_identity::ENV, token),
+                None => std::env::remove_var(crate::hub_identity::ENV),
+            }
             match &self.repo {
                 Some(repo) => std::env::set_var(crate::permissions::REPO_ENV, repo),
                 None => std::env::remove_var(crate::permissions::REPO_ENV),
@@ -629,10 +739,13 @@ mod tests {
         v.scaffold().unwrap();
         crate::store::set_test_db(Some(d.path().join("studio.db")));
         crate::memory_index::set_test_index_dir(Some(d.path().to_path_buf()));
+        let token = std::env::var_os(crate::hub_identity::ENV);
         let repo = std::env::var_os(crate::permissions::REPO_ENV);
+        std::env::remove_var(crate::hub_identity::ENV);
         std::env::remove_var(crate::permissions::REPO_ENV);
         (
             TestScope {
+                token,
                 repo,
                 _directory: d,
                 _lock: lock,
@@ -646,9 +759,127 @@ mod tests {
         serde_json::from_str(&handle_line(v, &msg.to_string()).unwrap()).unwrap()
     }
 
+    fn register_test_token(agent: &str, token: &str) {
+        use sha2::{Digest, Sha256};
+        let c = crate::store::open().unwrap();
+        crate::store::kv_set(
+            &c,
+            &format!("hub.token.{agent}"),
+            &format!("{:x}", Sha256::digest(token.as_bytes())),
+        )
+        .unwrap();
+        std::env::set_var(crate::hub_identity::ENV, token);
+        set_thread_caller(Some(crate::hub_identity::Caller::known(agent)));
+    }
+
+    #[test]
+    fn studio_tools_offer_strict_inputs_and_structured_output_contracts() {
+        let (_scope, v) = vault();
+        register_test_token("qoder", "isolated-test-token");
+        let listed = call(&v, 100, "tools/list", json!({}));
+        let tools = listed["result"]["tools"].as_array().unwrap();
+        for name in [
+            "studio_status",
+            "list_goals",
+            "get_goal",
+            "list_missions",
+            "get_mission",
+            "list_notices",
+        ] {
+            let tool = tools
+                .iter()
+                .find(|t| t["name"] == name)
+                .unwrap_or_else(|| panic!("missing Studio tool {name}"));
+            assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+            assert_eq!(tool["outputSchema"]["type"], "object");
+            assert_eq!(tool["annotations"]["readOnlyHint"], true);
+            assert_eq!(tool["annotations"]["openWorldHint"], false);
+        }
+        let r = call(
+            &v,
+            101,
+            "tools/call",
+            json!({"name":"studio_status","arguments":{}}),
+        );
+        assert_eq!(r["result"]["isError"], false);
+        let structured = &r["result"]["structuredContent"];
+        assert_eq!(structured["ok"], true);
+        assert!(structured["data"].is_object());
+        let text: Value =
+            serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(&text, structured);
+    }
+
+    #[test]
+    fn studio_errors_are_structured_and_cached_identity_cannot_bypass_token_checks() {
+        let (_scope, v) = vault();
+        register_test_token("qoder", "isolated-test-token");
+        let bad = call(
+            &v,
+            102,
+            "tools/call",
+            json!({"name":"list_goals","arguments":{"limit":0}}),
+        );
+        assert_eq!(bad["result"]["isError"], true);
+        assert_eq!(
+            bad["result"]["structuredContent"]["error"]["code"],
+            "INVALID_ARGUMENT"
+        );
+        crate::store::kv_delete(&crate::store::open().unwrap(), "hub.token.qoder").unwrap();
+        let revoked = call(
+            &v,
+            103,
+            "tools/call",
+            json!({"name":"studio_status","arguments":{}}),
+        );
+        assert_eq!(revoked["result"]["isError"], true);
+        assert_eq!(
+            revoked["result"]["structuredContent"]["error"]["code"],
+            "FORBIDDEN"
+        );
+        let listed = call(&v, 104, "tools/list", json!({}));
+        assert!(!listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == "studio_status"));
+    }
+
+    #[test]
+    fn discovery_never_creates_a_missing_store_and_bad_policy_fails_closed() {
+        let (scope, v) = vault();
+        let db_path = scope._directory.path().join("studio.db");
+        assert!(!db_path.exists());
+        let missing = call(&v, 105, "tools/list", json!({}));
+        assert_eq!(missing["error"]["code"], -32603);
+        assert!(!db_path.exists());
+        let c = crate::store::open().unwrap();
+        c.execute(
+            "INSERT INTO tool_policy(server,tool,policy) VALUES ('agentos-hub','*','broken')",
+            [],
+        )
+        .unwrap();
+        let broken = call(&v, 106, "tools/list", json!({}));
+        assert_eq!(broken["error"]["code"], -32603);
+        assert!(!broken.to_string().contains("broken"));
+    }
+
+    #[test]
+    fn unknown_tool_is_a_protocol_error() {
+        let (_scope, v) = vault();
+        let unknown = call(
+            &v,
+            107,
+            "tools/call",
+            json!({"name":"unregistered_tool","arguments":{}}),
+        );
+        assert_eq!(unknown["error"]["code"], -32602);
+    }
+
     #[test]
     fn handshake_and_tool_list() {
         let (_d, v) = vault();
+        crate::store::open().unwrap();
         let init = call(
             &v,
             1,
