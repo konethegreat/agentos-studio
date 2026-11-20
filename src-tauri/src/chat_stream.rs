@@ -946,8 +946,7 @@ pub fn acp_chat_events(
             output,
             input,
             locations,
-        } if (status == "completed" || status == "failed") && clock.contains_key(&id) =>
-        {
+        } if (status == "completed" || status == "failed") && clock.contains_key(&id) => {
             let input = input.map(|value| {
                 let mut payload = match value {
                     Value::Object(map) => Value::Object(map),
