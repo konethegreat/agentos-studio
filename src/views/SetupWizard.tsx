@@ -5,6 +5,7 @@ import { api, errorText, type HubClient, type SetupEvent, type SetupPlan, type S
 import { Button, Card, inputClass } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { ConnectCard } from "../components/ConnectCard";
+import type { RecordTarget } from "../lib/nav";
 
 const PILLAR_ICON: Record<number, ReactNode> = {
   0: <Layers className="size-5" />,
@@ -147,6 +148,7 @@ function OtherApps({ activeJob }: { activeJob: string | null }) {
 }
 
 export function SetupWizard({
+  target = null,
   status,
   settings,
   setupLog,
@@ -160,6 +162,7 @@ export function SetupWizard({
   activeJob: string | null;
   onRefresh: () => Promise<void>;
   onSettings: (s: SettingsView) => void;
+  target?: RecordTarget | null;
 }) {
   const toast = useToast();
   const [vaultPath, setVaultPath] = useState(settings?.vault ?? "");
@@ -226,7 +229,7 @@ export function SetupWizard({
     <div className="h-full overflow-y-auto px-6 pb-10 pt-5">
       <SetupEverything status={status} activeJob={activeJob} onRun={() => void repair("everything")} />
       <div className="mb-5">
-        <ConnectCard />
+        <ConnectCard target={target} />
       </div>
       <OtherApps activeJob={activeJob} />
       <div className="mb-5 flex items-end justify-between gap-4">

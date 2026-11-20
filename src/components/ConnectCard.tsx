@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Circle, CircleAlert, ExternalLink, KeyRound, RefreshCw } from "lucide-react";
 import { api, errorText, type AutoFixEntry, type ProviderHealthReport } from "../lib/api";
 import { studio } from "../lib/studio";
 import { useToast } from "./Toasts";
 import { Button, Card, inputClass } from "./ui";
+import type { RecordTarget } from "../lib/nav";
 
 type Connection = {
   id: string;
@@ -30,9 +31,20 @@ const STATE_TEXT: Record<string, string> = {
  * Whether each subscription Hermes runs on can run right now, from Hermes' own sign-in state and
  * the failures it logged, with the one command that fixes each problem. Checked every 5 minutes.
  */
-function ConnectionHealth() {
+function ConnectionHealth({ target }: { target: RecordTarget | null }) {
   const toast = useToast();
   const [r, setR] = useState<ProviderHealthReport | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const targetPanel = useRef<HTMLDivElement>(null);
+  const focused = useRef<RecordTarget | null>(null);
+  const provider = r?.providers.find((item) => item.id === target?.id);
+  useEffect(() => {
+    if (target && (r || loadError) && focused.current !== target && targetPanel.current) {
+      focused.current = target;
+      targetPanel.current.focus({ preventScroll: true });
+      targetPanel.current.scrollIntoView({ block: "nearest" });
+    }
+  }, [target, r, loadError]);
   const [healLog, setHealLog] = useState<AutoFixEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [healing, setHealing] = useState(false);
@@ -45,7 +57,9 @@ function ConnectionHealth() {
       ]);
       setR(report);
       setHealLog(log);
+      setLoadError(null);
     } catch (e) {
+      setLoadError(errorText(e));
       toast("error", errorText(e));
     } finally {
       setBusy(false);
@@ -96,6 +110,15 @@ function ConnectionHealth() {
           </Button>
         </div>
       </div>
+      {target && (
+        <div ref={targetPanel} tabIndex={-1} className="mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-small outline-none focus:ring-2 focus:ring-emerald-500/40">
+          <p className="break-all font-mono text-label text-slate-400">{target.id} · Opened from a notification</p>
+          {loadError ? <div role="alert"><p>Could not load connection health: {loadError}</p><Button size="sm" variant="ghost" onClick={() => void load(false)}>Retry</Button></div>
+            : !r ? <p role="status">Loading connection health...</p>
+              : provider ? <p className="mt-2 text-slate-200">{provider.label}: {STATE_TEXT[provider.state] ?? provider.state}. {provider.detail}</p>
+                : <p>This provider is not in the current health report.</p>}
+        </div>
+      )}
       {r?.advice && (
         <div className="mb-2 rounded-lg bg-amber-500/[0.06] px-3 py-2 text-small text-amber-200 ring-1 ring-amber-500/25">
           {r.advice}
@@ -150,7 +173,7 @@ function ConnectionHealth() {
  * Connect the subscriptions an agent can actually use. A key is written straight to the Hermes
  * env file, which is where the runtime reads it, and never stored in Studio or shown again.
  */
-export function ConnectCard() {
+export function ConnectCard({ target = null }: { target?: RecordTarget | null }) {
   const toast = useToast();
   const [rows, setRows] = useState<Connection[] | null>(null);
   const [key, setKey] = useState("");
@@ -260,7 +283,7 @@ export function ConnectCard() {
           </div>
         ))
       )}
-      <ConnectionHealth />
+      <ConnectionHealth target={target} />
     </Card>
   );
 }

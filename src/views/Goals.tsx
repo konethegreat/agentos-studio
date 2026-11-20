@@ -3,6 +3,7 @@ import { CheckCircle2, ChevronDown, ChevronRight, Flag, Plus, RefreshCw, Target,
 import { api, errorText, type AutonomyLevel, type Escalation, type GoalCheck, type GoalDetail, type NewGoal, type Project } from "../lib/api";
 import { Badge, Button, Card, Empty, inputClass } from "../components/ui";
 import { useToast } from "../components/Toasts";
+import { useRecordTarget, type RecordTarget } from "../lib/nav";
 
 const STATUS_STYLE: Record<string, string> = {
   planning: "bg-slate-500/10 text-slate-300 ring-slate-500/25",
@@ -37,8 +38,9 @@ const emptyCheck = (): GoalCheck => ({ kind: "command", target: "", repo: null }
  * Work > Goals: the owner states an outcome and how Studio will know it is finished; Studio plans
  * it into missions and runs them at the chosen autonomy level.
  */
-export function Goals() {
+export function Goals({ target = null }: { target?: RecordTarget | null }) {
   const toast = useToast();
+  const source = useRecordTarget(target, api.goalDetail);
   const [rows, setRows] = useState<GoalDetail[] | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [open, setOpen] = useState(false);
@@ -53,7 +55,10 @@ export function Goals() {
   const [defaults, setDefaults] = useState<Record<string, AutonomyLevel>>({});
   const [asks, setAsks] = useState<Escalation[]>([]);
 
+  useEffect(() => { if (target) setSelected(target.id); }, [target]);
+
   async function load() {
+    source.refresh();
     try {
       setRows(await api.goals());
       setAsks(await api.escalations(100));
@@ -173,7 +178,8 @@ export function Goals() {
 
   const toggleRepo = (slug: string) => setRepos((r) => (r.includes(slug) ? r.filter((x) => x !== slug) : [...r, slug]));
   const setCheck = (i: number, c: Partial<GoalCheck>) => setChecks((all) => all.map((x, j) => (j === i ? { ...x, ...c } : x)));
-  const detail = rows?.find((r) => r.goal.id === selected) ?? null;
+  const listed = source.record && !rows?.some((row) => row.goal.id === source.record?.goal.id) ? [source.record, ...(rows ?? [])] : rows;
+  const detail = selected === target?.id ? source.record : rows?.find((r) => r.goal.id === selected) ?? null;
   const openCount = rows?.filter((r) => r.goal.status !== "done" && r.goal.status !== "failed").length ?? 0;
 
   return (
@@ -315,8 +321,8 @@ export function Goals() {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <div className="space-y-2">
-          {rows !== null && rows.length === 0 && <Empty icon={<Target className="size-5" />} title="No goals yet" hint="State an outcome and how Studio will know it is done. Studio plans the missions and runs them." />}
-          {rows?.map(({ goal, missions }) => {
+          {listed !== null && listed.length === 0 && <Empty icon={<Target className="size-5" />} title="No goals yet" hint="State an outcome and how Studio will know it is done. Studio plans the missions and runs them." />}
+          {listed?.map(({ goal, missions }) => {
             const done = missions.filter((m) => m.status === "done").length;
             return (
               <button
@@ -338,7 +344,15 @@ export function Goals() {
           })}
         </div>
 
-        <div>
+        <div ref={source.ref} tabIndex={-1} className="rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/40">
+          {target && selected === target.id && (
+            <div className="mb-3 rounded-lg border border-emerald-500/30 p-3 text-small">
+              <p className="font-mono text-label text-slate-400">{target.id} · Opened from a notification</p>
+              {source.loading ? <p role="status">Loading goal...</p> : source.error ? (
+                <div role="alert"><p>Could not load this goal: {source.error}</p><Button size="sm" variant="ghost" onClick={source.refresh}>Retry</Button></div>
+              ) : !source.record ? <p>This goal no longer exists.</p> : null}
+            </div>
+          )}
           {detail ? (
             <GoalPanel
               detail={detail}

@@ -1,7 +1,7 @@
 import { CircleCheck, Download, Monitor, Moon, Pause, Play, RefreshCw, SquareTerminal, Sun, TriangleAlert } from "lucide-react";
 import { NEXT_PREF, setThemePref, themePref, type ThemePref } from "../lib/theme";
 import type { ReactNode } from "react";
-import type { FleetPause, HermesStatus, StackStatus } from "../lib/api";
+import type { FleetPause, HermesStatus, Notice, StackStatus } from "../lib/api";
 import { useCli } from "./CliDrawer";
 import { NoticeBell } from "./NoticeBell";
 import { api } from "../lib/api";
@@ -107,7 +107,7 @@ export function StatusBar({
   hermes: HermesStatus | null;
   stack: StackStatus | null;
   onOpenDiagnostics: () => void;
-  onGo: (view: string) => void;
+  onGo: (view: string, notice?: Notice) => void;
   onRefresh: () => void;
 }) {
   const cli = useCli();

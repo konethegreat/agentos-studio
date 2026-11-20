@@ -96,6 +96,7 @@ pub mod skill_proposals;
 pub mod skills;
 pub mod store;
 pub mod stuck;
+pub mod studio_read;
 pub mod timeline;
 pub mod tray;
 pub mod troubleshooter;
@@ -509,6 +510,8 @@ pub fn run_gui() {
             commands::memory_quality_schedule,
             commands::create_mission,
             commands::list_missions,
+            commands::mission_detail,
+            commands::escalation_detail,
             commands::goal_create,
             commands::goals_list,
             commands::goal_detail,
