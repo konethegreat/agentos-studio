@@ -434,10 +434,11 @@ mod tests {
         call.content = vec![ToolCallContent::Content(Content::new(ContentBlock::Text(
             TextContent::new("first line"),
         )))];
-        call.locations = vec![
-            serde_json::from_value(serde_json::json!({ "path": "src/main.rs", "line": 3 }))
-                .unwrap(),
-        ];
+        call.locations =
+            vec![
+                serde_json::from_value(serde_json::json!({ "path": "src/main.rs", "line": 3 }))
+                    .unwrap(),
+            ];
         match &events_for(&SessionUpdate::ToolCall(call))[0] {
             AcpEvent::ToolCall {
                 name,
@@ -459,9 +460,7 @@ mod tests {
         fields.raw_output = Some(serde_json::json!("done"));
         let update = ToolCallUpdate::new("c1", fields);
         match &events_for(&SessionUpdate::ToolCallUpdate(update))[0] {
-            AcpEvent::ToolUpdate {
-                status, output, ..
-            } => {
+            AcpEvent::ToolUpdate { status, output, .. } => {
                 assert_eq!(status, "completed");
                 assert_eq!(output, "done");
             }
