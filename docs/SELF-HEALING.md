@@ -26,9 +26,9 @@ Owner: Kone Tshivhinda, K-ONE IT SOLUTIONS. Written 2026-11-17 from the live fle
 | S0 | Honest health and the first repairs | 2.0.1 |
 | S1 | Canary probes: know a provider is broken before a mission does | 2.1.0 |
 | S2 | Fleet doctor: kanban diagnostics become actions | 2.1.0 |
-| S3 | Self-built fallback chain | 2.2.0 |
-| S4 | Troubleshooter agent for what rules cannot fix | 2.2.0 |
-| S5 | Daily fleet health report | 2.2.0 |
+| S3 | Self-built fallback chain | 2.3.0 |
+| S4 | Troubleshooter agent for what rules cannot fix | 2.3.0 |
+| S5 | Daily fleet health report | 2.3.0 |
 
 ## S0: Honest health and the first repairs (2.0.1)
 
@@ -103,7 +103,7 @@ Implementation checkboxes below do not mean live acceptance or release delivery 
   and checks the advisory; Hermes may perform maintenance writes on that isolated board. It does
   not create missions, write Studio state, or run a model. This is not automatic recovery acceptance.
 
-## S3: Self-built fallback chain (2.2.0)
+## S3: Self-built fallback chain (2.3.0)
 
 - [x] S3.1 Build Hermes' `fallback_providers` from lanes the canary proves healthy, flat-rate
   first, through `hermes fallback` (never by editing `config.yaml`), and show the owner the change
@@ -112,7 +112,7 @@ Implementation checkboxes below do not mean live acceptance or release delivery 
   (the Gemini pattern) below one that does not, using canary and mission outcomes
   (`fallback_chain::collect_demoted`).
 
-## S4: Troubleshooter agent (2.2.0)
+## S4: Troubleshooter agent (2.3.0)
 
 - [x] S4.1 When rules find no fix, start a read-only Hermes session on a healthy lane with the
   failing provider's recent log lines, `hermes doctor`, `hermes auth status` and the kanban
@@ -122,7 +122,7 @@ Implementation checkboxes below do not mean live acceptance or release delivery 
   dispatch`); anything else becomes an escalation with the diagnosis attached
   (`troubleshooter::is_allowed_command`, `troubleshooter::troubleshoot_with`).
 
-## S5: Daily fleet health report (2.2.0)
+## S5: Daily fleet health report (2.3.0)
 
 - [x] S5.1 One message to the phone each morning: lanes open and closed, repairs made, missions
   stalled and why, repositories that moved (`fleet_report::step`, `fleet_report::build_report`).
