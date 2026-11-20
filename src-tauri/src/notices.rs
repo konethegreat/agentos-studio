@@ -186,10 +186,7 @@ pub fn list_in(c: &Connection, now: i64) -> Result<Vec<Notice>> {
                     let hash = Sha256::digest(serde_json::to_vec(failure)?);
                     (
                         failure.at,
-                        format!(
-                            "connection.{}.{}.{}.{hash:x}",
-                            h.id, h.state, failure.at
-                        ),
+                        format!("connection.{}.{}.{}.{hash:x}", h.id, h.state, failure.at),
                     )
                 }
                 None => (
