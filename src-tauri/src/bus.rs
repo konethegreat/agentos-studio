@@ -264,13 +264,26 @@ pub fn render_claude_event(line: &str) -> Vec<String> {
     }
 }
 
+/// Shell rules for an Antigravity worker: `agy` runs `run_command` through Windows PowerShell 5.1
+/// and headless mode cannot prompt, so one denied or unparseable command ends the whole attempt.
+pub const AGY_SHELL_NOTE: &str = "\n\nYour shell is Windows PowerShell 5.1 through the agy run_command tool. \
+Run exactly one command per call: no `&&`, no `;`, no pipes across different programs. \
+Use `git`, `gh`, `node` and `npm` directly, and use agy's own `list_dir`, `grep_search` and `view_file` tools \
+to inspect files instead of PowerShell cmdlets. Headless mode cannot ask for permission, so a command with no \
+allow rule is auto-denied and ends the whole run: stay within `git`, `gh` and the test commands the task names.";
+
 pub fn worker_prompt(task_id: &str, agent: &str, body: &str) -> String {
+    let shell = if agent == "antigravity" {
+        AGY_SHELL_NOTE
+    } else {
+        ""
+    };
     format!(
         "You are {agent}, working AgentOS task {task_id}. It is already claimed for you on the agentos-hub Agent Bus.\n\n\
          --- TASK SPEC ---\n{body}\n--- END TASK SPEC ---\n\n\
          Follow the AgentOS constitution (CLAUDE.md / AGENTS.md / SYSTEM_CONTEXT). Work autonomously.\n\
          If the spec names a Worktree you are already in it, on its own Branch: commit there, push with `git push -u origin HEAD`, \
-         and open the pull request with `gh pr create`. Never merge and never push to the default branch.\n\
+         and open the pull request with `gh pr create`. Never merge and never push to the default branch.{shell}\n\
          When finished, call the agentos-hub MCP tool complete_task with task_id \"{task_id}\", agent_name \"{agent}\" \
          and a concrete summary_of_work (what changed, files, PR URL, verification). If you cannot finish, explain why in your final message."
     )
@@ -988,6 +1001,16 @@ pub fn run_task_now(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn antigravity_prompt_names_the_windows_shell() {
+        let p = worker_prompt("TASK-1", "antigravity", "spec body");
+        assert!(p.contains(AGY_SHELL_NOTE));
+        assert!(p.contains("Windows PowerShell 5.1"));
+        let c = worker_prompt("TASK-1", "claude-code", "spec body");
+        assert!(!c.contains(AGY_SHELL_NOTE));
+        assert!(c.contains("complete_task"));
+    }
 
     #[test]
     fn renders_claude_stream_events() {

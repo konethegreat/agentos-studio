@@ -91,10 +91,24 @@ pub fn claude_allowed_tools(extra: &[String]) -> Vec<String> {
     out
 }
 
+/// Read-only Windows commands a headless Antigravity worker reaches for when it inspects a
+/// repository. `agy` runs `run_command` through Windows PowerShell 5.1, and headless mode cannot
+/// ask for permission: one auto-denied command ends the whole run, so a cmdlet with no rule costs
+/// the entire attempt. Writing cmdlets stay out on purpose.
+pub const AGY_WINDOWS_RULES: [&str; 6] = [
+    "command(regex:Get-ChildItem.*)",
+    "command(regex:Get-Content .*)",
+    "command(regex:Select-String .*)",
+    "command(regex:Test-Path .*)",
+    "command(regex:Get-Location)",
+    "command(regex:Resolve-Path .*)",
+];
+
 /// The same allowlist in Antigravity's rule syntax, for `agy --settings`. `mcp__<server>` becomes
 /// `mcp(<server>/*)` and `Bash(<pattern>)` becomes `command(regex:<pattern>)` with `*` as `.*`.
 /// A plain `command(git)` prefix rule does not match on Windows (verified with agy 1.5.3), the
-/// regex form does. `PowerShell(...)` mirrors and other Claude tool names are dropped. Pure.
+/// regex form does. `PowerShell(...)` mirrors and other Claude tool names are dropped, and the
+/// read-only Windows rules in [`AGY_WINDOWS_RULES`] are appended. Pure.
 pub fn agy_allow_rules(claude_rules: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for r in claude_rules {
@@ -111,6 +125,12 @@ pub fn agy_allow_rules(claude_rules: &[String]) -> Vec<String> {
         } else {
             continue;
         };
+        if !out.contains(&rule) {
+            out.push(rule);
+        }
+    }
+    for rule in AGY_WINDOWS_RULES {
+        let rule = rule.to_string();
         if !out.contains(&rule) {
             out.push(rule);
         }
@@ -241,11 +261,26 @@ mod tests {
                 "command(regex:gh run view.*)",
                 "command(regex:npm test.*)",
                 "command(regex:node .*\\.js)",
+                "command(regex:Get-ChildItem.*)",
+                "command(regex:Get-Content .*)",
+                "command(regex:Select-String .*)",
+                "command(regex:Test-Path .*)",
+                "command(regex:Get-Location)",
+                "command(regex:Resolve-Path .*)",
             ]
         );
         assert!(!agy
             .iter()
             .any(|r| r.contains("PowerShell") || r == "command(*)"));
+        assert!(
+            !agy.iter().any(|r| r.contains("Remove-Item")
+                || r.contains("Set-Content")
+                || r.contains("Out-File")),
+            "the Windows rules stay read-only"
+        );
+        // The empty allowlist still carries the read-only Windows rules.
+        let windows: Vec<String> = AGY_WINDOWS_RULES.iter().map(|r| r.to_string()).collect();
+        assert_eq!(agy_allow_rules(&[]), windows);
     }
 
     #[test]

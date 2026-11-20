@@ -41,6 +41,22 @@ its own checks need:
 - The list is read from the main checkout, so a worker cannot widen its own permissions by editing
   the file in its worktree.
 
+## Antigravity workers on Windows
+
+Antigravity mission workers run `agy` with the same allowlist rewritten as `command(regex:...)`
+rules plus `mcp(agentos-hub/*)`. `agy` runs `run_command` through Windows PowerShell 5.1, and
+headless mode cannot prompt for permission: one auto-denied command ends the whole attempt, so a
+cmdlet with no rule costs the run.
+
+- The task prompt tells every Antigravity worker its shell is PowerShell 5.1: one command per
+  call, no `&&` or `;` chaining, no PowerShell cmdlets for file inspection (the built-in
+  `list_dir`, `grep_search` and `view_file` tools cover that), and the commands it runs are `git`,
+  `gh` and the test commands the task names.
+- Six read-only cmdlets are always allowed on top of the repository rules: `Get-ChildItem`,
+  `Get-Content`, `Select-String`, `Test-Path`, `Get-Location` and `Resolve-Path`. Writing cmdlets
+  stay out.
+- The rules live in `routing::agy_allow_rules` and `bus::AGY_SHELL_NOTE`; both have unit tests.
+
 ## Order of precedence
 
 When a mission is created, its provider and model come from the first of these that applies:
