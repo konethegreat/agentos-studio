@@ -15,6 +15,7 @@ use agent_client_protocol::v1::schema::{
     PermissionOptionKind, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigOptionValue,
     SessionNotification, SessionUpdate, SetSessionConfigOptionRequest, TextContent,
+    ToolCallContent, ToolCallLocation,
 };
 use agent_client_protocol::v1::ConnectionTo;
 use agent_client_protocol::{AcpAgent, Agent};
@@ -41,13 +42,23 @@ pub enum AcpEvent {
     ToolCall {
         id: String,
         title: String,
+        /// Machine name the agent reported, e.g. `mcp__files__read_file`, when it sent one.
+        name: Option<String>,
         tool_kind: String,
         status: String,
+        /// The call's arguments exactly as the agent sent them, for the tool card and evidence.
+        input: Option<serde_json::Value>,
+        /// Text or raw output already attached to the call itself.
+        output: String,
+        /// Files the call touched, as `path` or `path:line`.
+        locations: Vec<String>,
     },
     ToolUpdate {
         id: String,
         status: String,
         output: String,
+        input: Option<serde_json::Value>,
+        locations: Vec<String>,
     },
     Plan {
         entries: Vec<String>,
@@ -116,6 +127,35 @@ fn text_of(block: &ContentBlock) -> Option<String> {
     }
 }
 
+fn content_text(content: &[ToolCallContent]) -> String {
+    content
+        .iter()
+        .filter_map(|c| match c {
+            ToolCallContent::Content(x) => text_of(&x.content),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn raw_text(raw: Option<&serde_json::Value>) -> String {
+    match raw {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(v) => v.to_string(),
+        None => String::new(),
+    }
+}
+
+fn locations_text(locations: &[ToolCallLocation]) -> Vec<String> {
+    locations
+        .iter()
+        .map(|l| match l.line {
+            Some(n) => format!("{}:{n}", l.path.display()),
+            None => l.path.display().to_string(),
+        })
+        .collect()
+}
+
 pub(crate) fn kind_name(k: &PermissionOptionKind) -> String {
     serde_json::to_value(k)
         .ok()
@@ -139,32 +179,47 @@ pub fn events_for(update: &SessionUpdate) -> Vec<AcpEvent> {
         SessionUpdate::AgentThoughtChunk(c) => text_of(&c.content)
             .map(|text| vec![AcpEvent::Thought { text }])
             .unwrap_or_default(),
-        SessionUpdate::ToolCall(t) => vec![AcpEvent::ToolCall {
-            id: t.tool_call_id.0.to_string(),
-            title: t.title.clone(),
-            tool_kind: debug_name(&t.kind),
-            status: debug_name(&t.status),
-        }],
-        SessionUpdate::ToolCallUpdate(u) => vec![AcpEvent::ToolUpdate {
-            id: u.tool_call_id.0.to_string(),
-            status: u.fields.status.as_ref().map(debug_name).unwrap_or_default(),
-            output: u
+        SessionUpdate::ToolCall(t) => {
+            let text = content_text(&t.content);
+            vec![AcpEvent::ToolCall {
+                id: t.tool_call_id.0.to_string(),
+                title: t.title.clone(),
+                name: t.name.clone(),
+                tool_kind: debug_name(&t.kind),
+                status: debug_name(&t.status),
+                input: t.raw_input.clone(),
+                output: if text.is_empty() {
+                    raw_text(t.raw_output.as_ref())
+                } else {
+                    text
+                },
+                locations: locations_text(&t.locations),
+            }]
+        }
+        SessionUpdate::ToolCallUpdate(u) => {
+            let text = u
                 .fields
                 .content
-                .as_ref()
-                .map(|cs| {
-                    cs.iter()
-                        .filter_map(|c| match c {
-                            agent_client_protocol::v1::schema::ToolCallContent::Content(x) => {
-                                text_of(&x.content)
-                            }
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
-                .unwrap_or_default(),
-        }],
+                .as_deref()
+                .map(content_text)
+                .unwrap_or_default();
+            vec![AcpEvent::ToolUpdate {
+                id: u.tool_call_id.0.to_string(),
+                status: u.fields.status.as_ref().map(debug_name).unwrap_or_default(),
+                output: if text.is_empty() {
+                    raw_text(u.fields.raw_output.as_ref())
+                } else {
+                    text
+                },
+                input: u.fields.raw_input.clone(),
+                locations: u
+                    .fields
+                    .locations
+                    .as_deref()
+                    .map(locations_text)
+                    .unwrap_or_default(),
+            }]
+        }
         SessionUpdate::Plan(p) => vec![AcpEvent::Plan {
             entries: p.entries.iter().map(|e| e.content.clone()).collect(),
         }],
@@ -350,7 +405,9 @@ pub const TURN_TIMEOUT: Duration = Duration::from_secs(600);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::v1::schema::ContentChunk;
+    use agent_client_protocol::v1::schema::{
+        Content, ContentChunk, ToolCall, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
+    };
 
     #[test]
     fn text_and_reasoning_chunks_become_separate_events() {
@@ -367,5 +424,48 @@ mod tests {
                 text: "thinking".into()
             }]
         );
+    }
+
+    #[test]
+    fn tool_calls_keep_name_arguments_output_and_locations() {
+        let mut call = ToolCall::new("c1", "Reading src/main.rs");
+        call.name = Some("mcp__files__read_file".into());
+        call.raw_input = Some(serde_json::json!({ "path": "src/main.rs" }));
+        call.content = vec![ToolCallContent::Content(Content::new(ContentBlock::Text(
+            TextContent::new("first line"),
+        )))];
+        call.locations = vec![
+            serde_json::from_value(serde_json::json!({ "path": "src/main.rs", "line": 3 }))
+                .unwrap(),
+        ];
+        match &events_for(&SessionUpdate::ToolCall(call))[0] {
+            AcpEvent::ToolCall {
+                name,
+                input,
+                output,
+                locations,
+                ..
+            } => {
+                assert_eq!(name.as_deref(), Some("mcp__files__read_file"));
+                assert_eq!(input.as_ref().unwrap()["path"], "src/main.rs");
+                assert_eq!(output, "first line");
+                assert_eq!(locations, &vec!["src/main.rs:3".to_string()]);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+
+        let mut fields = ToolCallUpdateFields::default();
+        fields.status = Some(ToolCallStatus::Completed);
+        fields.raw_output = Some(serde_json::json!("done"));
+        let update = ToolCallUpdate::new("c1", fields);
+        match &events_for(&SessionUpdate::ToolCallUpdate(update))[0] {
+            AcpEvent::ToolUpdate {
+                status, output, ..
+            } => {
+                assert_eq!(status, "completed");
+                assert_eq!(output, "done");
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
     }
 }

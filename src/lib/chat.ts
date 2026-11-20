@@ -27,7 +27,7 @@ export interface ToolItem {
   output: string | null;
   isError: boolean;
   durationMs: number | null;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "unknown";
   dbId?: number;
 }
 
@@ -73,6 +73,10 @@ function closeStreaming(items: ChatItem[]): ChatItem[] {
   return items;
 }
 
+function closeTurn(items: ChatItem[]): ChatItem[] {
+  return closeStreaming(items).map((item) => item.kind === "tool" && item.status === "running" ? { ...item, status: "unknown" } : item);
+}
+
 /** Fold one streamed event into the transcript. */
 export function applyEvent(items: ChatItem[], e: ChatEvent): ChatItem[] {
   const last = items[items.length - 1];
@@ -113,12 +117,13 @@ export function applyEvent(items: ChatItem[], e: ChatEvent): ChatItem[] {
           break;
         }
       }
-      const patch = {
+      const patch: Partial<ToolItem> & Pick<ToolItem, "output" | "isError" | "durationMs" | "status"> = {
         output: e.output ?? "",
         isError: Boolean(e.is_error),
         durationMs: e.duration_ms ?? null,
         status: (e.is_error ? "error" : "done") as ToolItem["status"],
       };
+      if (e.input !== undefined && e.input !== null) patch.input = prettyJson(e.input);
       if (idx < 0) {
         return [
           ...items,
@@ -130,9 +135,9 @@ export function applyEvent(items: ChatItem[], e: ChatEvent): ChatItem[] {
       return next;
     }
     case "error":
-      return [...closeStreaming(items), { kind: "notice", id: newId("n"), level: "error", text: e.text ?? "The agent reported an error" }];
+      return [...closeTurn(items), { kind: "notice", id: newId("n"), level: "error", text: e.text ?? "The agent reported an error" }];
     case "complete": {
-      let next = closeStreaming(items).map((it) => (it.kind === "tool" && it.status === "running" ? { ...it, status: "done" as const } : it));
+      let next = closeTurn(items);
       const lastUser = next.map((i) => i.kind).lastIndexOf("user");
       const answered = next.slice(lastUser + 1).some((i) => i.kind === "assistant" && i.text.trim());
       if (!answered && e.text?.trim() && !e.stopped) {
@@ -168,7 +173,7 @@ export function fromHistory(messages: StoredMessage[]): ChatItem[] {
           output: null,
           isError: false,
           durationMs: null,
-          status: "done",
+          status: "unknown",
           dbId: m.id,
         });
       }
@@ -176,7 +181,7 @@ export function fromHistory(messages: StoredMessage[]): ChatItem[] {
       const idx = m.tool_call_id ? byCall.get(m.tool_call_id) : undefined;
       if (idx !== undefined) {
         const t = items[idx] as ToolItem;
-        items[idx] = { ...t, output: m.content };
+        items[idx] = { ...t, output: m.content, status: "done" };
       }
     }
   }
@@ -203,6 +208,81 @@ export function forkPoint(items: ChatItem[], index: number, stored: StoredMessag
   const to = userAt[turn] ?? stored.length;
   for (let i = to - 1; i >= from; i--) if (stored[i].role !== "user") return stored[i].id;
   return null;
+}
+
+export interface SourceEvidence {
+  kind: "file" | "web";
+  value: string;
+  tool: ToolItem;
+}
+
+export interface AgentEvidence {
+  label: string;
+  task: string;
+  background: boolean;
+  tool: ToolItem;
+}
+
+export function chatEvidence(items: ChatItem[]) {
+  const tools = items.filter((item): item is ToolItem => item.kind === "tool");
+  const sources: SourceEvidence[] = [];
+  const agents: AgentEvidence[] = [];
+  for (const tool of tools) {
+    let input: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = JSON.parse(tool.input);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) input = parsed as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    let toolName = tool.name;
+    if (Array.isArray(input.calls) && input.calls.length === 1) {
+      const call = input.calls[0];
+      if (call && typeof call === "object" && !Array.isArray(call)
+        && typeof call.name === "string" && call.name.trim()
+        && call.arguments && typeof call.arguments === "object" && !Array.isArray(call.arguments)) {
+        const innerName = splitTool(call.name).name;
+        if (toolName === "tool_call" || toolName === innerName) {
+          toolName = innerName;
+          input = call.arguments;
+        }
+      }
+    }
+    const name = toolName.toLowerCase().replace(/[- ]/g, "_");
+    const fileRead = ["read", "read_file", "read_files", "file_read"].includes(name);
+    const webRead = ["webfetch", "web_fetch", "web_read", "fetch_url", "browse_url"].includes(name);
+    // ACP reports the files a call touched as `path` or `path:line`; only a read tool turns them
+    // into sources, so a shell command that lists a path does not claim to have read it.
+    const locations = fileRead && Array.isArray(input.locations)
+      ? input.locations.filter((value): value is string => typeof value === "string").map((value) => value.replace(/:\d+$/, ""))
+      : [];
+    const values = fileRead
+      ? [input.file_path, input.path, ...(Array.isArray(input.paths) ? input.paths : []), ...(Array.isArray(input.files) ? input.files : []), ...locations]
+      : webRead ? [input.url, ...(Array.isArray(input.urls) ? input.urls : [])] : [];
+    const seen = new Set<string>();
+    for (const value of values) {
+      if (typeof value !== "string" || !value.trim() || /[\r\n\0]/.test(value)) continue;
+      let source = value.trim();
+      if (webRead) {
+        try {
+          const url = new URL(source);
+          if (url.protocol !== "https:" && url.protocol !== "http:") continue;
+          source = url.origin + url.pathname;
+        } catch {
+          continue;
+        }
+      }
+      if (seen.has(source)) continue;
+      seen.add(source);
+      sources.push({ kind: fileRead ? "file" : "web", value: source, tool });
+    }
+    if (["agent", "task", "delegate_task", "spawn_agent", "delegate_to_subagent"].includes(name)) {
+      const label = [input.subagent_type, input.agent_name, input.agent, input.target_agent].find((value) => typeof value === "string" && value.trim());
+      const task = [input.description, input.title, input.task, input.prompt].find((value) => typeof value === "string" && value.trim());
+      agents.push({ label: typeof label === "string" ? label : "Delegated agent", task: typeof task === "string" ? task : tool.name, background: input.run_in_background === true, tool });
+    }
+  }
+  return { tools, sources, agents, running: tools.filter((tool) => tool.status === "running").length };
 }
 
 export function relativeTime(epochSeconds: number): string {

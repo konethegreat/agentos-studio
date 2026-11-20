@@ -5,10 +5,10 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
-use rusqlite::{Connection, OptionalExtension};
+use anyhow::{ensure, Context, Result};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
-const SCHEMA_VERSION: i64 = 12;
+pub(crate) const SCHEMA_VERSION: i64 = 12;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -332,6 +332,25 @@ pub fn open() -> Result<Connection> {
     open_at(&db_path())
 }
 
+/// Read an existing, current store without creating or migrating it.
+pub fn open_existing_read_only() -> Result<Connection> {
+    open_existing_read_only_at(&db_path())
+}
+
+pub fn open_existing_read_only_at(path: &Path) -> Result<Connection> {
+    let c = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| format!("opening existing store {} read-only", path.display()))?;
+    c.busy_timeout(Duration::from_secs(1))?;
+    let version: i64 = c
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .context("reading Studio store schema version")?;
+    ensure!(
+        version == SCHEMA_VERSION,
+        "unsupported Studio store schema version {version}; expected {SCHEMA_VERSION}"
+    );
+    Ok(c)
+}
+
 pub fn open_at(path: &Path) -> Result<Connection> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
@@ -430,6 +449,100 @@ pub fn test_conn() -> Connection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn existing_read_only_rejects_missing_stores_without_creating_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        for path in [
+            dir.path().join("studio.db"),
+            dir.path().join("missing").join("studio.db"),
+        ] {
+            assert!(open_existing_read_only_at(&path).is_err());
+            assert!(!path.exists());
+        }
+        assert!(!dir.path().join("missing").exists());
+    }
+
+    #[test]
+    fn existing_read_only_rejects_wrong_versions_without_migrating() {
+        let dir = tempfile::tempdir().unwrap();
+        for version in [-1, 0, SCHEMA_VERSION - 1, SCHEMA_VERSION + 1] {
+            let path = dir.path().join(format!("v{version}.db"));
+            let c = Connection::open(&path).unwrap();
+            c.pragma_update(None, "user_version", version).unwrap();
+            drop(c);
+            let before = std::fs::read(&path).unwrap();
+            assert!(open_existing_read_only_at(&path).is_err(), "v{version}");
+            assert_eq!(std::fs::read(&path).unwrap(), before, "v{version}");
+        }
+    }
+
+    #[test]
+    fn existing_read_only_rejects_empty_and_malformed_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("studio.db");
+        for contents in [b"".as_slice(), b"not a SQLite database".as_slice()] {
+            std::fs::write(&path, contents).unwrap();
+            assert!(open_existing_read_only_at(&path).is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), contents);
+        }
+    }
+
+    #[test]
+    fn existing_read_only_preserves_store_and_rejects_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("studio.db");
+        let writer = Connection::open(&path).unwrap();
+        migrate(&writer).unwrap();
+        kv_set(&writer, "fixture", "kept").unwrap();
+        drop(writer);
+        let before = std::fs::read(&path).unwrap();
+        let reader = open_existing_read_only_at(&path).unwrap();
+        assert_eq!(kv_get(&reader, "fixture").unwrap().as_deref(), Some("kept"));
+        let timeout: i64 = reader
+            .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(timeout, 1000);
+        let mode: String = reader
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(mode, "delete");
+        reader.pragma_update(None, "query_only", false).unwrap();
+        for sql in [
+            "INSERT INTO kv (key, value) VALUES ('new', 'value')",
+            "UPDATE kv SET value = 'changed'",
+            "DELETE FROM kv",
+            "CREATE TABLE unwanted (id INTEGER)",
+            "PRAGMA user_version = 0",
+        ] {
+            assert_eq!(
+                reader.execute_batch(sql).unwrap_err().sqlite_error_code(),
+                Some(rusqlite::ErrorCode::ReadOnly),
+                "{sql}"
+            );
+        }
+        drop(reader);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(!dir.path().join("studio.db-wal").exists());
+        assert!(!dir.path().join("studio.db-shm").exists());
+    }
+
+    #[test]
+    fn existing_read_only_observes_committed_wal_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("studio.db");
+        let writer = open_at(&path).unwrap();
+        writer.pragma_update(None, "wal_autocheckpoint", 0).unwrap();
+        let reader = open_existing_read_only_at(&path).unwrap();
+        kv_set(&writer, "live", "first").unwrap();
+        assert!(dir.path().join("studio.db-wal").metadata().unwrap().len() > 0);
+        assert_eq!(kv_get(&reader, "live").unwrap().as_deref(), Some("first"));
+        writer.execute_batch("BEGIN IMMEDIATE").unwrap();
+        kv_set(&writer, "live", "second").unwrap();
+        assert_eq!(kv_get(&reader, "live").unwrap().as_deref(), Some("first"));
+        writer.execute_batch("COMMIT").unwrap();
+        assert_eq!(kv_get(&reader, "live").unwrap().as_deref(), Some("second"));
+    }
 
     #[test]
     fn migrates_once_and_round_trips_kv() {

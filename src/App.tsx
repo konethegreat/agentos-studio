@@ -17,6 +17,7 @@ import {
   api,
   errorText,
   events,
+  type Notice,
   type Board,
   type BootReport,
   type BootStep,
@@ -188,7 +189,10 @@ function Studio() {
   const liveBoot = useRef(false);
   const boardTimer = useRef<number | undefined>(undefined);
 
-  const go = useCallback((target: View) => {
+  const [noticeTarget, setNoticeTarget] = useState<{ id: string; nonce: number } | null>(null);
+  const noticeNonce = useRef(0);
+  const go = useCallback((target: View, notice?: Notice) => {
+    setNoticeTarget(notice ? { id: notice.entity_id, nonce: ++noticeNonce.current } : null);
     // A link to a screen that does not exist must never leave a blank window: show Diagnostics.
     const v: View = isView(target) ? target : "diagnostics";
     setView(v);
@@ -467,10 +471,10 @@ function Studio() {
       <div className="flex h-full">
         <NavRail groups={railGroups} view={view as RailView} onGo={(v) => go(v as View)} />
         <main className="flex min-w-0 flex-1 flex-col">
-          <StatusBar hermes={hermes} stack={status} onOpenDiagnostics={() => go("diagnostics")} onRefresh={() => void loadHermes(true)} onGo={(v) => go(v as View)} />
+          <StatusBar hermes={hermes} stack={status} onOpenDiagnostics={() => go("diagnostics")} onRefresh={() => void loadHermes(true)} onGo={(v, notice) => go(v as View, notice)} />
           <UpdateBanner onOpen={() => go("updates")} />
           <div className="relative min-h-0 flex-1">
-            {view === "today" && <Today />}
+            {view === "today" && <Today target={noticeTarget} />}
             {visited.has("chat") && (
               <div className={view === "chat" ? "h-full" : "hidden"}>
                 <ChatStudio repos={repos} hermes={hermes} home={home} intent={chatIntent} onStatusChanged={() => void loadHermes()} onOpenControl={openControl} incoming={incoming} active={view === "chat"} />
@@ -492,7 +496,7 @@ function Studio() {
             )}
             {view === "mission" && (
               <div className="flex h-full flex-col">
-                <Missions repos={repos.map((r) => r.name)} />
+                <Missions repos={repos.map((r) => r.name)} target={noticeTarget} />
                 <CommandBar
                   repos={repos}
                   onDispatched={(id, hasWorker) => {
@@ -506,10 +510,10 @@ function Studio() {
               </div>
             )}
             {view === "control" && <ControlPlane tab={controlTab} onTab={setControlTab} onStatusChanged={() => void loadHermes()} />}
-            {view === "setup" && <SetupWizard status={status} settings={settings} setupLog={setupLog} activeJob={activeJob} onRefresh={loadStatus} onSettings={setSettings} />}
+            {view === "setup" && <SetupWizard target={noticeTarget} status={status} settings={settings} setupLog={setupLog} activeJob={activeJob} onRefresh={loadStatus} onSettings={setSettings} />}
             {view === "fleet" && <FleetManager repos={repos} scanning={scanning} onRescan={scan} />}
             {view === "agents" && <Agents />}
-            {view === "goals" && <Goals />}
+            {view === "goals" && <Goals target={noticeTarget} />}
             {view === "timeline" && <Timeline />}
             {view === "constitution" && <ConstitutionStudio memoryTick={memoryTick} />}
             {view === "updates" && <UpdateCenter />}

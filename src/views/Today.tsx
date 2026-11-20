@@ -16,6 +16,7 @@ import { Markdown } from "../components/Markdown";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card, Empty } from "../components/ui";
 import { AGENT_COLOR, AGENT_LABEL, relativeTime } from "../lib/format";
+import { useRecordTarget, type RecordTarget } from "../lib/nav";
 
 const GOAL_STATUS: Record<string, string> = {
   planning: "bg-slate-500/10 text-slate-300 ring-slate-500/25",
@@ -73,8 +74,10 @@ function deadlineText(e: Escalation): string {
  * escalations, then goals whose plan needs approval), then goals in progress, the agents working
  * now, metered spend and the last digest.
  */
-export function Today() {
+export function Today({ target = null }: { target?: RecordTarget | null }) {
   const toast = useToast();
+  const source = useRecordTarget(target, api.escalationDetail);
+  const refreshSource = source.refresh;
   const [rows, setRows] = useState<GoalDetail[] | null>(null);
   const [asks, setAsks] = useState<Escalation[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
@@ -88,6 +91,7 @@ export function Today() {
   const [updatedAt, setUpdatedAt] = useState(0);
 
   const load = useCallback(async () => {
+    refreshSource();
     try {
       const [g, e, m, w, p, d, s, l, fd] = await Promise.all([
         api.goals(),
@@ -114,7 +118,7 @@ export function Today() {
       toast("error", errorText(e));
       setRows((r) => r ?? []);
     }
-  }, [toast]);
+  }, [toast, refreshSource]);
 
   useEffect(() => {
     void load();
@@ -197,6 +201,21 @@ export function Today() {
           </Button>
         </div>
       </div>
+
+      {target && (
+        <div ref={source.ref} tabIndex={-1} className="mx-5 mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-small outline-none focus:ring-2 focus:ring-emerald-500/40">
+          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-label text-slate-400">{target.id}</span><span className="text-label text-slate-500">Opened from a notification</span></div>
+          {source.loading ? <p role="status">Loading question...</p> : source.error ? (
+            <div role="alert"><p>Could not load this question: {source.error}</p><Button size="sm" variant="ghost" onClick={source.refresh}>Retry</Button></div>
+          ) : source.record ? (
+            <>
+              <p className="mt-2 whitespace-pre-wrap break-words text-slate-200">{source.record.question}</p>
+              <p className="mt-1 text-label text-slate-500">{source.record.status}{source.record.answer ? `: ${source.record.answer}` : ""}</p>
+              {source.record.status === "open" && <div className="mt-3 flex flex-wrap gap-2">{source.record.options.map((option) => <Button key={option} size="sm" variant={option === source.record?.safe_answer ? "secondary" : "primary"} busy={busy === source.record?.id} onClick={() => void reply(source.record!, option)}>{option}</Button>)}</div>}
+            </>
+          ) : <p>This question no longer exists.</p>}
+        </div>
+      )}
 
       {pause?.paused && (
         <Card className="mx-5 mt-4 border-orange-500/30 p-3">

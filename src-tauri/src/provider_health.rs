@@ -80,6 +80,9 @@ pub struct Health {
     pub plugin_enabled: Option<bool>,
     /// ok, signed_out, plugin_disabled, rate_limited, failing, not_set_up
     pub state: String,
+    /// When the current state began, so one occurrence of a lasting condition stays one notice.
+    #[serde(default)]
+    pub since: Option<i64>,
     pub detail: String,
     pub last_failure: Option<Failure>,
     /// A fix the Connections card offers: (action id, button label).
@@ -325,6 +328,7 @@ pub fn judge(
         signed_in,
         plugin_enabled,
         state: state.into(),
+        since: None,
         detail,
         last_failure: recent,
         fix: fix.map(|(a, b)| (a.into(), b.into())),
@@ -792,10 +796,20 @@ pub fn last_in(c: &rusqlite::Connection) -> Option<Report> {
 /// whose state changed into a problem), for Windows notifications.
 pub fn record_in(c: &rusqlite::Connection, report: &Report) -> Vec<Health> {
     let before = last_in(c);
+    let mut stored = report.clone();
+    for h in &mut stored.providers {
+        let prior = before
+            .as_ref()
+            .and_then(|b| b.providers.iter().find(|p| p.id == h.id));
+        h.since = match prior {
+            Some(p) if p.state == h.state => p.since.or(Some(report.checked_at)),
+            _ => Some(report.checked_at),
+        };
+    }
     let _ = crate::store::kv_set(
         c,
         HEALTH_KEY,
-        &serde_json::to_string(report).unwrap_or_default(),
+        &serde_json::to_string(&stored).unwrap_or_default(),
     );
     report
         .problems()
@@ -1105,6 +1119,7 @@ mod tests {
             signed_in: Some(true),
             plugin_enabled: Some(true),
             state: "failing".into(),
+            since: None,
             detail: "canary: no reply".into(),
             last_failure: None,
             fix: None,

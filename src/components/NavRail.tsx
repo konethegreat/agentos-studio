@@ -95,7 +95,7 @@ export function NavRail({
             <div key={g.id}>
               <button
                 type="button"
-                onClick={() => onGo(g.defaultView)}
+                onClick={() => onGo(g.badge && g.badgeTab ? g.badgeTab : g.defaultView)}
                 aria-label={g.badge ? `${g.label}, ${g.badge} ${g.badgeLabel ?? "new"}` : g.label}
                 title={`${g.label} (${g.tabs.map((t) => t.label).join(", ")})${
                   g.badge ? `\n${g.badge} ${g.badgeLabel ?? "new"}` : ""

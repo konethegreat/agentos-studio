@@ -79,8 +79,9 @@ fn comp(
     }
 }
 
-/// Tools the native hub must list in its self-test; kept in step with `mcp_stdio::tool_definitions`.
-pub const HUB_TOOLS: usize = 13;
+/// Full supported catalog size, kept in step with `mcp_stdio::tool_definitions` for parity tests.
+/// A healthy self-test may list fewer tools, including none, under the caller's policies.
+pub const HUB_TOOLS: usize = 19;
 
 fn optional(mut c: Component) -> Component {
     c.optional = true;
@@ -209,44 +210,93 @@ fn path_missing() -> Vec<PathBuf> {
         .collect()
 }
 
-/// Send `initialize` + `tools/list` to this binary in `--mcp-stdio` mode and count tools.
+/// Check this binary's MCP handshake and caller-visible catalog within 30 seconds.
+/// Inherit the configured identity without provisioning a token or calling any tools.
 pub fn bus_selftest(vault: &Path) -> Result<usize> {
-    let mut cmd = Command::new(studio_exe());
-    cmd.args(["--mcp-stdio", "--vault"])
-        .arg(vault)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(procs::CREATE_NO_WINDOW);
+    let input = concat!(
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"agentos-studio-selftest","version":"1"}}}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+        "\n",
+    );
+    let (code, stdout, _) = procs::run_with_timeout(
+        &studio_exe().to_string_lossy(),
+        &["--mcp-stdio", "--vault", &vault.to_string_lossy()],
+        Some(input),
+        None,
+        std::time::Duration::from_secs(30),
+    )
+    .context("Hub self-test process failed")?;
+    if code != Some(0) {
+        bail!("Hub self-test process did not exit successfully");
     }
-    let mut child = cmd.spawn().context("starting --mcp-stdio")?;
-    {
-        let stdin = child.stdin.as_mut().ok_or_else(|| anyhow!("no stdin"))?;
-        writeln!(
-            stdin,
-            r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"2025-06-18","capabilities":{{}},"clientInfo":{{"name":"agentos-studio-selftest","version":"1"}}}}}}"#
-        )?;
-        writeln!(
-            stdin,
-            r#"{{"jsonrpc":"2.0","method":"notifications/initialized"}}"#
-        )?;
-        writeln!(stdin, r#"{{"jsonrpc":"2.0","id":2,"method":"tools/list"}}"#)?;
+    parse_bus_selftest(&stdout)
+}
+
+fn parse_bus_selftest(text: &str) -> Result<usize> {
+    let mut replies = [None, None];
+    for line in text.lines() {
+        let reply: Value = serde_json::from_str(line)
+            .map_err(|_| anyhow!("Hub self-test returned malformed JSON"))?;
+        if reply["jsonrpc"] != "2.0"
+            || reply.get("error").is_some()
+            || reply.get("method").is_some()
+            || !reply["result"].is_object()
+        {
+            bail!("Hub self-test expected successful JSON-RPC 2.0 replies");
+        }
+        let index = match reply["id"].as_u64() {
+            Some(1) => 0,
+            Some(2) => 1,
+            _ => bail!("Hub self-test received an unexpected reply ID"),
+        };
+        if replies[index].replace(reply).is_some() {
+            bail!("Hub self-test received a duplicate reply");
+        }
     }
-    drop(child.stdin.take());
-    let out = child.wait_with_output()?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let list: Value = text
-        .lines()
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .find(|v| v["id"] == 2)
-        .ok_or_else(|| anyhow!("no tools/list reply"))?;
-    Ok(list["result"]["tools"]
+    let init = replies[0]
+        .as_ref()
+        .ok_or_else(|| anyhow!("Hub self-test received no initialize reply"))?;
+    let init = &init["result"];
+    if init["serverInfo"]["name"] != crate::mcp_stdio::SERVER_NAME
+        || init["serverInfo"]["version"] != env!("CARGO_PKG_VERSION")
+        || init["protocolVersion"] != "2025-06-18"
+        || !init["capabilities"]["tools"].is_object()
+        || init["capabilities"]["tools"]
+            .get("listChanged")
+            .is_some_and(|value| !value.is_boolean())
+    {
+        bail!("Hub self-test received invalid server identity, protocol or tools capability");
+    }
+    let list = replies[1]
+        .as_ref()
+        .ok_or_else(|| anyhow!("Hub self-test received no tools/list reply"))?;
+    let tools = list["result"]["tools"]
         .as_array()
-        .map(Vec::len)
-        .unwrap_or(0))
+        .ok_or_else(|| anyhow!("Hub tools/list reply has no tools array"))?;
+    let definitions = crate::mcp_stdio::tool_definitions();
+    let supported = definitions
+        .as_array()
+        .ok_or_else(|| anyhow!("Hub supported tool definitions are invalid"))?;
+    if tools.len() > supported.len() {
+        bail!("Hub tools/list exceeds the supported catalog size");
+    }
+    let mut seen = std::collections::HashSet::new();
+    for tool in tools {
+        let name = tool["name"]
+            .as_str()
+            .filter(|name| !name.trim().is_empty())
+            .ok_or_else(|| anyhow!("Hub tools/list contains an invalid tool name"))?;
+        if !supported.iter().any(|known| known["name"] == name) || !seen.insert(name) {
+            bail!("Hub tools/list contains an unknown or duplicate tool");
+        }
+        if !tool["inputSchema"].is_object() || tool["inputSchema"]["type"] != "object" {
+            bail!("Hub tools/list contains an invalid object input schema");
+        }
+    }
+    Ok(tools.len())
 }
 
 pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
@@ -387,20 +437,12 @@ pub fn check_full_stack_status(vault: &Vault) -> StackStatus {
         }),
         std::thread::spawn(move || {
             vec![match bus_selftest(&vault_path) {
-                Ok(n) if n == HUB_TOOLS => comp(
-                    "bus-selftest",
-                    "Native MCP server self-test",
-                    5,
-                    true,
-                    format!("initialize + tools/list returned all {HUB_TOOLS} tools"),
-                    "Run again",
-                ),
                 Ok(n) => comp(
                     "bus-selftest",
                     "Native MCP server self-test",
                     5,
-                    false,
-                    format!("expected {HUB_TOOLS} tools, got {n}"),
+                    true,
+                    format!("initialize + tools/list: {n} tools available to this caller"),
                     "Run again",
                 ),
                 Err(e) => comp(
@@ -903,8 +945,8 @@ fn run_component(job: &Job, component: &str, vault: &Vault) -> Result<bool> {
         }
         "bus-selftest" => {
             let n = bus_selftest(&v)?;
-            job.emit("out", &format!("tools/list returned {n} tools"));
-            Ok(n == HUB_TOOLS)
+            job.emit("out", &format!("{n} tools available to this caller"));
+            Ok(true)
         }
         "mcp-hermes" => register_hub(job, "hermes", &v),
         "mcp-claude" => register_hub(job, "claude-code", &v),
@@ -1250,6 +1292,178 @@ pub fn install_or_repair_component(app: AppHandle, vault: Vault, component: Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn selftest_replies(tools: Value) -> [Value; 2] {
+        [
+            json!({
+                "jsonrpc": "2.0", "id": 1,
+                "result": {
+                    "protocolVersion": "2025-06-18",
+                    "serverInfo": {"name": "AgentOS-Hub", "version": env!("CARGO_PKG_VERSION")},
+                    "capabilities": {"tools": {"listChanged": false}}
+                }
+            }),
+            json!({"jsonrpc": "2.0", "id": 2, "result": {"tools": tools}}),
+        ]
+    }
+
+    fn selftest_text(replies: &[Value]) -> String {
+        replies.iter().map(|reply| format!("{reply}\n")).collect()
+    }
+
+    #[test]
+    fn selftest_accepts_full_supported_catalog() {
+        let tools = crate::mcp_stdio::tool_definitions();
+        assert_eq!(tools.as_array().unwrap().len(), HUB_TOOLS);
+        assert_eq!(
+            parse_bus_selftest(&selftest_text(&selftest_replies(tools))).unwrap(),
+            19
+        );
+    }
+
+    #[test]
+    fn selftest_accepts_filtered_catalogs_including_empty() {
+        let all = crate::mcp_stdio::tool_definitions();
+        for count in [0, 1, 13] {
+            let tools = json!(&all.as_array().unwrap()[..count]);
+            let mut replies = selftest_replies(tools);
+            // Match response IDs, not line positions.
+            replies.reverse();
+            let text = selftest_text(&replies).replace('\n', "\r\n");
+            assert_eq!(parse_bus_selftest(&text).unwrap(), count);
+        }
+    }
+
+    #[test]
+    fn selftest_rejects_malformed_stdout_without_echoing_it() {
+        let valid = selftest_text(&selftest_replies(json!([])));
+        for malformed in ["private-token", "{", "null", "[]", "{}"] {
+            let error = parse_bus_selftest(&format!("{malformed}\n{valid}"))
+                .expect_err("malformed stdout must not be skipped");
+            assert!(!format!("{error:#}").contains("private-token"));
+        }
+    }
+
+    #[test]
+    fn selftest_rejects_missing_duplicate_and_unexpected_replies() {
+        let [init, list] = selftest_replies(json!([]));
+        for replies in [
+            vec![],
+            vec![init.clone()],
+            vec![list.clone()],
+            vec![init.clone(), init.clone(), list.clone()],
+            vec![init.clone(), list.clone(), list.clone()],
+            vec![init, list, json!({"jsonrpc":"2.0", "id":3, "result":{}})],
+        ] {
+            assert!(parse_bus_selftest(&selftest_text(&replies)).is_err());
+        }
+    }
+
+    #[test]
+    fn selftest_rejects_invalid_rpc_envelopes_and_errors() {
+        for reply_index in 0..2 {
+            for (key, value) in [
+                ("jsonrpc", json!("1.0")),
+                ("id", json!(null)),
+                ("id", json!("2")),
+                ("result", json!(null)),
+                ("result", json!([])),
+                ("error", json!({"code":-32603,"message":"private-token"})),
+                ("error", json!(null)),
+                ("method", json!("tools/list")),
+            ] {
+                let mut replies = selftest_replies(json!([]));
+                replies[reply_index][key] = value;
+                let error = parse_bus_selftest(&selftest_text(&replies))
+                    .expect_err("invalid response envelope must fail");
+                assert!(!format!("{error:#}").contains("private-token"));
+            }
+            for key in ["jsonrpc", "id", "result"] {
+                let mut replies = selftest_replies(json!([]));
+                replies[reply_index].as_object_mut().unwrap().remove(key);
+                assert!(parse_bus_selftest(&selftest_text(&replies)).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn selftest_requires_native_initialization_and_tools_capability() {
+        for (pointer, values) in [
+            (
+                "/result/serverInfo/name",
+                vec![json!(null), json!(""), json!("other")],
+            ),
+            (
+                "/result/serverInfo/version",
+                vec![json!(null), json!(""), json!("different-version")],
+            ),
+            (
+                "/result/protocolVersion",
+                vec![json!(null), json!(""), json!("2024-11-05")],
+            ),
+            (
+                "/result/capabilities/tools",
+                vec![json!(null), json!(true), json!([])],
+            ),
+            (
+                "/result/capabilities/tools/listChanged",
+                vec![json!(null), json!("false")],
+            ),
+        ] {
+            for value in values {
+                let mut replies = selftest_replies(json!([]));
+                *replies[0].pointer_mut(pointer).unwrap() = value;
+                assert!(
+                    parse_bus_selftest(&selftest_text(&replies)).is_err(),
+                    "{pointer}"
+                );
+            }
+        }
+        for key in ["serverInfo", "protocolVersion", "capabilities"] {
+            let mut replies = selftest_replies(json!([]));
+            replies[0]["result"].as_object_mut().unwrap().remove(key);
+            assert!(parse_bus_selftest(&selftest_text(&replies)).is_err());
+        }
+    }
+
+    #[test]
+    fn selftest_rejects_missing_or_non_array_catalogs() {
+        for tools in [json!(null), json!({}), json!("tools")] {
+            let replies = selftest_replies(tools);
+            assert!(parse_bus_selftest(&selftest_text(&replies)).is_err());
+        }
+        let mut replies = selftest_replies(json!([]));
+        replies[1]["result"]
+            .as_object_mut()
+            .unwrap()
+            .remove("tools");
+        assert!(parse_bus_selftest(&selftest_text(&replies)).is_err());
+    }
+
+    #[test]
+    fn selftest_rejects_unknown_duplicate_or_malformed_tools() {
+        let valid = json!({"name":"recall", "inputSchema":{"type":"object"}});
+        for tool in [
+            json!(null),
+            json!({}),
+            json!({"name":"", "inputSchema":{"type":"object"}}),
+            json!({"name":" ", "inputSchema":{"type":"object"}}),
+            json!({"name":42, "inputSchema":{"type":"object"}}),
+            json!({"name":"unknown", "inputSchema":{"type":"object"}}),
+            json!({"name":"recall"}),
+            json!({"name":"recall", "inputSchema":null}),
+            json!({"name":"recall", "inputSchema":[]}),
+            json!({"name":"recall", "inputSchema":"object"}),
+            json!({"name":"recall", "inputSchema":{}}),
+            json!({"name":"recall", "inputSchema":{"type":"string"}}),
+        ] {
+            let replies = selftest_replies(json!([tool]));
+            assert!(parse_bus_selftest(&selftest_text(&replies)).is_err());
+        }
+        for tools in [json!([valid, valid]), json!(vec![valid; HUB_TOOLS + 1])] {
+            assert!(parse_bus_selftest(&selftest_text(&selftest_replies(tools))).is_err());
+        }
+    }
 
     #[test]
     fn a_missing_agent_is_optional_and_never_reddens_a_pillar() {

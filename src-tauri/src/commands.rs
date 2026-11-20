@@ -414,8 +414,8 @@ pub async fn notices_list() -> CmdResult<Vec<crate::notices::Notice>> {
 }
 
 #[tauri::command]
-pub async fn notices_read() -> CmdResult<()> {
-    blocking(|| crate::notices::mark_read(chrono::Utc::now().timestamp())).await
+pub async fn notices_read(ids: Vec<String>) -> CmdResult<()> {
+    blocking(move || crate::notices::mark_read(&ids, chrono::Utc::now().timestamp())).await
 }
 
 /// Claude Desktop, Cursor, VS Code, Windsurf and Codex: installed, and connected to the hub?
@@ -1115,6 +1115,11 @@ pub async fn set_router_auto(on: bool) -> CmdResult<()> {
 #[tauri::command]
 pub async fn list_missions(limit: Option<usize>) -> CmdResult<Vec<crate::missions::Mission>> {
     blocking(move || crate::missions::list(limit.unwrap_or(100))).await
+}
+
+#[tauri::command]
+pub async fn mission_detail(id: String) -> CmdResult<Option<crate::missions::Mission>> {
+    blocking(move || crate::missions::get(&id)).await
 }
 
 /// Create the bus task that does the work, then mark the mission running.
@@ -2217,6 +2222,11 @@ pub async fn escalations_list(
     limit: Option<usize>,
 ) -> CmdResult<Vec<crate::escalation::Escalation>> {
     blocking(move || crate::escalation::list(limit.unwrap_or(100))).await
+}
+
+#[tauri::command]
+pub async fn escalation_detail(id: String) -> CmdResult<Option<crate::escalation::Escalation>> {
+    blocking(move || crate::escalation::get(&id)).await
 }
 
 /// Answer an escalation from Studio. The scheduler applies it on its next pass; this runs one

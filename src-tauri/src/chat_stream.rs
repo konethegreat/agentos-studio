@@ -891,24 +891,47 @@ pub fn acp_chat_events(
         A::Text { text } => vec![ChatEvent::text("token", text)],
         A::Thought { text } => vec![ChatEvent::text("thinking", text)],
         A::ToolCall {
-            id, title, status, ..
+            id,
+            title,
+            name,
+            status,
+            input,
+            output,
+            locations,
+            ..
         } => {
             clock.insert(id.clone(), Instant::now());
-            let (name, detail) = match title.split_once(": ") {
+            let (fallback, detail) = match title.split_once(": ") {
                 Some((n, d)) if !n.contains(' ') => (n.to_string(), Some(d.to_string())),
                 _ => (title.clone(), None),
             };
-            let mut out = vec![tool_start(
-                &id,
-                &name,
-                detail.map(|d| serde_json::json!({ "detail": d })),
-            )];
+            let full_name = name.filter(|n| !n.trim().is_empty()).unwrap_or(fallback);
+            let mut payload = match input {
+                Some(Value::Object(map)) => Value::Object(map),
+                Some(other) => serde_json::json!({ "input": other }),
+                None => Value::Object(Default::default()),
+            };
+            if let Some(map) = payload.as_object_mut() {
+                if !locations.is_empty() {
+                    map.entry("locations")
+                        .or_insert_with(|| serde_json::json!(locations));
+                }
+                if let Some(d) = detail {
+                    map.entry("detail").or_insert(Value::String(d));
+                }
+            }
+            let input = if payload.as_object().is_some_and(|m| m.is_empty()) {
+                None
+            } else {
+                Some(payload)
+            };
+            let mut out = vec![tool_start(&id, &full_name, input)];
             if status == "completed" || status == "failed" {
                 out.push(ChatEvent {
                     kind: "tool_result".into(),
                     tool_id: Some(id),
                     is_error: Some(status == "failed"),
-                    output: Some(String::new()),
+                    output: Some(output),
                     ..Default::default()
                 });
             }
@@ -917,15 +940,34 @@ pub fn acp_chat_events(
         // Only close cards that were started. Hermes also closes each permission request's own
         // bubble (`perm-check-N`, never started as a tool call); the approval dialog already shows
         // that outcome, so those updates would only draw an empty "tool" card.
-        A::ToolUpdate { id, status, output }
-            if (status == "completed" || status == "failed") && clock.contains_key(&id) =>
+        A::ToolUpdate {
+            id,
+            status,
+            output,
+            input,
+            locations,
+        } if (status == "completed" || status == "failed") && clock.contains_key(&id) =>
         {
+            let input = input.map(|value| {
+                let mut payload = match value {
+                    Value::Object(map) => Value::Object(map),
+                    other => serde_json::json!({ "input": other }),
+                };
+                if !locations.is_empty() {
+                    if let Some(map) = payload.as_object_mut() {
+                        map.entry("locations")
+                            .or_insert_with(|| serde_json::json!(locations));
+                    }
+                }
+                payload
+            });
             vec![ChatEvent {
                 kind: "tool_result".into(),
                 duration_ms: clock.get(&id).map(|t| t.elapsed().as_millis() as u64),
                 tool_id: Some(id),
                 is_error: Some(status == "failed"),
                 output: Some(output),
+                input,
                 ..Default::default()
             }]
         }
@@ -1393,8 +1435,12 @@ mod tests {
             AcpEvent::ToolCall {
                 id: "t1".into(),
                 title: "terminal: rm -rf x".into(),
+                name: None,
                 tool_kind: "execute".into(),
                 status: "pending".into(),
+                input: None,
+                output: String::new(),
+                locations: Vec::new(),
             },
             &mut clock,
         );
@@ -1406,8 +1452,12 @@ mod tests {
             AcpEvent::ToolCall {
                 id: "t2".into(),
                 title: "mcp__agentos_hub__recall".into(),
+                name: None,
                 tool_kind: "other".into(),
                 status: "pending".into(),
+                input: None,
+                output: String::new(),
+                locations: Vec::new(),
             },
             &mut clock,
         );
@@ -1420,6 +1470,8 @@ mod tests {
                 id: "t1".into(),
                 status: "failed".into(),
                 output: "denied".into(),
+                input: None,
+                locations: Vec::new(),
             },
             &mut clock,
         );
@@ -1432,7 +1484,9 @@ mod tests {
             AcpEvent::ToolUpdate {
                 id: "t1".into(),
                 status: "in_progress".into(),
-                output: String::new()
+                output: String::new(),
+                input: None,
+                locations: Vec::new(),
             },
             &mut clock
         )
@@ -1458,6 +1512,74 @@ mod tests {
             ("permission", Some("r1"))
         );
         assert_eq!(p[0].input.as_ref().unwrap()[0]["kind"], "reject_once");
+    }
+
+    #[test]
+    fn an_acp_read_call_keeps_its_path_arguments_and_locations() {
+        use crate::acp::AcpEvent;
+        let mut clock = HashMap::new();
+        let start = acp_chat_events(
+            AcpEvent::ToolCall {
+                id: "t1".into(),
+                title: "Reading src/lib.rs".into(),
+                name: Some("mcp__files__read_file".into()),
+                tool_kind: "read".into(),
+                status: "pending".into(),
+                input: Some(serde_json::json!({ "path": "src/lib.rs" })),
+                output: String::new(),
+                locations: vec!["src/lib.rs:12".into()],
+            },
+            &mut clock,
+        );
+        assert_eq!(
+            (start[0].server.as_deref(), start[0].tool_name.as_deref()),
+            (Some("files"), Some("read_file"))
+        );
+        let input = start[0].input.as_ref().unwrap();
+        assert_eq!(input["path"], "src/lib.rs");
+        assert_eq!(input["locations"][0], "src/lib.rs:12");
+
+        let done = acp_chat_events(
+            AcpEvent::ToolUpdate {
+                id: "t1".into(),
+                status: "completed".into(),
+                output: "fn main() {}".into(),
+                input: None,
+                locations: Vec::new(),
+            },
+            &mut clock,
+        );
+        assert_eq!(done[0].kind, "tool_result");
+        assert_eq!(done[0].output.as_deref(), Some("fn main() {}"));
+        assert_eq!(done[0].is_error, Some(false));
+    }
+
+    #[test]
+    fn an_acp_write_call_closes_itself_when_it_arrives_completed() {
+        use crate::acp::AcpEvent;
+        let mut clock = HashMap::new();
+        let out = acp_chat_events(
+            AcpEvent::ToolCall {
+                id: "t9".into(),
+                title: "Writing notes.md".into(),
+                name: Some("mcp__files__write_file".into()),
+                tool_kind: "edit".into(),
+                status: "completed".into(),
+                input: Some(serde_json::json!({ "path": "notes.md" })),
+                output: "wrote 12 bytes".into(),
+                locations: Vec::new(),
+            },
+            &mut clock,
+        );
+        assert_eq!(out.len(), 2);
+        assert_eq!(
+            (out[0].kind.as_str(), out[0].tool_id.as_deref()),
+            ("tool_start", Some("t9"))
+        );
+        assert_eq!(
+            (out[1].kind.as_str(), out[1].output.as_deref()),
+            ("tool_result", Some("wrote 12 bytes"))
+        );
     }
 
     #[test]
@@ -1769,8 +1891,12 @@ mod tests {
             A::ToolCall {
                 id: "tc-1".into(),
                 title: "terminal: rm -rf x".into(),
+                name: None,
                 tool_kind: "execute".into(),
                 status: "pending".into(),
+                input: None,
+                output: String::new(),
+                locations: Vec::new(),
             },
             &mut clock,
         );
@@ -1780,6 +1906,8 @@ mod tests {
                 id: "perm-check-1".into(),
                 status: "failed".into(),
                 output: String::new(),
+                input: None,
+                locations: Vec::new(),
             },
             &mut clock,
         );
@@ -1789,6 +1917,8 @@ mod tests {
                 id: "tc-1".into(),
                 status: "failed".into(),
                 output: "denied".into(),
+                input: None,
+                locations: Vec::new(),
             },
             &mut clock,
         );

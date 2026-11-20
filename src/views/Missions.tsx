@@ -5,6 +5,7 @@ import { api, errorText, type AutomationStatus, type BudgetStatus, type Installe
 import { useToast } from "../components/Toasts";
 import { Guide, useReportGuides } from "../components/Guides";
 import { missionGuides } from "../lib/guides";
+import { useRecordTarget, type RecordTarget } from "../lib/nav";
 
 const STATUS_STYLE: Record<string, string> = {
   queued: "bg-slate-500/10 text-slate-300 ring-slate-500/25",
@@ -22,9 +23,11 @@ const ROLES = ["planner", "implementer", "reviewer", "gatekeeper", "memory"];
  * Missions are the unit that may authorise a merge. A chat never can: a second agent has to
  * approve, and the gate refuses when the reviewer is the implementer.
  */
-export function Missions({ repos }: { repos: string[] }) {
+export function Missions({ repos, target = null }: { repos: string[]; target?: RecordTarget | null }) {
   const toast = useToast();
+  const source = useRecordTarget(target, api.missionDetail);
   const [rows, setRows] = useState<Mission[]>([]);
+  const listed = source.record ? [source.record, ...rows.filter((row) => row.id !== source.record?.id)] : rows;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [auto, setAuto] = useState<AutomationStatus | null>(null);
@@ -58,6 +61,7 @@ export function Missions({ repos }: { repos: string[] }) {
   const [routerAuto, setRouterAuto] = useState(false);
   const [authors, setAuthors] = useState<Record<string, string>>({});
   async function load() {
+    source.refresh();
     try {
       const list = await api.missions();
       setRows(list);
@@ -600,10 +604,29 @@ export function Missions({ repos }: { repos: string[] }) {
         </div>
       )}
 
-      {rows.length > 0 && (
+      {target && (
+        <div ref={source.ref} tabIndex={-1} className="mx-4 my-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-small outline-none focus:ring-2 focus:ring-emerald-500/40">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-label text-slate-400">{target.id}</span>
+            <span className="text-label text-slate-500">Opened from a notification</span>
+          </div>
+          {source.loading ? <p role="status">Loading mission...</p> : source.error ? (
+            <div role="alert"><p>Could not load this mission: {source.error}</p><button className="mt-2 underline" onClick={source.refresh}>Retry</button></div>
+          ) : source.record ? (
+            <>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-0.5 text-label ${STATUS_STYLE[source.record.status]}`}>{source.record.status}</span><span>{source.record.repo}</span></div>
+              <p className="mt-2 whitespace-pre-wrap break-words text-slate-200">{source.record.goal}</p>
+              {source.record.review_note && <p className="mt-2 whitespace-pre-wrap break-words text-slate-400">{source.record.review_note}</p>}
+              <p className="mt-2 text-label text-slate-500">Assigned to {source.record.agent}. Current record, not the notification snapshot.</p>
+            </>
+          ) : <p>This mission no longer exists.</p>}
+        </div>
+      )}
+
+      {listed.length > 0 && (
         <ul className="max-h-56 overflow-y-auto border-t border-line/60">
-          {rows.map((m) => (
-            <li key={m.id} className="flex items-center gap-2 px-4 py-1.5 text-small">
+          {listed.map((m) => (
+            <li key={m.id} className={`flex flex-wrap items-center gap-2 px-4 py-1.5 text-small ${m.id === target?.id ? "bg-emerald-500/5" : ""}`}>
               <span className="font-mono text-caption text-slate-500">{m.id}</span>
               <span className={`rounded-full px-1.5 py-0.5 text-2xs font-medium ring-1 ${STATUS_STYLE[m.status] ?? STATUS_STYLE.queued}`}>
                 {m.status}

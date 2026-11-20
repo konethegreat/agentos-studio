@@ -1,5 +1,5 @@
 import { Bell, BellOff, CircleAlert, CircleCheck, CircleHelp, CircleX, Eye } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { api, type Notice } from "../lib/api";
 
 const ICON: Record<string, ReactNode> = {
@@ -21,72 +21,134 @@ function ago(at: number): string {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-/**
- * The notification centre: one bell with everything that needs attention, newest first, each
- * item opening the screen that owns it. Opening the panel marks everything read.
- */
-export function NoticeBell({ onGo }: { onGo: (view: string) => void }) {
-  const [items, setItems] = useState<Notice[]>([]);
+export function NoticeBell({ onGo }: { onGo: (view: string, notice: Notice) => void }) {
+  const [items, setItems] = useState<Notice[] | null>(null);
   const [open, setOpen] = useState(false);
-  const [osOn, setOsOn] = useState(true);
+  const [osOn, setOsOn] = useState<boolean | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [readError, setReadError] = useState(false);
+  const [prefError, setPrefError] = useState(false);
+  const [savingPref, setSavingPref] = useState(false);
+  const [markingRead, setMarkingRead] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [prefReload, setPrefReload] = useState(0);
   const box = useRef<HTMLDivElement>(null);
+  const bell = useRef<HTMLButtonElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const loadRetry = useRef<HTMLButtonElement>(null);
+  const prefRetry = useRef<HTMLButtonElement>(null);
+  const readButton = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
 
   useEffect(() => {
     let stop = false;
-    const load = () =>
-      api
-        .notices()
-        .then((n) => {
-          if (!stop) setItems(n);
-        })
-        .catch(() => undefined);
+    let pending = false;
+    const load = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const notices = await api.notices();
+        if (!stop) {
+          if (document.activeElement === loadRetry.current) heading.current?.focus();
+          setItems(notices);
+          setLoadError(false);
+        }
+      } catch {
+        if (!stop) setLoadError(true);
+      } finally {
+        pending = false;
+      }
+    };
     void load();
-    void api.getPref("notices.os").then((v) => setOsOn(v !== "off")).catch(() => undefined);
-    const t = window.setInterval(() => void load(), 20_000);
+    const timer = window.setInterval(() => void load(), 20_000);
     return () => {
       stop = true;
-      window.clearInterval(t);
+      window.clearInterval(timer);
     };
-  }, []);
+  }, [reload]);
+
+  useEffect(() => {
+    let stop = false;
+    void api.getPref("notices.os").then((value) => {
+      if (!stop) {
+        if (document.activeElement === prefRetry.current) heading.current?.focus();
+        setOsOn(value !== "off");
+        setPrefError(false);
+      }
+    }).catch(() => {
+      if (!stop) setPrefError(true);
+    });
+    return () => { stop = true; };
+  }, [prefReload]);
 
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    const close = (event: MouseEvent) => {
+      if (box.current && !box.current.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        bell.current?.focus();
+      }
     };
     window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", escape);
+    };
   }, [open]);
 
-  const unread = items.filter((n) => n.unread).length;
+  const unread = items?.filter((notice) => notice.unread).length ?? 0;
 
-  function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && unread > 0) {
-      void api.noticesRead().then(() => setItems((xs) => xs.map((x) => ({ ...x, unread: false }))));
+  async function markRead() {
+    if (!items || markingRead || loadError || unread === 0) return;
+    const displayed = new Set(items.map((notice) => notice.id));
+    setMarkingRead(true);
+    setReadError(false);
+    try {
+      await api.noticesRead([...displayed]);
+      if (document.activeElement === readButton.current) heading.current?.focus();
+      setItems((current) => current?.map((notice) => displayed.has(notice.id) ? { ...notice, unread: false } : notice) ?? null);
+      setReload((value) => value + 1);
+    } catch {
+      setReadError(true);
+    } finally {
+      setMarkingRead(false);
     }
   }
 
   async function switchOs() {
+    if (osOn === null || savingPref) return;
     const next = !osOn;
-    setOsOn(next);
-    await api.setPref("notices.os", next ? "on" : "off");
+    setSavingPref(true);
+    setPrefError(false);
+    try {
+      await api.setPref("notices.os", next ? "on" : "off");
+      setOsOn(next);
+    } catch {
+      setPrefError(true);
+    } finally {
+      setSavingPref(false);
+    }
   }
 
   return (
     <div className="relative" ref={box}>
       <button
+        ref={bell}
         type="button"
-        onClick={toggle}
-        aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
+        onClick={() => setOpen((value) => !value)}
+        aria-label={loadError ? "Notifications, unable to refresh" : unread ? `Notifications, ${unread} unread` : "Notifications"}
+        aria-controls={panelId}
         aria-expanded={open}
-        title={unread ? `${unread} unread notification${unread === 1 ? "" : "s"}` : "Notifications"}
+        title={loadError ? "Could not refresh notifications" : unread ? `${unread} unread notification${unread === 1 ? "" : "s"}` : "Notifications"}
         className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg ring-1 transition-colors ${
           open ? "bg-white/[0.06] text-slate-100 ring-line" : "text-slate-300 ring-line hover:bg-white/[0.04]"
         }`}
       >
-        <Bell className="size-4" />
+        {loadError ? <CircleAlert className="size-4 text-amber-300" /> : <Bell className="size-4" />}
         {unread > 0 && (
           <span aria-hidden="true" className="absolute -right-1 -top-1 rounded-full bg-emerald-500 px-1.5 text-2xs font-bold leading-4 text-emerald-950">
             {unread > 99 ? "99+" : unread}
@@ -94,47 +156,72 @@ export function NoticeBell({ onGo }: { onGo: (view: string) => void }) {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-10 z-50 w-96 overflow-hidden rounded-xl border border-line bg-panel shadow-2xl">
-          <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <div className="text-sm font-semibold text-slate-100">Notifications</div>
-            <button
-              type="button"
-              onClick={() => void switchOs()}
-              title={osOn ? "Windows notifications are on for questions, finished goals and blocked missions. Click to turn them off." : "Windows notifications are off. Click to turn them on."}
-              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-label text-muted hover:bg-white/[0.05] hover:text-slate-200"
-            >
-              {osOn ? <Bell className="size-3.5" /> : <BellOff className="size-3.5" />}
-              {osOn ? "Windows alerts on" : "Windows alerts off"}
-            </button>
+        <section id={panelId} aria-label="Notifications" className="absolute right-0 top-10 z-50 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-line bg-panel shadow-2xl">
+          <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-2.5">
+            <h2 ref={heading} tabIndex={-1} className="text-sm font-semibold text-slate-100">Notifications</h2>
+            {unread > 0 && (
+              <button ref={readButton} type="button" onClick={() => void markRead()} aria-disabled={markingRead || loadError} className="rounded-md px-2 py-1 text-label text-emerald-300 hover:bg-white/[0.05] aria-disabled:opacity-50">
+                {markingRead ? "Marking read" : "Mark all read"}
+              </button>
+            )}
           </div>
+          {loadError && (
+            <div role="alert" className="border-b border-line px-4 py-3 text-label text-amber-300">
+              <p>Could not load notifications.{items !== null && " Showing the last loaded list."}</p>
+              <button ref={loadRetry} type="button" onClick={() => setReload((value) => value + 1)} className="mt-1 rounded px-1 underline">Retry</button>
+            </div>
+          )}
+          {readError && <p role="alert" className="border-b border-line px-4 py-3 text-label text-amber-300">Could not mark notifications read. Use Mark all read to retry.</p>}
           <div className="max-h-[60vh] overflow-y-auto">
-            {items.length === 0 ? (
-              <div className="px-4 py-8 text-center text-small text-muted">Nothing needs you. Questions, finished goals and blocked missions appear here.</div>
+            {items === null ? (
+              !loadError && <p role="status" className="px-4 py-8 text-center text-small text-muted">Loading notifications</p>
+            ) : items.length === 0 ? (
+              !loadError && <p className="px-4 py-8 text-center text-small text-muted">Nothing needs you. Questions, finished goals and blocked missions appear here.</p>
             ) : (
-              items.map((n) => (
+              items.map((notice) => (
                 <button
-                  key={n.id}
+                  key={notice.id}
                   type="button"
                   onClick={() => {
                     setOpen(false);
-                    onGo(n.view);
+                    onGo(notice.view, notice);
                   }}
-                  className={`flex w-full gap-3 border-b border-line px-4 py-3 text-left transition-colors last:border-0 hover:bg-white/[0.04] ${n.unread ? "bg-emerald-500/[0.04]" : ""}`}
+                  className={`flex w-full gap-3 border-b border-line px-4 py-3 text-left transition-colors last:border-0 hover:bg-white/[0.04] ${notice.unread ? "bg-emerald-500/[0.04]" : ""}`}
                 >
-                  <span className="mt-0.5 shrink-0">{ICON[n.kind] ?? <Bell className="size-4" />}</span>
+                  <span className="mt-0.5 shrink-0">{ICON[notice.kind] ?? <Bell className="size-4" />}</span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-sm font-medium text-slate-100">{n.title}</span>
-                      <span className="shrink-0 text-2xs text-muted">{ago(n.at)}</span>
+                      <span className="truncate text-sm font-medium text-slate-100">{notice.title}</span>
+                      <span className="shrink-0 text-2xs text-muted">{ago(notice.at)}</span>
                     </span>
-                    <span className="mt-0.5 line-clamp-2 block text-label text-muted">{n.detail}</span>
-                    {n.open && <span className="mt-1 inline-block rounded-full bg-amber-500/10 px-1.5 text-2xs text-amber-300 ring-1 ring-amber-500/30">needs you</span>}
+                    <span className="mt-0.5 block truncate font-mono text-2xs text-slate-500">{notice.entity_id}{notice.repo ? ` · ${notice.repo}` : ""}</span>
+                    <span className="mt-0.5 line-clamp-2 block text-label text-muted">{notice.detail}</span>
+                    {notice.open && <span className="mt-1 inline-block rounded-full bg-amber-500/10 px-1.5 text-2xs text-amber-300 ring-1 ring-amber-500/30">needs you</span>}
                   </span>
                 </button>
               ))
             )}
           </div>
-        </div>
+          <div className="border-t border-line px-4 py-2">
+            {prefError && <p role="alert" className="mb-1 text-label text-amber-300">{osOn === null ? "Could not load Windows alert preference." : "Could not save Windows alert preference."}</p>}
+            {osOn === null ? (
+              prefError ? <button ref={prefRetry} type="button" onClick={() => setPrefReload((value) => value + 1)} className="rounded px-1 text-label text-muted underline">Retry Windows alert preference</button>
+                : <span className="text-label text-muted">Loading Windows alert preference</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void switchOs()}
+                disabled={savingPref}
+                aria-pressed={osOn}
+                title={osOn ? "Turn Windows notifications off" : "Turn Windows notifications on"}
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-label text-muted hover:bg-white/[0.05] hover:text-slate-200 disabled:opacity-50"
+              >
+                {osOn ? <Bell className="size-3.5" /> : <BellOff className="size-3.5" />}
+                {savingPref ? "Saving Windows alerts" : osOn ? "Windows alerts on" : "Windows alerts off"}
+              </button>
+            )}
+          </div>
+        </section>
       )}
     </div>
   );

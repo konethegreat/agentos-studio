@@ -251,6 +251,8 @@ export interface AutoFixEntry {
 /** One item in the notification centre; `view` is the screen that owns it. */
 export interface Notice {
   id: string;
+  entity_id: string;
+  repo: string | null;
   kind: string;
   title: string;
   detail: string;
@@ -1337,7 +1339,7 @@ export const api = {
   providerFix: (provider: string, action: string) => invoke<void>("provider_fix", { provider, action }),
   providerAutoHeal: () => invoke<AutoFixEntry[]>("provider_auto_heal"),
   providerAutofixLog: () => invoke<AutoFixEntry[]>("provider_autofix_log"),
-  noticesRead: () => invoke<void>("notices_read"),
+  noticesRead: (ids: string[]) => invoke<void>("notices_read", { ids }),
   clientConnect: (id: string) => invoke<void>("client_connect", { id }),
   clientDisconnect: (id: string) => invoke<void>("client_disconnect", { id }),
   scaffoldVault: (path: string) => invoke<string[]>("scaffold_vault", { path }),
@@ -1430,6 +1432,8 @@ export const api = {
 
   workingDirDefault: () => invoke<{ path: string; source: string; forbidden_process_cwd: boolean }>("working_dir_default"),
   missions: () => invoke<Mission[]>("list_missions", { limit: 100 }),
+  missionDetail: (id: string) => invoke<Mission | null>("mission_detail", { id }),
+  escalationDetail: (id: string) => invoke<Escalation | null>("escalation_detail", { id }),
   goals: () => invoke<GoalDetail[]>("goals_list", { limit: 100 }),
   goalDetail: (id: string) => invoke<GoalDetail>("goal_detail", { id }),
   createGoal: (goal: NewGoal) => invoke<Goal>("goal_create", { goal }),

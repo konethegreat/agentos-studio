@@ -13,8 +13,8 @@
 //! Default is `allow` for the hub's own tools, so an upgrade never breaks a working fleet. Anything
 //! destructive is opted into `ask` or `deny` explicitly.
 
-use anyhow::Result;
-use rusqlite::{params, Connection};
+use anyhow::{ensure, Result};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 use crate::store;
@@ -51,6 +51,33 @@ pub fn decide_in(c: &Connection, server: &str, tool: &str) -> String {
     stored_in(c, server, tool)
         .or_else(|| (tool != "*").then(|| stored_in(c, server, "*")).flatten())
         .unwrap_or_else(|| "allow".into())
+}
+
+fn stored_checked_in(c: &Connection, server: &str, tool: &str) -> Result<Option<String>> {
+    let policy: Option<String> = c
+        .query_row(
+            "SELECT policy FROM tool_policy WHERE server = ?1 AND tool = ?2",
+            params![server, tool],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(p) = &policy {
+        ensure!(POLICIES.contains(&p.as_str()), "invalid stored tool policy");
+    }
+    Ok(policy)
+}
+
+/// Apply exact and server-wide policies, defaulting only when neither is stored.
+pub fn decide_checked_in(c: &Connection, server: &str, tool: &str) -> Result<String> {
+    if let Some(policy) = stored_checked_in(c, server, tool)? {
+        return Ok(policy);
+    }
+    if tool != "*" {
+        if let Some(policy) = stored_checked_in(c, server, "*")? {
+            return Ok(policy);
+        }
+    }
+    Ok("allow".into())
 }
 
 pub fn set(server: &str, tool: &str, policy: &str) -> Result<()> {
@@ -111,6 +138,49 @@ pub fn check(server: &str, tool: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checked_policy_prefers_exact_then_wildcard_then_absent_allow() {
+        let c = store::test_conn();
+        assert_eq!(decide_checked_in(&c, "hub", "read").unwrap(), "allow");
+        set_in(&c, "hub", "*", "deny").unwrap();
+        set_in(&c, "hub", "read", "ask").unwrap();
+        assert_eq!(decide_checked_in(&c, "hub", "read").unwrap(), "ask");
+        assert_eq!(decide_checked_in(&c, "hub", "other").unwrap(), "deny");
+        assert_eq!(decide_checked_in(&c, "hub", "*").unwrap(), "deny");
+        assert_eq!(decide_checked_in(&c, "other", "read").unwrap(), "allow");
+    }
+
+    #[test]
+    fn checked_policy_never_treats_invalid_values_as_absent() {
+        let c = store::test_conn();
+        for tool in ["read", "*"] {
+            for invalid in ["", "ALLOW", "sometimes", " allow"] {
+                c.execute("DELETE FROM tool_policy", []).unwrap();
+                c.execute(
+                    "INSERT INTO tool_policy (server, tool, policy) VALUES ('hub', ?1, ?2)",
+                    params![tool, invalid],
+                )
+                .unwrap();
+                assert!(decide_checked_in(&c, "hub", "read").is_err());
+                assert_eq!(decide_in(&c, "hub", "read"), "allow");
+            }
+        }
+    }
+
+    #[test]
+    fn checked_policy_propagates_sql_and_value_type_errors() {
+        let c = store::test_conn();
+        c.execute(
+            "INSERT INTO tool_policy (server, tool, policy) VALUES ('hub', 'read', X'00')",
+            [],
+        )
+        .unwrap();
+        assert!(decide_checked_in(&c, "hub", "read").is_err());
+        c.execute_batch("DROP TABLE tool_policy").unwrap();
+        assert!(decide_checked_in(&c, "hub", "read").is_err());
+        assert_eq!(decide_in(&c, "hub", "read"), "allow");
+    }
 
     #[test]
     fn policy_round_trips_and_gates() {

@@ -24,10 +24,10 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 
 **AgentOS Studio replaces all of that with one native desktop app and one Rust binary.** Everything the `hermes` and `claude` CLIs do in a terminal, Studio does in a window.
 
-- **Hermes Chat Studio.** A Claude-Desktop-style chat over Hermes (or Claude Code), bound to any of your repositories. Replies stream in with rendered Markdown, highlighted code blocks with Copy and Apply-to-file, and expandable cards for every MCP and tool call. Your whole Hermes history is in the sidebar, read straight from `state.db`, with rename, delete and export to Obsidian.
+- **Hermes Chat Studio.** A Claude-Desktop-style chat over Hermes (or Claude Code), bound to any of your repositories. Replies stream in with rendered Markdown, highlighted code blocks with Copy and Apply-to-file, and expandable cards for every MCP and tool call. An Execution record panel beside the conversation lists every tool call, every structured file or web read as a source, and every delegation, each opening the input and result that was actually recorded. Your whole Hermes history is in the sidebar, read straight from `state.db`, with rename, delete and export to Obsidian.
 - **Hot-swap provider switchboard.** Run on your Claude Pro or Max subscription today, then move to OpenRouter, Gemini, the Anthropic or OpenAI APIs, DeepSeek, Nous Portal or a local Ollama model from a dropdown. Keys go into Hermes's own `.env`, and every switch can be checked with a live test turn.
 - **Universal MCP router.** One table of every MCP server across Hermes, Claude Code, Qoder and Antigravity: which agent has it, whether it answers, how fast, and every tool it exposes. Add servers from a one-click catalog, sync them to all four agents, toggle them per conversation, or run OAuth sign-in.
-- **Native Rust MCP bus.** The same binary run with `--mcp-stdio` is `agentos-hub`: 13 tools for a shared task queue, typed memory, ranked recall, agent identity, the agent registry, handoffs and asks between agents, no Python, a full initialize plus tools/list round trip in about 35 ms.
+- **Native Rust MCP bus.** The same binary run with `--mcp-stdio` is `agentos-hub`: 19 tools for a shared task queue, typed memory, ranked recall, agent identity, the agent registry, handoffs and asks between agents, plus six read tools over the Studio store, no Python, a full initialize plus tools/list round trip in about 35 ms.
 - **Real terminals.** A docked panel with true PTY terminals (ConPTY on Windows) for interactive Hermes, the Hermes TUI, Claude Code or your shell, plus a one-shot command runner. Any chat can be continued in a terminal with one click.
 - **Workspaces and folders.** Organise chats into workspaces, folders and sub-folders with drag and drop, pins, tags, archive and file attachments. Map a folder to a repository and every chat run there lands in it automatically; link it to a Hermes project.
 - **GitHub.** Pull requests (diff, checks, review, merge, create), issues, Actions runs (failed logs, re-run), branches and commits, all through your `gh` login, with "Ask Hermes" hand-offs into chat.
@@ -291,7 +291,7 @@ On first launch open **System, then Setup** and press **Auto-Setup and Repair Ev
 | 2 | Hermes Agent Engine | `hermes --version`, default model in `config.yaml` | Official Hermes installer, `hermes model` |
 | 3 | Obsidian Shared Brain | `00_Inbox` to `04_Agent_Engine` tree | Scaffolds the vault and seed files at any folder you pick |
 | 4 | Notion Cloud Sync | Notion MCP server configured and authorized in Hermes | `hermes mcp install notion`, `hermes mcp login notion` |
-| 5 | AgentOS Rust MCP Bus | Self-test over stdio (`initialize` + `tools/list` returns 13 tools), Hermes registration | `hermes mcp add agentos-hub --command <studio> --args --mcp-stdio --vault <vault>` |
+| 5 | AgentOS Rust MCP Bus | Self-test over stdio (`initialize` + `tools/list` returns 19 tools), Hermes registration | `hermes mcp add agentos-hub --command <studio> --args --mcp-stdio --vault <vault>` |
 | 6 | IDE Fleet Connectors | `agentos-hub` in `~/.claude.json`, `~/.qoder/settings.json`, `~/.gemini/config/mcp_config.json` | `claude mcp add` and JSON merges (existing files are backed up once) |
 
 Foundations (Git, GitHub CLI, Node, user `PATH` entries for `~/.local/bin`, npm and Cargo) are checked and repaired the same way. Studio also resolves tools through the persisted user `PATH`, so a freshly installed CLI works without restarting the app.
@@ -577,6 +577,14 @@ claude mcp add agentos-hub --scope user -- /path/to/agentos-studio --mcp-stdio -
 | `ask_agent(to, question, context?, mission_id?, timeout?)` | Run one short headless turn on another agent (Hermes, Claude Code, Antigravity) and return its answer; logged on the mission |
 | `handoff(to, mission_id, summary, next_step, files?, questions?)` | Pass the running mission you hold to another agent with a packet Studio assembles (brief, acceptance, diff so far, failing checks, recall); the receiver starts in the same worktree |
 | `agents(name?, refresh?)` | The agent registry: how each agent starts, strengths, tools, cost model, live quota headroom, measured outcomes and health. See [docs/AGENTS.md](docs/AGENTS.md) |
+| `studio_status()` | Server version, schema version, the verified identity of this session, and the persisted fleet pause state |
+| `list_goals(repo?, status?, limit?, cursor?)` | One page of goals, filtered by repository and status, with `next_cursor` for the next page |
+| `get_goal(id)` | One authorized goal with its checks and linked mission IDs |
+| `list_missions(repo?, status?, goal_id?, limit?, cursor?)` | One page of missions, filtered by repository, status and parent goal |
+| `get_mission(id)` | One authorized mission with its kind and parent goal ID |
+| `list_notices(repo?, limit?, cursor?)` | The same attention list the Studio bell shows |
+
+**Reading the Studio store.** The six `studio_*` and `list_*`/`get_*` read tools let another agent see what Studio sees: goals, missions and notices, plus the server's own status. Each one requires a registered `AGENTOS_HUB_TOKEN` revalidated on every call, reads one existing SQLite snapshot with no writes and no runtime commands, and obeys the same per-tool policies as the rest of the hub. Listings return at most 100 rows per page and hand back a cursor for the next page. Errors come back as `INVALID_ARGUMENT`, `NOT_FOUND`, `FORBIDDEN`, `APPROVAL_REQUIRED` or `STORE_UNAVAILABLE`, never as a bare transport failure. These tools are only listed for a verified token, so an unverified caller never sees them.
 
 **Agent identity.** AgentOS Studio gives each agent its own token, set as `AGENTOS_HUB_TOKEN` in that agent's agentos-hub entry, and keeps only the token's SHA-256. A verified agent claims, completes, delegates and remembers as itself only; a caller without a valid token is read-only (`agents`, `fetch_pending_tasks`, `search_shared_memory`, `recall`, `project_brief`, `whoami`). Studio provisions missing tokens at start-up.
 
