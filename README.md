@@ -31,25 +31,32 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Real terminals.** A docked panel with true PTY terminals (ConPTY on Windows) for interactive Hermes, the Hermes TUI, Claude Code or your shell, plus a one-shot command runner. Any chat can be continued in a terminal with one click.
 - **Workspaces and folders.** Organise chats into workspaces, folders and sub-folders with drag and drop, pins, tags, archive and file attachments. Map a folder to a repository and every chat run there lands in it automatically; link it to a Hermes project.
 - **GitHub.** Pull requests (diff, checks, review, merge, create), issues, Actions runs (failed logs, re-run), branches and commits, all through your `gh` login, with "Ask Hermes" hand-offs into chat.
-- **Update Center.** Hermes, Claude Code and Studio are checked automatically, with an in-app alert, an OS notification and a readable changelog. Update, Skip this version or Remind me later; every update is backed up first and can be rolled back.
+- **Update Center.** Hermes, Claude Code, the Antigravity and Qoder CLIs, every Hermes plugin (each one listed with its installed and available version) and Studio are checked automatically, with an in-app alert, an OS notification and a readable changelog. Update, Skip this version or Remind me later; every update is recorded first, with rollback where the tool supports one.
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
-## Unreleased: Fleet Doctor stabilization
+## What is new in 2.4.0
 
-Fleet Doctor now reports recovery advisories against real `kanban:<id>` mission links.
-Its direct recovery path was removed because it bypassed scheduler controls and could reclaim
-workers or archive worktrees. Existing scheduler recovery and S0/S1 provider repair are unchanged.
-The pass requests no recovery commands, but is not strictly read-only: Hermes diagnostics can
-initialize, migrate or repair its own board database. Today displays that boundary explicitly.
-Today shows incomplete checks instead of a false all-clear and distinguishes recorded mission
-state from checks still needed. Idle checks cover registered Git repositories using strict local
-Git and stored-state reads, not the broad repository scanner; ordinary project folders are excluded.
-Diagnostics have a 30-second timeout; repository Git reads share a 15-second deadline with lazy
-fetching disabled. Manual checks run off the desktop command thread. MCP protocol tests now isolate
-both their vault and Studio database; unit fixtures also isolate the memory index and restore caller scope.
-Automatic S2 recovery, historical replay and isolated live acceptance remain pending; see
-[the S2 checklist](docs/SELF-HEALING.md#s2-fleet-doctor-unreleased-stabilization).
+Self-healing reaches the fleet, and the Update Center covers every tool that runs it.
+
+- **Blocked work repairs itself through the scheduler (S2.1).** When the doctor finds a blocked
+  mission whose recorded failure was its model or provider, not its work, it asks the scheduler to
+  queue it again. The scheduler still decides: a paused fleet, automations off, a spent metered
+  budget, a held goal, a lane deferral or a spent retry budget all leave the card blocked. Routes
+  and provider settings are never changed, no worker is reclaimed and no worktree is archived.
+- **Recorded failures drive the verdict.** Diagnostics now separate a model or provider stop from
+  work that genuinely failed. In the agentos-studio board recorded on 2026-11-23, the two cards
+  from the 2026-11-17 Gemini episode (`No reply` and `entitlement is exhausted`) are queued again,
+  while the three cards waiting on owner input stay blocked and are shown for review. The replay
+  test reads the captured rows; it does not invoke Hermes.
+- **Every tool in the Update Center.** The Antigravity CLI (GitHub releases plus `agy update`), the
+  Qoder CLI (npm `@qoder-ai/qodercli` plus `qoder update`) and every Hermes plugin now have their
+  own card, next to Hermes, Claude Code and Studio. The plugins card lists each plugin with its
+  installed and available version instead of one summary line. Checks run at start and every 3
+  hours, and a source that could not be reached is retried after 15 minutes.
+- **Live diagnostic acceptance still needs its own run.** The isolated `doctor-*` profile test
+  stays ignored until an owner-authorized session provisions the throwaway profile; see
+  [the S2 checklist](docs/SELF-HEALING.md#s2-fleet-doctor-240).
 
 ## What is new in 2.0.1
 
@@ -501,14 +508,17 @@ The GitHub view works through your `gh` login (Studio never sees the token). Pic
 
 ## Update Center
 
-Hermes (`hermes update --check` plus its GitHub release notes), Claude Code (the npm registry plus its `CHANGELOG.md`) and AgentOS Studio (GitHub releases) are checked 20 seconds after start and every 6 hours. A new version shows a banner and, once per version, an OS notification with a short summary. Each product card shows the changes grouped by section, and offers **Update**, **Skip this version** and **Remind me later**. Offline or failed checks say "Could not check", never "Up to date".
+Hermes (`hermes update --check` plus its GitHub release notes), Claude Code (the npm registry plus its `CHANGELOG.md`), the Antigravity CLI (its GitHub releases plus `agy --version`), the Qoder CLI (npm `@qoder-ai/qodercli` plus `qoder --version`), every Hermes plugin (`hermes plugins check-updates --json`, listed one by one with its installed and available version) and AgentOS Studio (GitHub releases) are checked 20 seconds after start and every 3 hours; a source that could not be reached is retried after 15 minutes. A new version shows a banner and, once per version, an OS notification with a short summary. Each product card shows the changes grouped by section, and offers **Update**, **Skip this version** and **Remind me later**. Offline or failed checks say "Could not check", never "Up to date".
 
-Every update is backed up first, under `%APPDATA%\agentos-studio\backups` (or the platform config directory):
+Every update is recorded first, under `%APPDATA%\agentos-studio\backups` (or the platform config directory):
 
 | Product | Backup | Update | Roll back |
 |---|---|---|---|
 | Hermes | `hermes backup --quick` state snapshot plus the exact code commit | `hermes update --yes` (restarts the gateway) | Pins the code to the recorded commit; **Restore state** opens a Hermes terminal with `/snapshot restore <id>` typed in |
 | Claude Code | The installed version is recorded | `claude update` | `claude install <version> --force` |
+| Antigravity CLI | The installed version is recorded | `agy update` | Not from Studio; install the previous release again from the Antigravity CLI releases |
+| Qoder CLI | The installed version is recorded | `qoder update`, or `qodercli update` when that is the installed binary | `npm install -g @qoder-ai/qodercli@<version>` |
+| Hermes plugins | The installed versions are recorded | `hermes plugins update` | Not from Studio; Hermes keeps each plugin's previous commit in its own history |
 | Studio | The installed version is recorded | Downloads the release installer, verifies its SHA-256 against GitHub's digest, runs it | Installs the previous release the same way |
 
 Studio copies built from source (running out of `target\release`) are not replaced by an installer; the card says to pull and rebuild instead. Agents do not run the app exe itself: their `agentos-hub` registration points at a versioned copy (see MCP and Providers), so an installed app updates in place.

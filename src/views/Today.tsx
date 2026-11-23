@@ -422,7 +422,9 @@ export function Today({ target = null }: { target?: RecordTarget | null }) {
               </Button>
             </div>
             <div className="space-y-2.5 px-4 py-3">
-              <p className="text-label text-slate-400">Advisory check. No recovery commands are requested. Hermes may maintain its board database while reading diagnostics.</p>
+              <p className="text-label text-slate-400">
+                Advisory scan. A blocked mission that stopped on its model or provider is queued again through the scheduler retry budget; everything else is left for you. Hermes may maintain its board database while reading diagnostics.
+              </p>
               {!doctor ? (
                 <p className="text-label text-slate-500">
                   No doctor pass yet. Runs each automation tick to check kanban diagnostics, 6h stalled missions, and idle repos.
@@ -463,7 +465,11 @@ export function Today({ target = null }: { target?: RecordTarget | null }) {
                   ))}
                   {doctor.diagnosticActions.map((a) => (
                     <div key={`${a.taskId}-${a.kind}`} className="text-label text-slate-300">
-                      <span className="font-mono text-sky-300">{a.taskId}</span> ({a.kind}): {a.action} - {a.detail}
+                      <span className="font-mono text-sky-300">{a.taskId}</span> ({a.kind}):{" "}
+                      <span className={a.action === "retried" ? "text-emerald-300" : a.action === "held" ? "text-amber-300" : "text-slate-400"}>
+                        {a.action}
+                      </span>{" "}
+                      - {a.detail}
                     </div>
                   ))}
                 </>

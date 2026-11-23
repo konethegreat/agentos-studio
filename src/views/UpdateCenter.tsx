@@ -64,6 +64,25 @@ function ProductCard({ p }: { p: ProductUpdate }) {
         </div>
       </div>
       <p className="mt-3 text-label leading-relaxed text-slate-500">{p.update_note}</p>
+      {p.components && p.components.length > 0 && (
+        <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-line bg-canvas/60 px-3 py-2">
+          <div className="mb-1 text-label font-semibold uppercase tracking-wide text-slate-500">
+            {p.components.length} item{p.components.length === 1 ? "" : "s"}
+          </div>
+          {p.components.map((c) => (
+            <div key={c.name} className="flex items-baseline gap-2 py-0.5 text-xs">
+              <span className={c.note === "Up to date" ? "text-slate-400" : "text-slate-200"}>{c.name}</span>
+              {(c.current || c.latest) && (
+                <span className="font-mono text-label text-slate-500">
+                  {c.current ?? "unknown"}
+                  {c.latest && c.latest !== c.current ? ` -> ${c.latest}` : ""}
+                </span>
+              )}
+              <span className={`ml-auto shrink-0 text-label ${c.note === "Up to date" ? "text-slate-600" : "text-amber-300"}`}>{c.note}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {cl && (
         <div className="mt-3 rounded-lg border border-line bg-canvas/60">
           <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium text-slate-200" aria-expanded={open}>
@@ -144,7 +163,7 @@ function BackupRow({ b }: { b: BackupManifest }) {
 
 export function UpdateCenter() {
   const u = useUpdates();
-  const order = ["hermes", "claude-code", "studio"];
+  const order = ["hermes", "claude-code", "antigravity", "qoder", "hermes-plugins", "studio"];
   const products = [...u.products].sort((a, b) => order.indexOf(a.product) - order.indexOf(b.product));
   return (
     <div className="h-full overflow-y-auto">
@@ -152,9 +171,9 @@ export function UpdateCenter() {
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <h1 className="text-lg font-semibold text-slate-100">Update Center</h1>
-            <p className="text-xs text-slate-500">Hermes, Claude Code and AgentOS Studio are checked at start and every 6 hours. Every update is backed up first so it can be rolled back.</p>
+            <p className="text-xs text-slate-500">Hermes, Claude Code, the Antigravity and Qoder CLIs, every Hermes plugin and AgentOS Studio are checked at start and every 3 hours. Updates are backed up first where a rollback exists.</p>
           </div>
-          <Button icon={u.checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} disabled={u.checking} onClick={() => void u.check()} title="Check all three now">
+          <Button icon={u.checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} disabled={u.checking} onClick={() => void u.check()} title="Check every tool now">
             Check now
           </Button>
         </div>

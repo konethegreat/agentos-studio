@@ -951,9 +951,13 @@ deliberately do differently.
 - S5 (Daily fleet health report): morning digest at 07:00 local via `hermes_surfaces::send`
   covering open/closed lanes, repairs, stalled missions (6h+), and active/done repos
   (`fleet_report.rs`).
-- S2 (Fleet doctor, unreleased stabilization): bounded Hermes diagnostics produce linked recovery
-  advisories, 6h stalled mission verdicts and idle reports for opted-in registered Git repositories
-  (`fleet_doctor.rs`, `Today.tsx`). No recovery commands are requested; Hermes may maintain its
-  board database during diagnostics. Incomplete inputs remain visible and suppress idle inferences.
-  Automatic recovery through scheduler controls, historical replay and isolated live acceptance
-  remain pending; see [`SELF-HEALING.md`](SELF-HEALING.md).
+- S2 (Fleet doctor, 2.4.0): bounded Hermes diagnostics produce linked actions, 6h stalled mission
+  verdicts and idle reports for opted-in registered Git repositories (`fleet_doctor.rs`,
+  `Today.tsx`). A blocked mission whose recorded failure was its model or provider is requeued
+  through `automation::recover_blocked`, which still respects pause, automations, budgets, goal
+  holds, lane deferrals and the retry budget; routes and provider settings are never changed and no
+  worker is reclaimed or worktree archived. A replay of the board recorded on 2026-11-23 queues the
+  two blocked Gemini-failure cards and leaves the three owner-input cards blocked. Hermes may
+  maintain its board database during diagnostics. Incomplete inputs remain visible and suppress idle
+  inferences. Isolated live diagnostic acceptance is still open; see
+  [`SELF-HEALING.md`](SELF-HEALING.md).

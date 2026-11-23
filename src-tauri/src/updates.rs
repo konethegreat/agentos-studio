@@ -1,14 +1,20 @@
-//! Update detection and installation for Hermes, Claude Code and AgentOS Studio.
+//! Update detection and installation for every tool in the fleet: Hermes, Claude Code, the
+//! Antigravity CLI, the Qoder CLI, every Hermes plugin, and AgentOS Studio.
 //!
 //! Detection: `hermes update --check` plus the Hermes GitHub releases for notes, the npm
-//! registry plus `CHANGELOG.md` for Claude Code, and the Studio GitHub releases. Results
-//! carry a readable changelog summary. Skip and snooze choices live in `studio.db`.
+//! registry plus `CHANGELOG.md` for Claude Code, the Antigravity CLI GitHub releases, the npm
+//! registry for the Qoder CLI, `hermes plugins check-updates --json` for each plugin, and the
+//! Studio GitHub releases. Results carry a readable changelog summary. Skip and snooze choices
+//! live in `studio.db`.
 //!
 //! Installation always backs up first and records a manifest, so a bad update can be
 //! rolled back from the Update Center:
 //! - Hermes: a Hermes quick state snapshot (`hermes backup --quick`) plus the exact code
 //!   commit; then `hermes update --yes`. Rollback pins the code back to that commit.
 //! - Claude Code: the previous version is recorded; rollback runs `claude install <ver>`.
+//! - Antigravity CLI: `agy update` replaces the CLI in place; rollback is a manual release
+//!   install from its GitHub releases.
+//! - Qoder CLI: `qoder update`; rollback reinstalls the recorded npm version.
 //! - Studio: the release installer is downloaded, its SHA-256 checked against the GitHub
 //!   digest, then run. Rollback installs the previous release the same way.
 
@@ -30,16 +36,27 @@ pub const EV_UPDATE_PROGRESS: &str = "agentos://update-progress";
 
 pub const STUDIO_REPO: &str = "konethegreat/agentos-studio";
 pub const HERMES_REPO: &str = "NousResearch/hermes-agent";
+pub const ANTIGRAVITY_REPO: &str = "google-antigravity/antigravity-cli";
 const CLAUDE_NPM: &str = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
 const CLAUDE_CHANGELOG: &str =
     "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md";
+const QODER_NPM: &str = "https://registry.npmjs.org/@qoder-ai/qodercli/latest";
 
-pub const PRODUCTS: [&str; 4] = ["hermes", "claude-code", "hermes-plugins", "studio"];
+pub const PRODUCTS: [&str; 6] = [
+    "hermes",
+    "claude-code",
+    "antigravity",
+    "qoder",
+    "hermes-plugins",
+    "studio",
+];
 
 pub fn label(product: &str) -> &'static str {
     match product {
         "hermes" => "Hermes Agent",
         "claude-code" => "Claude Code",
+        "antigravity" => "Antigravity CLI",
+        "qoder" => "Qoder CLI",
         "hermes-plugins" => "Hermes plugins",
         _ => "AgentOS Studio",
     }
@@ -366,6 +383,15 @@ pub fn releases_changelog(list: &[Release], current: &str) -> Changelog {
 
 // ---------------------------------------------------------------- status
 
+/// One item inside a product, such as a single Hermes plugin, with its own version and note.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct UpdateComponent {
+    pub name: String,
+    pub current: Option<String>,
+    pub latest: Option<String>,
+    pub note: String,
+}
+
 #[derive(Serialize, Clone, Debug, Default)]
 pub struct ProductUpdate {
     pub product: String,
@@ -377,6 +403,8 @@ pub struct ProductUpdate {
     pub state: String,
     pub detail: String,
     pub changelog: Option<Changelog>,
+    #[serde(default)]
+    pub components: Vec<UpdateComponent>,
     pub skipped: bool,
     pub snoozed_until: Option<i64>,
     pub alert: bool,
@@ -423,6 +451,15 @@ pub fn parse_hermes_check(text: &str) -> HermesVerdict {
     failed
         .map(HermesVerdict::Failed)
         .unwrap_or(HermesVerdict::Unknown)
+}
+
+/// The `version` field of an npm registry `latest` reply. Pure.
+fn npm_latest(text: &str) -> Result<String> {
+    let v: Value = serde_json::from_str(text)?;
+    v.get("version")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| anyhow!("no version in the npm registry reply"))
 }
 
 fn base(product: &str) -> ProductUpdate {
@@ -533,13 +570,7 @@ pub fn check_claude() -> ProductUpdate {
     p.can_update = true;
     p.update_note = "Runs claude update. Package-manager installs update through their package manager. The current version is recorded so you can roll back with claude install <version>.".into();
     let cur = p.current.clone().unwrap_or_default();
-    let latest = http_text(CLAUDE_NPM).and_then(|t| {
-        let v: Value = serde_json::from_str(&t)?;
-        v.get("version")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .ok_or_else(|| anyhow!("no version in the npm registry reply"))
-    });
+    let latest = http_text(CLAUDE_NPM).and_then(|t| npm_latest(&t));
     match latest {
         Ok(l) => {
             p.latest = Some(l.clone());
@@ -559,19 +590,163 @@ pub fn check_claude() -> ProductUpdate {
     p
 }
 
-/// Plugins with an update or a fix pending, from `hermes plugins check-updates --json`. The
+pub fn check_antigravity() -> ProductUpdate {
+    let mut p = base("antigravity");
+    let Some(line) = procs::version("agy") else {
+        p.state = if procs::find("agy").is_some() {
+            "unknown".into()
+        } else {
+            "not_installed".into()
+        };
+        p.installed = procs::find("agy").is_some();
+        p.detail = if p.installed {
+            "agy is installed but did not report a version".into()
+        } else {
+            "agy was not found on PATH (Antigravity CLI)".into()
+        };
+        return p;
+    };
+    p.installed = true;
+    p.current = version_token(&line);
+    p.can_update = true;
+    p.update_note = "Runs agy update, the Antigravity CLI's own updater. The CLI replaces itself in place; Studio records the version it saw first.".into();
+    let cur = p.current.clone().unwrap_or_default();
+    match releases(ANTIGRAVITY_REPO) {
+        Ok(list) => {
+            let latest = list
+                .first()
+                .map(|r| r.tag_name.trim_start_matches('v').to_string());
+            p.latest = latest.clone();
+            match latest {
+                Some(l) if cur.is_empty() => {
+                    p.detail = format!("agy is installed; the newest published release is {l}, but its version could not be read")
+                }
+                Some(l) if newer(&l, &cur) => {
+                    p.state = "available".into();
+                    p.detail = format!("{cur} -> {l}");
+                    p.changelog = Some(releases_changelog(&list, &cur));
+                }
+                Some(_) => {
+                    p.state = "up_to_date".into();
+                    p.detail = "Up to date".into();
+                }
+                None => p.detail = "GitHub has no published Antigravity CLI releases".into(),
+            }
+        }
+        Err(e) => p.detail = format!("Could not reach GitHub: {e:#}"),
+    }
+    p
+}
+
+pub fn check_qoder() -> ProductUpdate {
+    let mut p = base("qoder");
+    let found = procs::find("qodercli").is_some() || procs::find("qoder").is_some();
+    let Some(line) = procs::version("qodercli").or_else(|| procs::version("qoder")) else {
+        p.installed = found;
+        p.state = if found {
+            "unknown".into()
+        } else {
+            "not_installed".into()
+        };
+        p.detail = if found {
+            "The Qoder CLI is installed but did not report a version".into()
+        } else {
+            "The Qoder CLI was not found on PATH; the Qoder IDE updates itself in the app".into()
+        };
+        return p;
+    };
+    p.installed = true;
+    p.current = version_token(&line);
+    p.can_update = true;
+    p.update_note = "Runs the Qoder CLI's own updater. npm installs also update with npm install -g @qoder-ai/qodercli@latest, and the recorded version is the rollback target.".into();
+    let cur = p.current.clone().unwrap_or_default();
+    match http_text(QODER_NPM).and_then(|t| npm_latest(&t)) {
+        Ok(l) => {
+            p.latest = Some(l.clone());
+            if newer(&l, &cur) {
+                p.state = "available".into();
+                p.detail = format!("{cur} -> {l}");
+            } else {
+                p.state = "up_to_date".into();
+                p.detail = "Up to date".into();
+            }
+        }
+        Err(e) => p.detail = format!("Could not reach the npm registry: {e:#}"),
+    }
+    p
+}
+
+/// One plugin row from `hermes plugins check-updates --json`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginRow {
+    pub name: String,
+    pub current: Option<String>,
+    pub latest: Option<String>,
+    pub note: String,
+    pub pending: bool,
+}
+
+fn text_field(v: &Value, names: &[&str]) -> Option<String> {
+    names.iter().find_map(|n| {
+        v.get(*n)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    })
+}
+
+/// Every plugin with the versions it reports and whether it needs an update or a fix. The
 /// Claude and Antigravity providers are plugins, so a stale one breaks sign-in after a Hermes
 /// update even when Hermes itself is current. Pure.
-pub fn plugins_pending(json: &str) -> Option<Vec<String>> {
+pub fn plugin_rows(json: &str) -> Option<Vec<PluginRow>> {
     let v: Value = serde_json::from_str(json.trim()).ok()?;
     Some(
         v.as_array()?
             .iter()
-            .filter(|p| {
-                p.get("update_available").and_then(Value::as_bool) == Some(true)
-                    || p.get("needs_fixing").is_some_and(|n| !n.is_null())
+            .filter_map(|p| {
+                let name = p
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())?
+                    .to_string();
+                let update = p.get("update_available").and_then(Value::as_bool) == Some(true);
+                let fix = p
+                    .get("needs_fixing")
+                    .filter(|n| !n.is_null())
+                    .map(|n| match n {
+                        Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    });
+                let pending = update || fix.is_some();
+                let note = match fix {
+                    Some(why) => format!("Needs a fix: {why}"),
+                    None if update => "Update available".into(),
+                    None => "Up to date".into(),
+                };
+                Some(PluginRow {
+                    name,
+                    current: text_field(p, &["current_version", "installed_version", "version"]),
+                    latest: text_field(
+                        p,
+                        &["latest_version", "remote_version", "available_version"],
+                    ),
+                    note,
+                    pending,
+                })
             })
-            .filter_map(|p| p.get("name").and_then(Value::as_str).map(String::from))
+            .collect(),
+    )
+}
+
+/// Plugins with an update or a fix pending. Pure.
+pub fn plugins_pending(json: &str) -> Option<Vec<String>> {
+    Some(
+        plugin_rows(json)?
+            .into_iter()
+            .filter(|r| r.pending)
+            .map(|r| r.name)
             .collect(),
     )
 }
@@ -593,18 +768,30 @@ pub fn check_plugins() -> ProductUpdate {
         None,
         Duration::from_secs(120),
     );
-    match out.ok().and_then(|(_, o, _)| plugins_pending(&o)) {
-        Some(names) if names.is_empty() => {
-            p.state = "up_to_date".into();
-            p.detail = "Every plugin is current".into();
-            p.current = Some("current".into());
-            p.latest = Some("current".into());
-        }
-        Some(names) => {
-            p.state = "available".into();
-            p.current = Some("installed".into());
-            p.latest = Some(names.join(", "));
-            p.detail = format!("Updates for {}", names.join(", "));
+    match out.ok().and_then(|(_, o, _)| plugin_rows(&o)) {
+        Some(rows) => {
+            let pending: Vec<&PluginRow> = rows.iter().filter(|r| r.pending).collect();
+            p.components = rows
+                .iter()
+                .map(|r| UpdateComponent {
+                    name: r.name.clone(),
+                    current: r.current.clone(),
+                    latest: r.latest.clone(),
+                    note: r.note.clone(),
+                })
+                .collect();
+            if pending.is_empty() {
+                p.state = "up_to_date".into();
+                p.detail = format!("Every one of the {} plugins is current", rows.len());
+                p.current = Some("current".into());
+                p.latest = Some("current".into());
+            } else {
+                let names: Vec<&str> = pending.iter().map(|r| r.name.as_str()).collect();
+                p.state = "available".into();
+                p.current = Some("installed".into());
+                p.latest = Some(names.join(", "));
+                p.detail = format!("Updates for {}", names.join(", "));
+            }
         }
         None => p.detail = "Could not check: hermes plugins check-updates gave no result".into(),
     }
@@ -681,6 +868,8 @@ pub fn check_all() -> UpdateReport {
     let handles = [
         std::thread::spawn(check_hermes),
         std::thread::spawn(check_claude),
+        std::thread::spawn(check_antigravity),
+        std::thread::spawn(check_qoder),
         std::thread::spawn(check_plugins),
         std::thread::spawn(check_studio),
     ];
@@ -1068,6 +1257,8 @@ pub fn apply_update(app: AppHandle, product: &str, approved: bool) -> Result<Str
     let status = match product {
         "hermes" => check_hermes(),
         "claude-code" => check_claude(),
+        "antigravity" => check_antigravity(),
+        "qoder" => check_qoder(),
         "hermes-plugins" => check_plugins(),
         _ => check_studio(),
     };
@@ -1150,6 +1341,27 @@ pub fn apply_update(app: AppHandle, product: &str, approved: bool) -> Result<Str
                     let now = procs::version("claude").unwrap_or_default();
                     Ok(format!("Claude Code updated: {now}"))
                 }
+                "antigravity" => {
+                    m.note = "The Antigravity CLI replaces itself. To go back, install the older release again from its GitHub releases.".into();
+                    write_manifest(&mut m)?;
+                    require_ok(pg, "agy", &["update"], None)?;
+                    let now = procs::version("agy").unwrap_or_default();
+                    Ok(format!("Antigravity CLI updated: {now}"))
+                }
+                "qoder" => {
+                    m.note = format!("Rollback reinstalls @qoder-ai/qodercli@{from} with npm.");
+                    write_manifest(&mut m)?;
+                    let bin = if procs::find("qoder").is_some() {
+                        "qoder"
+                    } else {
+                        "qodercli"
+                    };
+                    require_ok(pg, bin, &["update"], None)?;
+                    let now = procs::version("qodercli")
+                        .or_else(|| procs::version("qoder"))
+                        .unwrap_or_default();
+                    Ok(format!("Qoder CLI updated: {now}"))
+                }
                 "hermes-plugins" => {
                     m.note = "Plugins have no rollback here; Hermes keeps each plugin's previous commit in its own history.".into();
                     write_manifest(&mut m)?;
@@ -1196,7 +1408,8 @@ pub fn rollback(app: AppHandle, backup_id: &str, approved: bool) -> Result<Strin
         &product,
         "update.rollback",
         format!("{} -> {}", m.product, m.from_version),
-        move |pg| match m.product.as_str() {
+        move |pg| {
+            match m.product.as_str() {
             "hermes" => {
                 let dir = m
                     .hermes_install_dir
@@ -1238,6 +1451,14 @@ pub fn rollback(app: AppHandle, backup_id: &str, approved: bool) -> Result<Strin
                 require_ok(pg, "claude", &["install", &m.from_version, "--force"], None)?;
                 Ok(format!("Claude Code reinstalled at {}", m.from_version))
             }
+            "antigravity" => bail!(
+                "The Antigravity CLI replaces itself in place. Install the {} release again from its GitHub releases.",
+                m.from_version
+            ),
+            "qoder" => bail!(
+                "Reinstall the Qoder CLI from npm: npm install -g @qoder-ai/qodercli@{}",
+                m.from_version
+            ),
             "hermes-plugins" => bail!("Plugin updates cannot be rolled back from Studio"),
             _ => {
                 let path = install_studio_release(
@@ -1256,6 +1477,7 @@ pub fn rollback(app: AppHandle, backup_id: &str, approved: bool) -> Result<Strin
                     path.display()
                 ))
             }
+        }
         },
     ))
 }
@@ -1272,6 +1494,21 @@ mod tests {
         assert_eq!(plugins_pending(j).unwrap(), ["antigravity-oauth", "c"]);
         assert_eq!(plugins_pending("[]").unwrap(), Vec::<String>::new());
         assert!(plugins_pending("not json").is_none());
+        let detailed = r#"[{"name":"antigravity-oauth","update_available":true,"current_version":"1.2.0","latest_version":"1.3.0","needs_fixing":null},
+                            {"name":"claude-oauth","update_available":false,"installed_version":"2.0.0","remote_version":"2.0.0","needs_fixing":null},
+                            {"name":"broken","update_available":false,"needs_fixing":"min_hermes 0.24"}]"#;
+        let rows = plugin_rows(detailed).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].current.as_deref(), Some("1.2.0"));
+        assert_eq!(rows[0].latest.as_deref(), Some("1.3.0"));
+        assert_eq!(rows[0].note, "Update available");
+        assert!(rows[0].pending);
+        assert_eq!(rows[1].note, "Up to date");
+        assert!(!rows[1].pending);
+        assert_eq!(rows[2].note, "Needs a fix: min_hermes 0.24");
+        assert!(rows[2].pending);
+        assert_eq!(npm_latest(r#"{"version":"1.1.95"}"#).unwrap(), "1.1.95");
+        assert!(npm_latest("{}").is_err());
         let mut r = UpdateReport::default();
         let mut p = base("studio");
         p.detail = "Up to date".into();
@@ -1280,6 +1517,29 @@ mod tests {
         p.detail = "Could not reach GitHub: timeout".into();
         r.products.push(p);
         assert_eq!(next_check_secs(&r), 15 * 60);
+    }
+
+    #[test]
+    fn every_fleet_tool_has_a_first_class_update_row() {
+        assert_eq!(
+            PRODUCTS,
+            [
+                "hermes",
+                "claude-code",
+                "antigravity",
+                "qoder",
+                "hermes-plugins",
+                "studio"
+            ]
+        );
+        assert_eq!(label("antigravity"), "Antigravity CLI");
+        assert_eq!(label("qoder"), "Qoder CLI");
+        assert_eq!(label("hermes-plugins"), "Hermes plugins");
+        for product in PRODUCTS {
+            assert!(check_product(product).is_ok(), "{product}");
+        }
+        assert!(check_product("npm").is_err());
+        assert!(ANTIGRAVITY_REPO.starts_with("google-antigravity/"));
     }
 
     #[test]

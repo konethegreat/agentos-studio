@@ -1,0 +1,120 @@
+[
+  {
+    "task_id": "t_456f2788",
+    "title": "Switch home page liveNow array to liveProducts",
+    "status": "blocked",
+    "assignee": "default",
+    "diagnostics": [
+      {
+        "kind": "repeated_crashes",
+        "severity": "error",
+        "title": "Agent crashed 3x: worker exited cleanly (rc=0) without kanban_complete, kanban_block or kanban_request_review",
+        "detail": "The last 3 runs ended with outcome=crashed. Full last error:\n\nWorker's last output: \"f6b96a7a11c10917649e ⚠️ No reply: gemini-4-hydrogen-high didn't produce a reply this time, even after retries. Send `continue` to try again, or switch models with /model. Session: local-3437b5e7450d870364bd7e15cfe4ac92e230084fb027824a9f3624379a37e786 ⚠️ No reply: gemini-4-hydrogen-high didn't produce a reply this time, even after retries. Send `continue` to try again, or switch models with /model.\"",
+        "actions": [],
+        "first_seen_at": 1794576966,
+        "last_seen_at": 1794576966,
+        "count": 3,
+        "data": {
+          "consecutive_crashes": 3,
+          "last_error": "Worker's last output: \"f6b96a7a11c10917649e ⚠️ No reply: gemini-4-hydrogen-high didn't produce a reply this time, even after retries. Send `continue` to try again, or switch models with /model. Session: local-3437b5e7450d870364bd7e15cfe4ac92e230084fb027824a9f3624379a37e786 ⚠️ No reply: gemini-4-hydrogen-high didn't produce a reply this time, even after retries. Send `continue` to try again, or switch models with /model.\""
+        }
+      }
+    ]
+  },
+  {
+    "task_id": "t_9b07991f",
+    "title": "Add curated entries and liveProducts for new repositories",
+    "status": "blocked",
+    "assignee": "default",
+    "diagnostics": [
+      {
+        "kind": "repeated_failures",
+        "severity": "error",
+        "title": "Agent crashed x2: pid 26144 exited with code 1 [managed worker lost: EOFError]",
+        "detail": "This task has failed 2 times in a row (most recent: crashed). Full last error:\n\npid 26144 exited with code 1 [managed worker lost: EOFError] Worker's last output: 'billing, credits, or account entitlement is exhausted for gemini-4-hydrogen-high. Add credits or update billing with that provider, then retry. You can switch providers temporarily with /model <model> --provider <provider>. Session: local-e2a764c7327be29f7713484630e95eeb851675d2ee244ef844c53f045e255be8 Kanban owner refused: Kanban owner silent for 230s: Gateway connection failed; no local fallback'\n\nThe dispatcher circuit breaker is configured for 2 consecutive non-success attempts. Fix the root cause and reclaim or unblock the task to retry.",
+        "actions": [],
+        "first_seen_at": 1794828510,
+        "last_seen_at": 1794828510,
+        "count": 2,
+        "data": {
+          "consecutive_failures": 2,
+          "most_recent_outcome": "crashed",
+          "last_error": "pid 26144 exited with code 1 [managed worker lost: EOFError] Worker's last output: 'billing, credits, or account entitlement is exhausted for gemini-4-hydrogen-high. Add credits or update billing with that provider, then retry. You can switch providers temporarily with /model <model> --provider <provider>. Session: local-e2a764c7327be29f7713484630e95eeb851675d2ee244ef844c53f045e255be8 Kanban owner refused: Kanban owner silent for 230s: Gateway connection failed; no local fallback'",
+          "failure_threshold": 2,
+          "failure_limit": 2
+        }
+      }
+    ]
+  },
+  {
+    "task_id": "t_5ab40e3d",
+    "title": "Make the done checks of goal G-001 pass.",
+    "status": "blocked",
+    "assignee": "default",
+    "diagnostics": [
+      {
+        "kind": "stuck_in_blocked",
+        "severity": "warning",
+        "title": "Task has been blocked for 335h",
+        "detail": "This task transitioned to blocked 335h ago and has had no comments or unblock attempts since. Blocked tasks are waiting for human input: check the block reason, then either unblock with feedback or answer with a comment.",
+        "actions": [],
+        "first_seen_at": 0,
+        "last_seen_at": 0,
+        "count": 1,
+        "data": {
+          "blocked_at": 0,
+          "age_hours": 335.0
+        }
+      }
+    ]
+  },
+  {
+    "task_id": "t_15d6f0b8",
+    "title": "Read AgentOS Studio version from latestRelease.tag",
+    "status": "blocked",
+    "assignee": "default",
+    "diagnostics": [
+      {
+        "kind": "stuck_in_blocked",
+        "severity": "warning",
+        "title": "Task has been blocked for 335h",
+        "detail": "This task transitioned to blocked 335h ago and has had no comments or unblock attempts since. Blocked tasks are waiting for human input: check the block reason, then either unblock with feedback or answer with a comment.",
+        "actions": [],
+        "first_seen_at": 0,
+        "last_seen_at": 0,
+        "count": 1,
+        "data": {
+          "blocked_at": 0,
+          "age_hours": 335.0
+        }
+      }
+    ]
+  },
+  {
+    "task_id": "t_7a10afcb",
+    "title": "Fix the failing CI on https://github.com/konethegreat/munisolve-za/pull/21 (mission M-113)",
+    "status": "blocked",
+    "assignee": "default",
+    "diagnostics": [
+      {
+        "kind": "stuck_in_blocked",
+        "severity": "warning",
+        "title": "Task has been blocked for 335h",
+        "detail": "This task transitioned to blocked 335h ago and has had no comments or unblock attempts since. Blocked tasks are waiting for human input: check the block reason, then either unblock with feedback or answer with a comment.",
+        "actions": [],
+        "first_seen_at": 0,
+        "last_seen_at": 0,
+        "count": 1,
+        "data": {
+          "blocked_at": 0,
+          "age_hours": 335.0
+        }
+      }
+    ]
+  },
+  {
+    "task_id": null,
+    "dispatch_profiles": {},
+    "diagnostics": []
+  }
+]

@@ -40,7 +40,14 @@ export interface Changelog {
   url: string;
 }
 
-export type Product = "hermes" | "claude-code" | "studio";
+export type Product = "hermes" | "claude-code" | "antigravity" | "qoder" | "hermes-plugins" | "studio";
+
+export interface UpdateComponent {
+  name: string;
+  current: string | null;
+  latest: string | null;
+  note: string;
+}
 
 export interface ProductUpdate {
   product: Product;
@@ -51,6 +58,7 @@ export interface ProductUpdate {
   state: "up_to_date" | "available" | "unknown" | "not_installed";
   detail: string;
   changelog: Changelog | null;
+  components?: UpdateComponent[];
   skipped: boolean;
   snoozed_until: number | null;
   alert: boolean;

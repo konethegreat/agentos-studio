@@ -107,10 +107,11 @@ with the fleet pause in Automations; work already running finishes.
 
 ## Updates
 
-Studio checks for a new version shortly after start and every six hours while it runs. When one is
+Studio checks for a new version shortly after start and every three hours while it runs. When one is
 available, the status bar shows **Update to x.y.z**: it downloads the update, checks its signature
-and installs it. Update Center also lists updates for Hermes and Claude Code, keeps a backup before
-every update and can roll one back.
+and installs it. Update Center also lists updates for Hermes, Claude Code, the Antigravity and Qoder
+CLIs and every Hermes plugin, records the installed version before every update and rolls one back
+where the tool supports it.
 
 ## Something is not working
 
