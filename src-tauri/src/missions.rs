@@ -127,6 +127,7 @@ pub fn create(
     )?;
     // Ids restart after a cleanup: a marker left by an old mission with this id must not apply.
     let _ = store::kv_delete(&c, &crate::automation::no_pr_key(&id));
+    let _ = store::kv_delete(&c, &crate::orchestrator::stuck_key(&id));
     get(&id)?.ok_or_else(|| anyhow::anyhow!("mission vanished after insert"))
 }
 

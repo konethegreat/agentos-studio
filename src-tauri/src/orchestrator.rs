@@ -4,9 +4,33 @@
 use serde::Serialize;
 
 use crate::missions::{self, Mission};
-use crate::{escalation, pause, reports, store, stuck};
+use crate::{agent_limits, bus, escalation, pause, reports, store, stuck};
 
 const ENABLED: &str = "orchestrator.enabled";
+
+/// Stuck questions the orchestrator answers for one mission before it takes the safe answer.
+/// Two reroutes give the work two more shots on another executor; after that the mission is
+/// stopped instead of being retried against the same failing agent forever.
+pub const MAX_STUCK_ANSWERS: u32 = 2;
+
+/// The per-mission counter of stuck questions the orchestrator has answered.
+pub fn stuck_key(id: &str) -> String {
+    format!("orchestrator.stuck.{id}")
+}
+
+fn stuck_answers(id: &str) -> u32 {
+    store::open()
+        .ok()
+        .and_then(|c| store::kv_get(&c, &stuck_key(id)).ok().flatten())
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+fn note_stuck_answer(id: &str) {
+    if let Ok(c) = store::open() {
+        let _ = store::kv_set(&c, &stuck_key(id), &(stuck_answers(id) + 1).to_string());
+    }
+}
 
 /// Phrases that keep a destructive question for the owner: irrecoverable production data,
 /// credentials or money. Everything else is answered automatically.
@@ -76,6 +100,86 @@ pub fn untracked_verdict(updated_at: i64, now: i64, retries: u32) -> stuck::Verd
     stuck::judge(true, updated_at, now, retries)
 }
 
+/// The orchestrator's answer to a stuck escalation. Pure.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StuckPlan {
+    /// Move the mission to this executor, clear its counters, then answer retry.
+    Reroute(&'static str),
+    /// No different executor is usable: answer retry on the current one.
+    Retry,
+    /// The attempts are spent: take the safe answer.
+    Stop,
+}
+
+/// A stuck mission gets two automatic answers. While a different executor is usable the answer
+/// also moves the mission there, because a retry on the agent that just failed the same way
+/// changes nothing.
+pub fn stuck_plan(attempts: u32, target: Option<&'static str>) -> StuckPlan {
+    if attempts >= MAX_STUCK_ANSWERS {
+        return StuckPlan::Stop;
+    }
+    match target {
+        Some(a) => StuckPlan::Reroute(a),
+        None => StuckPlan::Retry,
+    }
+}
+
+/// A headless executor other than the one that got stuck. Pure over the availability check.
+pub fn stuck_target(agent: &str, available: impl Fn(&str) -> bool) -> Option<&'static str> {
+    bus::best_headless(agent.trim().to_lowercase().as_str(), available)
+}
+
+fn reroute_stuck(id: &str, to: &str) -> anyhow::Result<()> {
+    missions::set_agent(id, to)?;
+    if let Ok(c) = store::open() {
+        let _ = store::kv_delete(&c, &crate::automation::no_pr_key(id));
+    }
+    stuck::reset(id);
+    Ok(())
+}
+
+/// Answer one stuck escalation. The mission is rerouted to another executor while its attempts
+/// last, so a mission that keeps finishing without a pull request stops cycling on the same
+/// agent; after the cap the safe answer stands.
+fn answer_stuck(e: &escalation::Escalation) -> anyhow::Result<escalation::Escalation> {
+    let Some(m) = e
+        .mission_id
+        .as_deref()
+        .and_then(|id| missions::get(id).ok().flatten())
+    else {
+        return escalation::auto_answer(&e.id, "orchestrator");
+    };
+    let reroutable = m.status == "blocked" || m.status == "queued";
+    let target = reroutable
+        .then(|| stuck_target(&m.agent, agent_limits::usable))
+        .flatten();
+    match stuck_plan(stuck_answers(&m.id), target) {
+        StuckPlan::Reroute(to) => {
+            reroute_stuck(&m.id, to)?;
+            let _ = reports::record_here(
+                "mission.routed",
+                &m.repo,
+                &format!("{} rerouted to {to}", m.id),
+                "Its stuck question was answered by moving the work to a different executor.",
+                &m.id,
+            );
+            let done = escalation::answer(&e.id, "retry", "orchestrator")?;
+            note_stuck_answer(&m.id);
+            Ok(done)
+        }
+        StuckPlan::Retry => {
+            let done = escalation::answer(&e.id, "retry", "orchestrator")?;
+            note_stuck_answer(&m.id);
+            Ok(done)
+        }
+        StuckPlan::Stop => {
+            let done = escalation::auto_answer(&e.id, "orchestrator")?;
+            note_stuck_answer(&m.id);
+            Ok(done)
+        }
+    }
+}
+
 /// One pass. Answers routine questions, routes work, unsticks untracked missions and prunes
 /// the report feed. Failures are collected rather than raised: the next pass retries.
 pub fn pass() -> PassReport {
@@ -93,7 +197,12 @@ pub fn pass() -> PassReport {
             if needs_owner(&e.kind, &e.question) {
                 continue;
             }
-            match escalation::auto_answer(&e.id, "orchestrator") {
+            let decided = if e.kind == "stuck" && e.options.iter().any(|o| o == "retry") {
+                answer_stuck(&e)
+            } else {
+                escalation::auto_answer(&e.id, "orchestrator")
+            };
+            match decided {
                 Ok(done) => {
                     let answer = done.answer.clone().unwrap_or_default();
                     let _ = reports::record_here(
@@ -406,6 +515,101 @@ mod tests {
         assert!(out.answered.is_empty());
         assert_eq!(escalation::get(&e.id).unwrap().unwrap().status, "open");
         set_enabled(true);
+        store::set_test_db(None);
+    }
+
+    fn seed_blocked(agent: &str) -> String {
+        let m = missions::create(
+            "demo",
+            "do the work",
+            "it is done",
+            "implementer",
+            agent,
+            "",
+            "",
+            0.0,
+        )
+        .unwrap();
+        missions::block(&m.id, "blocked in test", false).unwrap();
+        m.id
+    }
+
+    #[test]
+    fn a_stuck_plan_reroutes_while_attempts_remain_and_then_stops() {
+        assert_eq!(stuck_plan(0, Some("hermes")), StuckPlan::Reroute("hermes"));
+        assert_eq!(
+            stuck_plan(1, Some("claude-code")),
+            StuckPlan::Reroute("claude-code")
+        );
+        assert_eq!(stuck_plan(2, Some("hermes")), StuckPlan::Stop);
+        assert_eq!(stuck_plan(0, None), StuckPlan::Retry);
+        assert_eq!(stuck_plan(1, None), StuckPlan::Retry);
+        assert_eq!(stuck_plan(2, None), StuckPlan::Stop);
+    }
+
+    #[test]
+    fn a_stuck_target_is_a_different_usable_executor() {
+        let only_hermes = |a: &str| a == "hermes";
+        assert_eq!(stuck_target("antigravity", only_hermes), Some("hermes"));
+        assert_eq!(stuck_target("hermes", only_hermes), None);
+        assert_eq!(stuck_target("qoder", |_| false), None);
+    }
+
+    #[test]
+    fn a_reroute_moves_the_mission_and_clears_its_counters() {
+        let _g = store::test_env_lock();
+        let d = tempfile::TempDir::new().unwrap();
+        store::set_test_db(Some(d.path().join("studio.db")));
+        let id = seed_blocked("antigravity");
+        let c = store::open().unwrap();
+        store::kv_set(&c, &crate::automation::no_pr_key(&id), "1").unwrap();
+        drop(c);
+        stuck::note_retry(&id);
+        assert_eq!(stuck::retries(&id), 1);
+
+        reroute_stuck(&id, "hermes").unwrap();
+
+        let m = missions::get(&id).unwrap().unwrap();
+        assert_eq!(m.agent, "hermes");
+        assert_eq!(m.status, "blocked");
+        assert_eq!(stuck::retries(&id), 0);
+        let c = store::open().unwrap();
+        assert_eq!(
+            store::kv_get(&c, &crate::automation::no_pr_key(&id)).unwrap(),
+            None
+        );
+        store::set_test_db(None);
+    }
+
+    #[test]
+    fn the_orchestrator_answers_a_stuck_mission_twice_then_stops_it() {
+        let _g = store::test_env_lock();
+        let d = tempfile::TempDir::new().unwrap();
+        store::set_test_db(Some(d.path().join("studio.db")));
+        let id = seed_blocked("antigravity");
+        for expected in ["retry", "retry", "stop"] {
+            let (e, _) = escalation::raise(
+                Some("G-300"),
+                Some(&id),
+                "stuck",
+                "The mission is blocked after its retry. Retry it, or stop it?",
+                &["retry", "stop"],
+                "stop",
+            )
+            .unwrap();
+            let out = pass();
+            assert!(
+                out.answered.contains(&e.id),
+                "case {expected}: {:?}",
+                out.error
+            );
+            let got = escalation::get(&e.id).unwrap().unwrap();
+            assert_eq!(got.answer.as_deref(), Some(expected));
+            assert_eq!(got.answered_by.as_deref(), Some("orchestrator"));
+        }
+        let m = missions::get(&id).unwrap().unwrap();
+        assert_eq!(m.status, "blocked");
+        assert_eq!(stuck_answers(&id), 3);
         store::set_test_db(None);
     }
 

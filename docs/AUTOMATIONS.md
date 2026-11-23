@@ -162,9 +162,13 @@ deliberately boring.
   their safe answer (`by = orchestrator`), routes a queued mission whose goal names UI work to
   Antigravity and CLI, cron, vault, Notion or cross-repository work to Hermes (anything else stays
   with the quota-aware router), and unsticks a running mission that never got a task id: retry once,
-  then block with the reason. Only a `destructive` escalation whose question matches an owner
-  pattern (production, credentials, an API key, a secret, payments, billing, an invoice) is left
-  for the owner. Every step writes a report row, which is what the Reports view reads.
+  then block with the reason. A `stuck` escalation is answered `retry` while another headless
+  executor is usable, and the mission moves to that executor with its retry and no-PR counters
+  cleared, so work that keeps failing the same way on one agent does not cycle on it; after two
+  orchestrator answers the safe answer stands. Only a `destructive` escalation whose question
+  matches an owner pattern (production, credentials, an API key, a secret, payments, billing, an
+  invoice) is left for the owner. Every step writes a report row, which is what the Reports view
+  reads.
 - **Budgets** count only metered providers: the spend is read from Hermes usage data in `state.db`
   (worker sessions and Hermes reviewer sessions); subscriptions count zero. A Hermes mission whose
   metered spend passes its budget is blocked.
