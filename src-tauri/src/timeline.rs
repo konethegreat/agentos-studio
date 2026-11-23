@@ -571,8 +571,10 @@ pr_url: {pr}
         }
     }
     if !pr.is_empty() {
-        out.push_str(&format!("- Pull request: {pr}
-"));
+        out.push_str(&format!(
+            "- Pull request: {pr}
+"
+        ));
     }
     out.push_str(
         "
@@ -724,7 +726,10 @@ mod tests {
             let err = export_markdown(&v, bad).unwrap_err().to_string();
             assert!(err.contains("not a mission id"), "{bad}: {err}");
         }
-        assert!(!dir.path().join("04_Agent_Engine").exists(), "nothing was written");
+        assert!(
+            !dir.path().join("04_Agent_Engine").exists(),
+            "nothing was written"
+        );
     }
 
     #[test]

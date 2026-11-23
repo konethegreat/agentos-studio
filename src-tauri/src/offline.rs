@@ -321,13 +321,22 @@ mod tests {
         let p = pin();
 
         // Online with no pin: nothing to do.
-        assert_eq!(decide(true, true, None, Some(&cloud), &models), Decision::None);
+        assert_eq!(
+            decide(true, true, None, Some(&cloud), &models),
+            Decision::None
+        );
         // Offline with automatic pinning off: nothing starts, config stays.
-        assert_eq!(decide(false, false, None, Some(&cloud), &models), Decision::None);
+        assert_eq!(
+            decide(false, false, None, Some(&cloud), &models),
+            Decision::None
+        );
         // Offline with nothing pulled: nothing to pin.
         assert_eq!(decide(false, true, None, Some(&cloud), &[]), Decision::None);
         // Already on a local model: do not pin over the owner's choice.
-        assert_eq!(decide(false, true, None, Some(&local), &models), Decision::None);
+        assert_eq!(
+            decide(false, true, None, Some(&local), &models),
+            Decision::None
+        );
         // A provider the catalog cannot switch back to: do not pin what cannot be restored.
         let mut auto_provider = active("auto", "some-model");
         auto_provider.restorable = false;
@@ -346,7 +355,10 @@ mod tests {
         );
 
         // Still pinned while offline: hold.
-        assert_eq!(decide(false, true, Some(&p), Some(&local), &models), Decision::None);
+        assert_eq!(
+            decide(false, true, Some(&p), Some(&local), &models),
+            Decision::None
+        );
         // Reconnected: put the old provider back.
         assert_eq!(
             decide(true, true, Some(&p), Some(&local), &models),
