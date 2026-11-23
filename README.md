@@ -35,6 +35,37 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.6.0
+
+An orchestrator that keeps the fleet moving without you, a report feed to read instead of a queue to work, and one update path that no longer stalls.
+
+- **Orchestrator.** A pass runs after every scheduler tick. It answers routine escalations on your
+  behalf, routes queued missions to an agent, and unsticks running missions that never got a task
+  id: retry once, then block with the reason, so nothing sits in Running forever. Status is one
+  call: enabled and paused state, running, queued and blocked counts, auto-answers today, and the
+  short list of things that genuinely need you. The only escalations it passes to you are the ones
+  that would destroy production data or need credentials. Turn it off from Today or Goals.
+- **Reports feed.** Every step the fleet takes is now written to a `reports` table: mission started,
+  routed, reviewed, merged, blocked and unstuck, escalations the orchestrator answered, autonomy
+  passes, digests, fleet reports and applied updates. A new **Reports** view under Work is a
+  read-only feed with kind and repository filters, a "since you last looked" summary, and unread
+  counts, which drive the new badge on the Work icon. Reading it marks it read.
+- **Today leads with the orchestrator.** The "Waiting on you" card is gone. Today shows the
+  orchestrator's state, its running, queued, blocked and answered counts, the schedule (digest
+  times, next Studio check, the weekly ship), the work that is in flight now, and a link into the
+  reports feed. Goals keeps a **Needs you** card for the Law 1 escalations the orchestrator will not
+  answer, plus the goals you chose to hold.
+- **Update flow fixed.** Applying an update no longer asks for an approval object, so the path is
+  the same from the banner, the StatusBar chip and the Update Center: one click, download, verify,
+  install, relaunch. AgentOS Studio checks on start, every three hours and when the window regains
+  focus (throttled to once a minute). A new auto-apply policy sets what updates itself:
+  `cli` (default) keeps Hermes, Claude Code, the Antigravity and Qoder CLIs and every Hermes plugin
+  current and lets Studio wait for a click, `all` also installs and restarts Studio, `off` waits for
+  a click on everything. A plugin that fails its batch update is retried on its own, so one broken
+  plugin no longer holds the rest. Studio updates now run the installer, wait for it, start the
+  installed exe and exit the old process, which is what makes an in-place update complete instead
+  of leaving two windows.
+
 ## What is new in 2.5.0
 
 Runs you can replay anywhere, and work that keeps moving when the network does not.
@@ -190,7 +221,7 @@ The first release of the Beyond roadmap (docs/BEYOND.md): a fleet that does not 
 ## What is new in 1.1.1
 
 - **Connections that stay working.** Setup shows whether each subscription Hermes runs on can run right now (signed in, plugin on, usage limit with its reset time, recent failures, a fallback chain), with the one command that fixes it; a provider in use that stops raises a bell item and a Windows notification. See [docs/CONNECTIONS.md](docs/CONNECTIONS.md).
-- **Updates you do not miss.** Hermes plugins (the Claude and Antigravity providers) are checked with Hermes, Claude Code and Studio; checks run every 3 hours and retry in 15 minutes when a source was unreachable.
+- **Updates you do not miss.** Hermes plugins (the Claude and Antigravity providers) are checked with Hermes, Claude Code and Studio; checks run at start, every 3 hours and on window focus, and retry in 15 minutes when a source was unreachable.
 - **Fix.** A signed-out Claude no longer reads as connected.
 
 ## What is new in 1.1.0
@@ -326,8 +357,15 @@ Foundations (Git, GitHub CLI, Node, user `PATH` entries for `~/.local/bin`, npm 
 
 ## Today
 
-Studio opens on **Today**, which leads with **Waiting on you**: open escalations first, then goals whose plan is ready to approve, in the same order as the digest. Answer an escalation from its own buttons, approve a plan, or resume a paused fleet without leaving the screen.
+Studio opens on **Today**, which leads with the **Orchestrator**. It shows whether the orchestrator is
+running or paused, with one control to turn it on or off, and the list of anything that genuinely
+needs you (the Law 1 escalations that need credentials, payments, or a destructive action). When
+nothing needs you it says so plainly. Four tiles count what is running, queued, blocked and
+answered today, and the schedule line shows the digest times, the next Studio update check and the
+weekly ship.
 
+- **Working now** lists the missions the fleet is running or holding in review, with their agent and
+  when they last moved, and points to the full **Reports** feed for the history.
 - **Goals in progress** shows each goal's missions done against missions planned, a budget bar, its autonomy level and its spend.
 - **Running agents** lists the missions being worked on now and the worker processes this machine started.
 - **Spend** totals metered spend across goals and says plainly that flat subscriptions are not counted.
@@ -529,7 +567,17 @@ The GitHub view works through your `gh` login (Studio never sees the token). Pic
 
 ## Update Center
 
-Hermes (`hermes update --check` plus its GitHub release notes), Claude Code (the npm registry plus its `CHANGELOG.md`), the Antigravity CLI (its GitHub releases plus `agy --version`), the Qoder CLI (npm `@qoder-ai/qodercli` plus `qoder --version`), every Hermes plugin (`hermes plugins check-updates --json`, listed one by one with its installed and available version) and AgentOS Studio (GitHub releases) are checked 20 seconds after start and every 3 hours; a source that could not be reached is retried after 15 minutes. A new version shows a banner and, once per version, an OS notification with a short summary. Each product card shows the changes grouped by section, and offers **Update**, **Skip this version** and **Remind me later**. Offline or failed checks say "Could not check", never "Up to date".
+Hermes (`hermes update --check` plus its GitHub release notes), Claude Code (the npm registry plus its `CHANGELOG.md`), the Antigravity CLI (its GitHub releases plus `agy --version`), the Qoder CLI (npm `@qoder-ai/qodercli` plus `qoder --version`), every Hermes plugin (`hermes plugins check-updates --json`, listed one by one with its installed and available version) and AgentOS Studio (GitHub releases) are checked at start, every 3 hours and when the window regains focus; a source that could not be reached is retried after 15 minutes. A new version shows a banner and, once per version, an OS notification with a short summary. Each product card shows the changes grouped by section, and offers **Update**, **Skip this version** and **Remind me later**. Offline or failed checks say "Could not check", never "Up to date".
+
+An **auto-apply policy** at the top of the screen decides what updates without a click:
+
+- `cli` (default): Hermes, Claude Code, the Antigravity and Qoder CLIs and every Hermes plugin update themselves; Studio waits for a click.
+- `all`: everything updates itself, including Studio, which installs the new release and restarts on its own.
+- `off`: nothing auto-applies; every product waits for a click.
+
+Updates run one path from the banner, the StatusBar chip and the Update Center: download, verify,
+record, install, and for Studio run the installer, wait for it, start the installed app and exit the
+old process. A plugin that fails its batch update is retried on its own.
 
 Every update is recorded first, under `%APPDATA%\agentos-studio\backups` (or the platform config directory):
 
@@ -539,8 +587,8 @@ Every update is recorded first, under `%APPDATA%\agentos-studio\backups` (or the
 | Claude Code | The installed version is recorded | `claude update` | `claude install <version> --force` |
 | Antigravity CLI | The installed version is recorded | `agy update` | Not from Studio; install the previous release again from the Antigravity CLI releases |
 | Qoder CLI | The installed version is recorded | `qoder update`, or `qodercli update` when that is the installed binary | `npm install -g @qoder-ai/qodercli@<version>` |
-| Hermes plugins | The installed versions are recorded | `hermes plugins update` | Not from Studio; Hermes keeps each plugin's previous commit in its own history |
-| Studio | The installed version is recorded | Downloads the release installer, verifies its SHA-256 against GitHub's digest, runs it | Installs the previous release the same way |
+| Hermes plugins | The installed versions are recorded | `hermes plugins update`, then `hermes plugins update <name>` for any plugin the batch missed | Not from Studio; Hermes keeps each plugin's previous commit in its own history |
+| Studio | The installed version is recorded | Downloads the release installer, verifies its SHA-256 against GitHub's digest, runs it, waits for it to finish, starts the installed app and exits the old process | Installs the previous release the same way |
 
 Studio copies built from source (running out of `target\release`) are not replaced by an installer; the card says to pull and rebuild instead. Agents do not run the app exe itself: their `agentos-hub` registration points at a versioned copy (see MCP and Providers), so an installed app updates in place.
 

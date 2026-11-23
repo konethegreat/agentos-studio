@@ -68,6 +68,7 @@ pub mod notion_goals;
 pub mod notion_sync;
 pub mod offline;
 pub mod ops;
+pub mod orchestrator;
 pub mod org;
 pub mod pause;
 pub mod permissions;
@@ -83,6 +84,7 @@ pub mod provider_health;
 pub mod pty;
 pub mod quota_grid;
 pub mod receipts;
+pub mod reports;
 pub mod review_agent;
 pub mod router;
 pub mod routing;
@@ -243,7 +245,14 @@ pub fn run_gui() {
                 std::thread::sleep(Duration::from_secs(20));
                 loop {
                     let report = updates::check_all();
+                    // CLI tools update themselves under the default policy; a notification is
+                    // only raised for what still needs the owner (Studio, or every product
+                    // when the policy is off).
+                    let auto = updates::auto_apply(&upd, &report);
                     for p in updates::take_notifications(&report) {
+                        if auto.contains(&p.product) {
+                            continue;
+                        }
                         use tauri_plugin_notification::NotificationExt;
                         let _ = upd
                             .notification()
@@ -373,6 +382,8 @@ pub fn run_gui() {
             ops::clear_update_choice,
             ops::list_update_backups,
             ops::rollback_update,
+            ops::update_auto_apply,
+            ops::set_update_auto_apply,
             ops::org_snapshot,
             ops::org_create_workspace,
             ops::org_update_workspace,
@@ -585,7 +596,6 @@ pub fn run_gui() {
             commands::unattended_profile,
             commands::hub_tools,
             commands::studio_update_check,
-            commands::studio_update_install,
             commands::session_usage,
             commands::provider_credits,
             commands::provider_connections,
@@ -635,6 +645,12 @@ pub fn run_gui() {
             commands::extension_run,
             commands::extension_register_mcp,
             commands::extension_list_runs,
+            commands::orchestrator_status,
+            commands::orchestrator_set,
+            commands::reports_list,
+            commands::reports_summary,
+            commands::reports_unread,
+            commands::reports_mark_read,
             ops::agency_list_intakes,
             ops::agency_create_intake,
             ops::agency_request_quote_approval,

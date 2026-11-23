@@ -1518,8 +1518,6 @@ export const api = {
   fleetResume: () => invoke<FleetPause>("fleet_resume"),
   autonomyDefaults: (repos: string[]) => invoke<Record<string, AutonomyLevel>>("autonomy_defaults", { repos }),
   setRepoAutonomy: (repo: string, level: AutonomyLevel) => invoke<void>("set_repo_autonomy", { repo, level }),
-  studioUpdateCheck: () => invoke<string | null>("studio_update_check"),
-  studioUpdateInstall: () => invoke<string>("studio_update_install"),
 
   sessionUsage: (sessionId: string) =>
     invoke<{

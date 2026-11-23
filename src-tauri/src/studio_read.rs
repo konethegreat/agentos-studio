@@ -231,7 +231,7 @@ pub fn execute(name: &str, args: &Value, token: Option<&str>) -> Result<Value, R
     let tx = checked(c.transaction())?;
     // Pin the schema check, token, policies and data to the same SQLite read snapshot.
     let version: i64 = checked(tx.query_row("PRAGMA user_version", [], |r| r.get(0)))?;
-    if version != 12 || version != store::SCHEMA_VERSION {
+    if version != store::SCHEMA_VERSION {
         return Err(UNAVAILABLE);
     }
     let agent = checked(hub_identity::agent_for_in(&tx, token))?.ok_or(FORBIDDEN)?;
@@ -1115,7 +1115,7 @@ mod tests {
         store::kv_set(&f.c, "fleet.paused", "1700000000|maintenance").unwrap();
         let v = f.call("studio_status", json!({})).unwrap();
         assert_eq!(v["identity"], "qoder");
-        assert_eq!(v["schema_version"], 12);
+        assert_eq!(v["schema_version"], store::SCHEMA_VERSION);
         assert_eq!(v["fleet"]["paused"], true);
         assert_eq!(v["fleet"]["since"], 1700000000_i64);
         assert_eq!(v["fleet"]["reason"], "maintenance");
@@ -1153,7 +1153,7 @@ mod tests {
             f.call("studio_status", json!({})).unwrap_err().code,
             "STORE_UNAVAILABLE"
         );
-        for version in [0, 11, 13] {
+        for version in [0, store::SCHEMA_VERSION - 1, store::SCHEMA_VERSION + 1] {
             f.c.pragma_update(None, "user_version", version).unwrap();
             assert_eq!(
                 f.call("list_goals", json!({})).unwrap_err().code,

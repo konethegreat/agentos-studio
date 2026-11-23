@@ -81,6 +81,11 @@ pub fn reset(id: &str) {
     }
 }
 
+/// Count one retry the scheduler performed itself, so the next quiet period is judged fresh.
+pub fn note_retry(id: &str) {
+    record_retry(id, store::now());
+}
+
 fn record_retry(id: &str, now: i64) {
     kv_put(&format!("{KV_RETRIES}{id}"), &(retries(id) + 1).to_string());
     kv_put(&format!("{KV_BEAT}{id}"), &now.to_string());

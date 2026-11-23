@@ -95,6 +95,36 @@ export interface BackupManifest {
   dir: string;
 }
 
+/** Who applies updates: the CLI tools by themselves (default), everything, or nothing. */
+export type UpdatePolicy = "cli" | "all" | "off";
+
+export interface OrchestratorStatus {
+  enabled: boolean;
+  paused: boolean;
+  running: number;
+  queued: number;
+  blocked: number;
+  paused_missions: number;
+  auto_answered_today: number;
+  needs_you: string[];
+}
+
+export interface FleetReport {
+  id: number;
+  at: number;
+  repo: string;
+  kind: string;
+  title: string;
+  body: string;
+  reference: string;
+}
+
+export interface RepoSummary {
+  repo: string;
+  count: number;
+  last_at: number;
+}
+
 // ---------------------------------------------------------------- organisation
 
 export interface Workspace {
@@ -512,12 +542,25 @@ export const studio = {
   updates: {
     check: () => invoke<UpdateReport>("check_updates"),
     last: () => invoke<ProductUpdate[] | null>("last_update_report"),
-    apply: (product: Product, a: Approved = {}) => invoke<string>("apply_update", { product, ...a }),
+    apply: (product: Product) => invoke<string>("apply_update", { product }),
     skip: (product: Product, version: string) => invoke<void>("skip_update", { product, version }),
     snooze: (product: Product, hours: number) => invoke<number>("snooze_update", { product, hours }),
     clear: (product: Product) => invoke<void>("clear_update_choice", { product }),
     backups: () => invoke<BackupManifest[]>("list_update_backups"),
     rollback: (backupId: string, a: Approved = {}) => invoke<string>("rollback_update", { backupId, ...a }),
+    policy: () => invoke<UpdatePolicy>("update_auto_apply"),
+    setPolicy: (policy: UpdatePolicy) => invoke<void>("set_update_auto_apply", { policy }),
+  },
+  orchestrator: {
+    status: () => invoke<OrchestratorStatus>("orchestrator_status"),
+    set: (enabled: boolean) => invoke<OrchestratorStatus>("orchestrator_set", { enabled }),
+  },
+  reports: {
+    list: (sinceId: number | null, repo: string | null, limit = 200) =>
+      invoke<FleetReport[]>("reports_list", { sinceId, repo, limit }),
+    summary: (hours = 24) => invoke<RepoSummary[]>("reports_summary", { hours }),
+    unread: () => invoke<number>("reports_unread"),
+    markRead: (id: number) => invoke<void>("reports_mark_read", { id }),
   },
   org: {
     snapshot: (query: string | null) => invoke<OrgSnapshot>("org_snapshot", { query }),

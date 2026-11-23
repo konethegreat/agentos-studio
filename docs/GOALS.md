@@ -112,6 +112,12 @@ row shows its oldest open question, and a Decision set by a trusted Notion autho
 (answered by `notion`) through the same `escalation::answer` path. A goal proposed on that board by
 anyone else is created at Watch.
 
+Routine escalations do not wait for the owner. The orchestrator (`orchestrator.rs`, see the 2.6.0
+section of [ROADMAP.md](ROADMAP.md)) answers each one on its next pass with the escalation's own safe
+answer, recorded as answered by `orchestrator`, and writes a report row. Only an escalation marked
+destructive, or one whose question matches an owner pattern (credentials, payments, production data),
+is left for the owner, under **Needs you** in Goals and on the Today orchestrator card.
+
 ## Obsidian views
 
 Every time the goal note is written, Studio also writes the goal's folder next to it,

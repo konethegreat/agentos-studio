@@ -1,7 +1,7 @@
 import { ArrowUpCircle, BellOff, Clock, X } from "lucide-react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { errorText } from "../lib/api";
-import { studio, studioEvents, type BackupManifest, type Product, type ProductUpdate, type UpdateProgress } from "../lib/studio";
+import { studio, studioEvents, type BackupManifest, type Product, type ProductUpdate, type UpdatePolicy, type UpdateProgress } from "../lib/studio";
 import { ApprovalDeclined, useGuarded } from "./ApprovalProvider";
 import { useToast } from "./Toasts";
 
@@ -19,6 +19,8 @@ interface UpdatesApi {
   log: UpdateProgress[];
   busy: Product | null;
   alerts: ProductUpdate[];
+  policy: UpdatePolicy | null;
+  setPolicy: (p: UpdatePolicy) => Promise<void>;
 }
 
 const Ctx = createContext<UpdatesApi | null>(null);
@@ -38,21 +40,29 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
   const [backups, setBackups] = useState<BackupManifest[]>([]);
   const [log, setLog] = useState<UpdateProgress[]>([]);
   const [busy, setBusy] = useState<Product | null>(null);
+  const [policy, setPolicyState] = useState<UpdatePolicy | null>(null);
+  const lastCheck = useRef(0);
+  const checkingRef = useRef(false);
+  const checkRef = useRef<() => Promise<void>>(async () => undefined);
 
   const loadBackups = useCallback(() => void studio.updates.backups().then(setBackups).catch(() => undefined), []);
 
   const check = useCallback(async () => {
+    checkingRef.current = true;
     setChecking(true);
     try {
       const r = await studio.updates.check();
       setProducts(r.products);
       setCheckedAt(r.checked_at);
+      lastCheck.current = Date.now();
     } catch (e) {
       toast("error", `Update check failed: ${errorText(e)}`);
     } finally {
+      checkingRef.current = false;
       setChecking(false);
     }
   }, [toast]);
+  checkRef.current = check;
 
   useEffect(() => {
     void studio.updates
@@ -75,7 +85,15 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
         void check();
       }
     });
+    void studio.updates.policy().then(setPolicyState).catch(() => undefined);
+    // A window that has been in the background hears about a release as soon as it is looked at.
+    const focus = () => {
+      if (checkingRef.current || Date.now() - lastCheck.current < 60_000) return;
+      void checkRef.current();
+    };
+    window.addEventListener("focus", focus);
     return () => {
+      window.removeEventListener("focus", focus);
       void un1.then((f) => f());
       void un2.then((f) => f());
     };
@@ -86,13 +104,26 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
       try {
         setLog([]);
         setBusy(p);
-        await guarded((a) => studio.updates.apply(p, a));
+        await studio.updates.apply(p);
       } catch (e) {
         setBusy(null);
-        if (!(e instanceof ApprovalDeclined)) toast("error", errorText(e));
+        toast("error", errorText(e));
       }
     },
-    [guarded, toast],
+    [toast],
+  );
+
+  const setPolicy = useCallback(
+    async (p: UpdatePolicy) => {
+      try {
+        await studio.updates.setPolicy(p);
+        setPolicyState(p);
+        toast("ok", p === "off" ? "Updates wait for your click." : p === "all" ? "Everything updates itself at the check." : "The CLI tools update themselves at the check; Studio waits for your click.");
+      } catch (e) {
+        toast("error", errorText(e));
+      }
+    },
+    [toast],
   );
 
   const rollback = useCallback(
@@ -142,7 +173,7 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
   const alerts = useMemo(() => products.filter((p) => p.alert), [products]);
 
   return (
-    <Ctx.Provider value={{ products, checkedAt, checking, check, apply, skip, snooze, clear, rollback, backups, log, busy, alerts }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ products, checkedAt, checking, check, apply, skip, snooze, clear, rollback, backups, log, busy, alerts, policy, setPolicy }}>{children}</Ctx.Provider>
   );
 }
 

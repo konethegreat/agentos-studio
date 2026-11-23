@@ -346,6 +346,23 @@ pub fn expire_due(now: i64) -> Result<Vec<Escalation>> {
     Ok(out)
 }
 
+/// Take the safe answer on the owner's behalf, recording who did it. Unlike [`answer`] this
+/// does not require the choice to be spelled like an option: it takes the stored safe answer
+/// exactly as it was raised.
+pub fn auto_answer(id: &str, by: &str) -> Result<Escalation> {
+    let e = get(id)?.ok_or_else(|| anyhow::anyhow!("no escalation '{id}'"))?;
+    if e.status != "open" {
+        bail!("{id} is already {}", e.status);
+    }
+    let c = store::open()?;
+    c.execute(
+        "UPDATE escalations SET status = 'answered', answer = ?1, answered_by = ?2,
+                answered_at = ?3 WHERE id = ?4 AND status = 'open'",
+        params![e.safe_answer, by, store::now(), id],
+    )?;
+    get(id)?.ok_or_else(|| anyhow::anyhow!("no escalation '{id}'"))
+}
+
 /// The kv key that records an escalation's answer was applied, so it is applied once.
 pub fn applied_key(id: &str) -> String {
     format!("escalation.applied.{id}")
@@ -429,6 +446,26 @@ mod tests {
             let m = message(&e, "1234");
             assert!(m.contains("(G-001, M-001)") && m.contains("Reply \"E-1 1234 <answer>\""));
             assert!(m.contains("Studio takes \"skip\""));
+        })
+    }
+
+    #[test]
+    fn auto_answer_takes_the_safe_answer_and_records_who() {
+        with_db(|| {
+            let (e, _) = raise(
+                None,
+                Some("M-009"),
+                "budget",
+                "M-009 passed its budget. Keep going?",
+                &["stop", "raise"],
+                "stop",
+            )
+            .unwrap();
+            let done = auto_answer(&e.id, "orchestrator").unwrap();
+            assert_eq!(done.status, "answered");
+            assert_eq!(done.answer.as_deref(), Some("stop"));
+            assert_eq!(done.answered_by.as_deref(), Some("orchestrator"));
+            assert!(auto_answer(&e.id, "orchestrator").is_err(), "answered once");
         })
     }
 

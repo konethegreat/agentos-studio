@@ -792,6 +792,7 @@ pub fn start_scheduler(vault_root: std::path::PathBuf) {
             pass += 1;
             let v = Vault::new(&vault_root);
             let _ = tick(&v);
+            let _ = crate::orchestrator::pass();
         }
     });
 }

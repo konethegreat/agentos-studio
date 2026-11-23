@@ -318,7 +318,17 @@ pub fn tick(v: &Vault) -> Option<String> {
     let last = kv_get("digest.last_slot");
     let slot = due_slot(&times(), now, last.as_deref())?;
     kv_set("digest.last_slot", &slot);
-    send_now(v).ok()
+    let sent = send_now(v).ok();
+    if let Some(rel) = sent.as_deref() {
+        let _ = crate::reports::record_here(
+            "digest.sent",
+            "",
+            "Digest sent",
+            &format!("The {slot} digest is written to {rel} and sent to the phone."),
+            rel,
+        );
+    }
+    sent
 }
 
 /// A user message in a messaging session of the Hermes gateway. Pure input to `replies`.

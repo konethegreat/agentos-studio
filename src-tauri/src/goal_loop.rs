@@ -383,6 +383,13 @@ fn try_merge(v: &Vault, m: &Mission, p: &mut Pass) -> Result<()> {
     }
     crate::review_agent::merge(&m.id, true)?;
     kv_set(&merge_key(&m.id), &format!("merged:{}", store::now()));
+    let _ = crate::reports::record_here(
+        "mission.merged",
+        &m.repo,
+        &format!("{} merged {}", m.id, repo_pr(&repo, number)),
+        &m.goal,
+        m.pr_url.as_deref().unwrap_or_default(),
+    );
     let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
         mission_id: Some(&m.id),
         kind: "note",

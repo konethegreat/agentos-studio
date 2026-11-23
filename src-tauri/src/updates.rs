@@ -1138,15 +1138,37 @@ fn spawn_job(
     target: String,
     f: impl FnOnce(&Progress) -> Result<String> + Send + 'static,
 ) -> String {
+    spawn_job_joined(app, product, action, target, f).0
+}
+
+fn spawn_job_joined(
+    app: AppHandle,
+    product: &str,
+    action: &'static str,
+    target: String,
+    f: impl FnOnce(&Progress) -> Result<String> + Send + 'static,
+) -> (String, std::thread::JoinHandle<()>) {
     let job = store::new_id();
     let pg = Progress {
         app,
         job: job.clone(),
         product: product.to_string(),
     };
-    std::thread::spawn(move || match f(&pg) {
+    let product_owned = product.to_string();
+    let target_owned = target.clone();
+    let handle = std::thread::spawn(move || match f(&pg) {
         Ok(msg) => {
             permissions::audit(action, &target, &msg, "ok");
+            if action == "update.apply" {
+                let title = format!("{} updated", label(&product_owned));
+                let _ = crate::reports::record_here(
+                    "update.applied",
+                    "",
+                    &title,
+                    &msg,
+                    &target_owned,
+                );
+            }
             pg.finish(true, msg);
         }
         Err(e) => {
@@ -1154,7 +1176,7 @@ fn spawn_job(
             pg.finish(false, format!("{e:#}"));
         }
     });
-    job
+    (job, handle)
 }
 
 fn studio_asset(rel: &Release) -> Option<&ReleaseAsset> {
@@ -1218,28 +1240,65 @@ fn install_studio_release(pg: &Progress, version: &str, dir: &Path) -> Result<Pa
     let path = dir.join(&asset.name);
     std::fs::write(&path, &bytes)?;
     pg.emit("step", format!("Saved {}", path.display()));
-    open_installer(&path)?;
     Ok(path)
 }
 
-fn open_installer(path: &Path) -> Result<()> {
+/// Where the installed Studio lives after the setup program runs.
+fn installed_studio_exe() -> PathBuf {
     #[cfg(windows)]
     {
-        std::process::Command::new(path)
-            .spawn()
-            .with_context(|| format!("starting {}", path.display()))?;
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            let p = PathBuf::from(local)
+                .join("Programs")
+                .join("AgentOS Studio")
+                .join("agentos-studio.exe");
+            if p.exists() {
+                return p;
+            }
+        }
     }
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open").arg(path).spawn()?;
+        let p = PathBuf::from("/Applications/AgentOS Studio.app/Contents/MacOS/agentos-studio");
+        if p.exists() {
+            return p;
+        }
     }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
-        std::process::Command::new(path).spawn()?;
+    std::env::current_exe().unwrap_or_default()
+}
+
+/// Run the installer, wait for it, then start the installed Studio and close this one. A failed
+/// installer keeps this window open and reports why, so the owner never loses the app.
+fn install_and_restart(pg: &Progress, path: &Path, app: &AppHandle) -> Result<String> {
+    pg.emit("step", "Running the installer. Studio waits for it to finish.");
+    let mut child = std::process::Command::new(path)
+        .spawn()
+        .with_context(|| format!("starting {}", path.display()))?;
+    let status = child.wait()?;
+    if !status.success() {
+        bail!(
+            "The installer exited with {status}. Studio is still open; run the update again when ready."
+        );
     }
-    Ok(())
+    pg.emit("ok", "Installer finished");
+    let exe = installed_studio_exe();
+    match std::process::Command::new(&exe).spawn() {
+        Ok(_) => {
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(1200));
+                app.exit(0);
+            });
+            Ok(format!(
+                "Installed and started {} so the new version is running now.",
+                exe.display()
+            ))
+        }
+        Err(e) => Ok(format!(
+            "Installed. Could not start {} automatically ({e}); open AgentOS Studio from the Start menu.",
+            exe.display()
+        )),
+    }
 }
 
 fn backup_id(version: &str) -> String {
@@ -1251,8 +1310,16 @@ fn backup_id(version: &str) -> String {
 }
 
 /// Back up, then install the latest version. Returns a job id; progress streams on
-/// `agentos://update-progress`.
-pub fn apply_update(app: AppHandle, product: &str, approved: bool) -> Result<String> {
+/// `agentos://update-progress`. Updating is the owner's click (or the auto policy), so it does
+/// not pass through the approval guard; rollback still does.
+pub fn apply_update(app: AppHandle, product: &str) -> Result<String> {
+    Ok(start_apply(app, product)?.0)
+}
+
+fn start_apply(
+    app: AppHandle,
+    product: &str,
+) -> Result<(String, std::thread::JoinHandle<()>)> {
     check_product(product)?;
     let status = match product {
         "hermes" => check_hermes(),
@@ -1274,14 +1341,9 @@ pub fn apply_update(app: AppHandle, product: &str, approved: bool) -> Result<Str
     }
     let from = status.current.clone().unwrap_or_default();
     let to = status.latest.clone().unwrap_or_default();
-    let summary = format!(
-        "Update {} from {from} to {to}. {}",
-        status.label, status.update_note
-    );
-    permissions::guard("update.apply", product, &summary, approved)?;
     let product_s = product.to_string();
     let app2 = app.clone();
-    Ok(spawn_job(
+    Ok(spawn_job_joined(
         app,
         product,
         "update.apply",
@@ -1365,8 +1427,50 @@ pub fn apply_update(app: AppHandle, product: &str, approved: bool) -> Result<Str
                 "hermes-plugins" => {
                     m.note = "Plugins have no rollback here; Hermes keeps each plugin's previous commit in its own history.".into();
                     write_manifest(&mut m)?;
-                    require_ok(pg, "hermes", &["plugins", "update"], None)?;
-                    Ok(format!("Hermes plugins updated: {to}"))
+                    // One stale plugin must not fail the whole product: if the bulk command
+                    // fails, each pending plugin is tried alone and every failure is named.
+                    match stream(pg, "hermes", &["plugins", "update"], None) {
+                        Ok((0, _)) => Ok(format!("Hermes plugins updated: {to}")),
+                        Ok((code, _)) => {
+                            pg.emit(
+                                "err",
+                                format!(
+                                    "hermes plugins update exited {code}; retrying each plugin alone"
+                                ),
+                            );
+                            let pending = procs::run_with_timeout(
+                                "hermes",
+                                &["plugins", "check-updates", "--json"],
+                                None,
+                                None,
+                                Duration::from_secs(120),
+                            )
+                            .ok()
+                            .and_then(|(_, out, _)| plugins_pending(&out))
+                            .unwrap_or_default();
+                            if pending.is_empty() {
+                                bail!("hermes plugins update exited {code} and no pending plugin was named");
+                            }
+                            let mut updated = Vec::new();
+                            let mut failed = Vec::new();
+                            for name in &pending {
+                                match stream(pg, "hermes", &["plugins", "update", name], None) {
+                                    Ok((0, _)) => updated.push(name.clone()),
+                                    Ok((c, _)) => failed.push(format!("{name} (exit {c})")),
+                                    Err(e) => failed.push(format!("{name} ({e})")),
+                                }
+                            }
+                            if updated.is_empty() {
+                                bail!("Every plugin update failed: {}", failed.join(", "));
+                            }
+                            let mut msg = format!("Hermes plugins updated: {}", updated.join(", "));
+                            if !failed.is_empty() {
+                                msg.push_str(&format!("; still failing: {}", failed.join(", ")));
+                            }
+                            Ok(msg)
+                        }
+                        Err(e) => Err(e),
+                    }
                 }
                 _ => {
                     m.note = format!("Rollback downloads and runs the v{from} installer.");
@@ -1376,19 +1480,71 @@ pub fn apply_update(app: AppHandle, product: &str, approved: bool) -> Result<Str
                     let dir = write_manifest(&mut m)?;
                     pg.emit("ok", format!("Backup {} saved", m.id));
                     let path = install_studio_release(pg, &to, &dir.join("downloads"))?;
-                    let app = app2.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(1500));
-                        app.exit(0);
-                    });
-                    Ok(format!(
-                        "Installer started: {}. Studio is closing so it can be replaced.",
-                        path.display()
-                    ))
+                    install_and_restart(pg, &path, &app2)
                 }
             }
         },
     ))
+}
+
+/// `updates.auto_apply`: `cli` (default) updates every CLI tool without a click, `all` adds
+/// Studio (still ending in a restart click from Update Center), `off` returns to click-to-apply.
+pub const AUTO_APPLY: &str = "updates.auto_apply";
+
+pub fn auto_apply_policy() -> String {
+    store::open()
+        .ok()
+        .and_then(|c| store::kv_get(&c, AUTO_APPLY).ok().flatten())
+        .map(|v| v.trim().to_lowercase())
+        .filter(|v| matches!(v.as_str(), "cli" | "all" | "off"))
+        .unwrap_or_else(|| "cli".into())
+}
+
+pub fn set_auto_apply(policy: &str) -> Result<()> {
+    let policy = policy.trim().to_lowercase();
+    if !matches!(policy.as_str(), "cli" | "all" | "off") {
+        bail!("updates.auto_apply must be cli, all or off");
+    }
+    let c = store::open()?;
+    store::kv_set(&c, AUTO_APPLY, &policy)
+}
+
+/// Start the updates the policy covers, one at a time so two tools never update together.
+/// Returns the products it started; the caller skips their notification because a CLI update
+/// never prompts.
+pub fn auto_apply(app: &AppHandle, report: &UpdateReport) -> Vec<String> {
+    let policy = auto_apply_policy();
+    if policy == "off" {
+        return vec![];
+    }
+    let due: Vec<String> = report
+        .products
+        .iter()
+        .filter(|p| p.alert && p.can_update && p.state == "available")
+        .filter(|p| p.product != "studio" || policy == "all")
+        .map(|p| p.product.clone())
+        .collect();
+    if due.is_empty() {
+        return vec![];
+    }
+    let app = app.clone();
+    let plan = due.clone();
+    std::thread::spawn(move || {
+        for product in plan {
+            match start_apply(app.clone(), &product) {
+                Ok((_, handle)) => {
+                    let _ = handle.join();
+                }
+                Err(e) => permissions::audit(
+                    "update.apply",
+                    &product,
+                    &format!("auto apply skipped: {e:#}"),
+                    "error",
+                ),
+            }
+        }
+    });
+    due
 }
 
 pub fn rollback(app: AppHandle, backup_id: &str, approved: bool) -> Result<String> {
@@ -1466,16 +1622,7 @@ pub fn rollback(app: AppHandle, backup_id: &str, approved: bool) -> Result<Strin
                     &m.from_version,
                     &PathBuf::from(&m.dir).join("downloads"),
                 )?;
-                let app = app2.clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(Duration::from_millis(1500));
-                    app.exit(0);
-                });
-                Ok(format!(
-                    "Installer for v{} started: {}",
-                    m.from_version,
-                    path.display()
-                ))
+                install_and_restart(pg, &path, &app2)
             }
         }
         },

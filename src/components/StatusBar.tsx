@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { FleetPause, HermesStatus, Notice, OfflineStatus, StackStatus } from "../lib/api";
 import { useCli } from "./CliDrawer";
 import { NoticeBell } from "./NoticeBell";
+import { useUpdates } from "./Updates";
 import { api, events } from "../lib/api";
 import { useEffect, useState } from "react";
 
@@ -111,32 +112,19 @@ export function StatusBar({
   onRefresh: () => void;
 }) {
   const cli = useCli();
-  const [available, setAvailable] = useState<string | null>(null);
-  const [installing, setInstalling] = useState(false);
+  const u = useUpdates();
   const [offline, setOffline] = useState<OfflineStatus | null>(null);
 
   useEffect(() => {
-    const check = () => void api.studioUpdateCheck().then(setAvailable).catch(() => undefined);
-    check();
     void api.offlineStatus().then(setOffline).catch(() => undefined);
     const off = events.offline(setOffline);
-    // An app left open for days still hears about a release: check again every six hours.
-    const t = window.setInterval(check, 6 * 60 * 60 * 1000);
     return () => {
-      window.clearInterval(t);
       void off.then((f) => f());
     };
   }, []);
 
-  async function install() {
-    setInstalling(true);
-    try {
-      await api.studioUpdateInstall();
-      setAvailable(null);
-    } catch {
-      setInstalling(false);
-    }
-  }
+  // The same report the Update Center shows, so the chip never disagrees with the page.
+  const studioUpdate = u.products.find((p) => p.product === "studio" && p.state === "available" && !p.skipped && !p.snoozed_until);
   const hermesOk = Boolean(hermes?.installed && hermes.config_ok);
   const systemsOk = Boolean(stack && stack.connected === stack.total);
   const healthy = hermesOk && systemsOk;
@@ -175,15 +163,18 @@ export function StatusBar({
           Offline{offline.pin ? ` · ${offline.pin.local_model}` : offline.local_models.length > 0 ? ` · ${offline.local_models.length} local` : ""}
         </span>
       )}
-      {available && (
+      {studioUpdate && (
         <button
-          onClick={() => void install()}
-          disabled={installing}
-          title="Signed update: the signature is checked before anything installs"
+          onClick={() => {
+            void u.apply("studio");
+            onGo("updates");
+          }}
+          disabled={u.busy !== null || !studioUpdate.can_update}
+          title="Signed update: the digest is checked, the installer is waited on, and Studio restarts into the new version on its own."
           className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-sky-500/15 px-3 text-xs font-semibold text-sky-200 ring-1 ring-sky-500/30 hover:bg-sky-500/20 disabled:opacity-50"
         >
           <Download className="size-3.5" />
-          {installing ? "Installing" : `Update to ${available}`}
+          {u.busy === "studio" ? "Updating" : `Update to ${studioUpdate.latest}`}
         </button>
       )}
       <button

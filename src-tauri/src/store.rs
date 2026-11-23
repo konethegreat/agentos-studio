@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{ensure, Context, Result};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
-pub(crate) const SCHEMA_VERSION: i64 = 12;
+pub(crate) const SCHEMA_VERSION: i64 = 13;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -293,6 +293,20 @@ const MIGRATION_10_GOAL: &str = "
 ALTER TABLE missions ADD COLUMN goal_id TEXT;
 ";
 
+const MIGRATION_13: &str = "
+CREATE TABLE IF NOT EXISTS reports (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    at        INTEGER NOT NULL,
+    repo      TEXT NOT NULL DEFAULT '',
+    kind      TEXT NOT NULL,
+    title     TEXT NOT NULL,
+    body      TEXT NOT NULL DEFAULT '',
+    reference TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS reports_at ON reports(at DESC);
+CREATE INDEX IF NOT EXISTS reports_repo ON reports(repo, at DESC);
+";
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
@@ -402,6 +416,9 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     if v < 12 {
         c.execute_batch(MIGRATION_12)?;
+    }
+    if v < 13 {
+        c.execute_batch(MIGRATION_13)?;
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;

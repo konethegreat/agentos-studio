@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Badge, Button, Card, ExternalLink } from "../components/ui";
 import { useUpdates } from "../components/Updates";
 import { useCli } from "../components/CliDrawer";
-import type { BackupManifest, ProductUpdate } from "../lib/studio";
+import type { BackupManifest, ProductUpdate, UpdatePolicy } from "../lib/studio";
 
 function when(ts: number | null | undefined) {
   if (!ts) return "never";
@@ -171,7 +171,30 @@ export function UpdateCenter() {
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <h1 className="text-lg font-semibold text-slate-100">Update Center</h1>
-            <p className="text-xs text-slate-500">Hermes, Claude Code, the Antigravity and Qoder CLIs, every Hermes plugin and AgentOS Studio are checked at start and every 3 hours. Updates are backed up first where a rollback exists.</p>
+            <p className="text-xs text-slate-500">
+              Hermes, Claude Code, the Antigravity and Qoder CLIs, every Hermes plugin and AgentOS Studio are checked at start, every 3 hours and when the window regains focus. Updates are backed up first where a rollback exists.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <label htmlFor="update-policy" className="text-label text-slate-500">
+                When an update is found
+              </label>
+              <select
+                id="update-policy"
+                value={u.policy ?? "cli"}
+                disabled={u.policy === null}
+                onChange={(e) => void u.setPolicy(e.target.value as UpdatePolicy)}
+                className="h-7 rounded-lg border border-line bg-canvas px-2 text-label text-slate-300"
+              >
+                <option value="cli">The CLI tools update themselves; Studio waits for a click</option>
+                <option value="all">Everything updates itself; Studio installs and restarts on its own</option>
+                <option value="off">Nothing auto-applies; every product waits for a click</option>
+              </select>
+              {u.checkedAt && (
+                <span className="text-label text-slate-600">
+                  as of {new Date(u.checkedAt * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+            </div>
           </div>
           <Button icon={u.checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} disabled={u.checking} onClick={() => void u.check()} title="Check every tool now">
             Check now

@@ -243,7 +243,15 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         // The quota grid keeps a worker off a spent model: a fallback for this attempt, or a wait.
         let m = crate::quota_grid::steer_mission(&m)?.unwrap_or(m);
         let task_id = crate::kanban::create_task(&m)?;
-        return dispatch(id, &task_id);
+        let started = dispatch(id, &task_id)?;
+        let _ = crate::reports::record_here(
+            "mission.started",
+            &started.repo,
+            &format!("{} started on {}", started.id, started.agent),
+            &started.goal,
+            &started.id,
+        );
+        return Ok(started);
     }
     // Agent work happens in a known project folder, never in the home folder.
     let dir = crate::review_agent::project_dir(&m.repo)
@@ -278,6 +286,13 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         .map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("the bus did not return a task id"))?;
     let started = dispatch(id, &task_id)?;
+    let _ = crate::reports::record_here(
+        "mission.started",
+        &started.repo,
+        &format!("{} started on {}", started.id, started.agent),
+        &started.goal,
+        &started.id,
+    );
     // Headless agents get a worker now; IDE agents pick the task up from the bus.
     let agent = m.agent.trim().to_lowercase();
     if crate::bus::headless_available(&agent) {
@@ -566,7 +581,15 @@ pub fn submit_for_review(id: &str, spent_usd: f64) -> Result<Mission> {
         "UPDATE missions SET spent_usd = spent_usd + ?1, updated_at = ?2 WHERE id = ?3",
         params![spent_usd.max(0.0), now(), id],
     )?;
-    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+    let m = get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
+    let _ = crate::reports::record_here(
+        "mission.reviewed",
+        &m.repo,
+        &format!("{} sent for review", m.id),
+        &m.goal,
+        &m.id,
+    );
+    Ok(m)
 }
 
 /// A different agent, on a different provider where possible, rules on the work.
@@ -690,7 +713,15 @@ pub fn block(id: &str, reason: &str, failed: bool) -> Result<Mission> {
         "UPDATE missions SET review_note = ?1, updated_at = ?2 WHERE id = ?3",
         params![reason.trim(), now(), id],
     )?;
-    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+    let m = get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
+    let _ = crate::reports::record_here(
+        "mission.blocked",
+        &m.repo,
+        &format!("{} {}", m.id, target),
+        reason.trim(),
+        &m.id,
+    );
+    Ok(m)
 }
 
 /// Everything that must hold before a gatekeeper merges the pull request.

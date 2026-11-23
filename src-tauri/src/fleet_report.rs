@@ -80,6 +80,14 @@ pub fn send_now() -> DailyFleetReport {
         },
     );
     *report_lock().lock().unwrap() = Some(rep.clone());
+    let body: String = rep.message.chars().take(400).collect();
+    let _ = crate::reports::record_here(
+        "fleet_report.sent",
+        "",
+        &format!("Fleet report for {}", rep.date),
+        &body,
+        "",
+    );
     rep
 }
 
