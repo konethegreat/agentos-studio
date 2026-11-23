@@ -187,9 +187,36 @@ pub struct BuildFiles {
 /// Build and test runners a worker may use to verify work. Anything else is refused, so this is
 /// never a general shell.
 const RUNNER_TOOLS: [&str; 30] = [
-    "npm", "npx", "pnpm", "yarn", "bun", "node", "deno", "python", "python3", "py", "uv",
-    "pytest", "ruff", "cargo", "rustc", "go", "dotnet", "mvn", "gradle", "make", "cmake",
-    "ninja", "tsc", "eslint", "prettier", "vitest", "jest", "playwright", "flutter", "dart",
+    "npm",
+    "npx",
+    "pnpm",
+    "yarn",
+    "bun",
+    "node",
+    "deno",
+    "python",
+    "python3",
+    "py",
+    "uv",
+    "pytest",
+    "ruff",
+    "cargo",
+    "rustc",
+    "go",
+    "dotnet",
+    "mvn",
+    "gradle",
+    "make",
+    "cmake",
+    "ninja",
+    "tsc",
+    "eslint",
+    "prettier",
+    "vitest",
+    "jest",
+    "playwright",
+    "flutter",
+    "dart",
 ];
 
 fn is_build_skip(name: &str) -> bool {
@@ -475,7 +502,10 @@ mod tests {
             "Bash(npx *)",
             "Bash(pytest *)",
         ] {
-            assert!(rules.contains(&want.to_string()), "missing {want}: {rules:?}");
+            assert!(
+                rules.contains(&want.to_string()),
+                "missing {want}: {rules:?}"
+            );
         }
         assert!(rules.contains(&"Bash(npm *)".to_string()));
         assert_eq!(
@@ -486,7 +516,11 @@ mod tests {
         assert!(!rules.iter().any(|r| r == "Bash(*)"));
         // Anything that is not a known runner is never granted a rule.
         let none = verification_tools(
-            &["rm -rf /".into(), "curl http://x".into(), "pwsh -c 1".into()],
+            &[
+                "rm -rf /".into(),
+                "curl http://x".into(),
+                "pwsh -c 1".into(),
+            ],
             BuildFiles::default(),
         );
         assert!(none.is_empty(), "{none:?}");
@@ -506,6 +540,9 @@ mod tests {
         std::fs::write(d.path().join(".git/go.mod"), "").unwrap();
         let again = detect_build_files(d.path());
         assert!(!again.python && !again.go, "skips builds folders and .git");
-        assert_eq!(detect_build_files(&d.path().join("missing")), BuildFiles::default());
+        assert_eq!(
+            detect_build_files(&d.path().join("missing")),
+            BuildFiles::default()
+        );
     }
 }

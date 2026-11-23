@@ -921,8 +921,17 @@ mod tests {
         let _g = crate::store::test_env_lock();
         crate::store::set_test_db(Some(d.path().join("studio.db")));
         let v = Vault::new(d.path());
-        let m = missions::create("demo", "do", "done", "implementer", "claude-code", "", "", 0.0)
-            .unwrap();
+        let m = missions::create(
+            "demo",
+            "do",
+            "done",
+            "implementer",
+            "claude-code",
+            "",
+            "",
+            0.0,
+        )
+        .unwrap();
         missions::block(&m.id, "stuck", false).unwrap();
         let (e, _) = escalation::raise(
             None,

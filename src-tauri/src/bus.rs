@@ -1368,7 +1368,10 @@ mod tests {
         assert_eq!(goal_from_body(&body).as_deref(), Some(g.id.as_str()));
         let extra = worker_extra_tools(&body);
         for want in ["Bash(npm *)", "Bash(python *)", "Bash(pytest *)"] {
-            assert!(extra.contains(&want.to_string()), "missing {want}: {extra:?}");
+            assert!(
+                extra.contains(&want.to_string()),
+                "missing {want}: {extra:?}"
+            );
         }
         // The same rules reach Antigravity in its own syntax, and nothing wider leaks in.
         let agy = crate::routing::agy_allow_rules(&crate::routing::claude_allowed_tools(&extra));

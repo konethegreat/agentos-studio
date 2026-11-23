@@ -951,8 +951,7 @@ mod tests {
         })
         .unwrap();
         crate::goals::set_status(&goal.id, &["planning"], "failed", "stopped").unwrap();
-        let m =
-            missions::create("demo", "work", "a", "implementer", "auto", "", "", 0.0).unwrap();
+        let m = missions::create("demo", "work", "a", "implementer", "auto", "", "", 0.0).unwrap();
         crate::goals::attach(&goal.id, &m.id).unwrap();
         assert_eq!(m.status, "queued");
         let stopped = stop_orphaned_queued(&missions::list(10).unwrap());

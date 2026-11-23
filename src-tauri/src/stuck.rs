@@ -156,7 +156,8 @@ fn check_vanished(m: &Mission, task: &str, now: i64) -> Option<String> {
         Verdict::Retry => {
             record_retry(&m.id, now);
             let quiet = (now - last) / 60;
-            let note = format!("its bus task {task} is gone (nothing for {quiet} min); retrying once");
+            let note =
+                format!("its bus task {task} is gone (nothing for {quiet} min); retrying once");
             Some(
                 match missions::block(&m.id, &note, false)
                     .and_then(|_| missions::unblock(&m.id, &note))
