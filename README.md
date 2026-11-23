@@ -35,6 +35,19 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.6.2
+
+A Studio update is now one click and a short restart, not a wizard.
+
+- **Silent install on Windows.** The saved setup runs with `/S /R`: it closes the old window,
+  installs over it and starts the new version by itself. The destination page, the "Do not
+  uninstall" page, the "Studio is running, kill it?" dialog and the Finish page are all gone, and
+  the relaunch no longer depends on the installer's own checkbox. A failed install keeps Studio
+  open and names the installer in the error.
+- **The update shows in Reports.** The installer launch writes an `update.started` row before the
+  old window closes, so a silent update is still visible in the feed after the restart.
+- **macOS and Linux** keep the existing download, install and explicit relaunch path.
+
 ## What is new in 2.6.1
 
 The orchestrator stops cycling stuck work on the same agent.

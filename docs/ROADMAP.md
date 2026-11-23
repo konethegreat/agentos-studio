@@ -3,6 +3,18 @@
 Phases are ordered by dependency, not by excitement. Each one lists what it needs from the
 phase before it, so nothing is scheduled that cannot be built yet.
 
+## 2.6.2: Studio updates install without a wizard (shipped)
+
+- **Silent Windows update.** `install_and_restart` runs the NSIS setup with `/S /R`
+  (`updates::installer_args`): no destination page, no "Do not uninstall" page, no "Studio is
+  running, kill it?" dialog, no Finish page. The setup stops the old window, installs over it and
+  starts the new version through its own `/R` relaunch; the old window only closes, so no second
+  window is started. Before this, the saved setup was launched with no flags and every update was
+  an assisted wizard whose relaunch depended on the installer's own "Run AgentOS Studio" checkbox.
+- **Reports row before hand-over.** The installer launch writes `update.started` to the reports
+  feed first, because the old process is gone before the install finishes; the feed still shows the
+  update after the restart. macOS and Linux keep the download, install and explicit relaunch path.
+
 ## 2.6.1: a stuck mission moves to another executor (shipped)
 
 - **Stuck policy.** `stuck` escalations are answered `retry` while another headless executor is

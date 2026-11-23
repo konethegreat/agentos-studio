@@ -1239,19 +1239,8 @@ fn install_studio_release(pg: &Progress, version: &str, dir: &Path) -> Result<Pa
 }
 
 /// Where the installed Studio lives after the setup program runs.
+#[cfg(not(windows))]
 fn installed_studio_exe() -> PathBuf {
-    #[cfg(windows)]
-    {
-        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            let p = PathBuf::from(local)
-                .join("Programs")
-                .join("AgentOS Studio")
-                .join("agentos-studio.exe");
-            if p.exists() {
-                return p;
-            }
-        }
-    }
     #[cfg(target_os = "macos")]
     {
         let p = PathBuf::from("/Applications/AgentOS Studio.app/Contents/MacOS/agentos-studio");
@@ -1262,40 +1251,84 @@ fn installed_studio_exe() -> PathBuf {
     std::env::current_exe().unwrap_or_default()
 }
 
-/// Run the installer, wait for it, then start the installed Studio and close this one. A failed
-/// installer keeps this window open and reports why, so the owner never loses the app.
+/// Flags for the setup program. The Windows setup runs without a wizard and starts the new
+/// version itself (`/R`); the other platforms take their installer as shipped.
+fn installer_args() -> &'static [&'static str] {
+    if cfg!(windows) {
+        &["/S", "/R"]
+    } else {
+        &[]
+    }
+}
+
+/// Run the installer and hand over to the new version. On Windows the setup program stops this
+/// window, installs over it and starts the new copy, so the owner sees the app close and come
+/// back updated without touching a wizard. A failed installer keeps this window open and
+/// reports why, so the owner never loses the app.
 fn install_and_restart(pg: &Progress, path: &Path, app: &AppHandle) -> Result<String> {
     pg.emit(
         "step",
-        "Running the installer. Studio waits for it to finish.",
+        if cfg!(windows) {
+            "Installing silently. Studio closes and the new version starts by itself."
+        } else {
+            "Running the installer. Studio waits for it to finish."
+        },
     );
     let mut child = std::process::Command::new(path)
+        .args(installer_args())
         .spawn()
         .with_context(|| format!("starting {}", path.display()))?;
+    #[cfg(windows)]
+    {
+        // The window that started the update is gone before the installer finishes, so the
+        // Reports feed gets its row now, while there is still a process to write it.
+        let _ = crate::reports::record_here(
+            "update.started",
+            "",
+            "AgentOS Studio installer running",
+            "Silent install in progress. Studio closes itself and the new version starts; if the installer fails, Studio stays open and the Update Center says why.",
+            &path.display().to_string(),
+        );
+    }
     let status = child.wait()?;
     if !status.success() {
         bail!(
-            "The installer exited with {status}. Studio is still open; run the update again when ready."
+            "The installer exited with {status}. Studio is still open; run the update again when ready. Installer: {}",
+            path.display()
         );
     }
     pg.emit("ok", "Installer finished");
-    let exe = installed_studio_exe();
-    match std::process::Command::new(&exe).spawn() {
-        Ok(_) => {
-            let app = app.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(1200));
-                app.exit(0);
-            });
-            Ok(format!(
-                "Installed and started {} so the new version is running now.",
+    #[cfg(windows)]
+    {
+        // /S /R: the setup program already restarted Studio. Starting it here too would open a
+        // second window, so this one simply closes.
+        let app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(1500));
+            app.exit(0);
+        });
+        Ok("Installed. The new version is starting now; this window closes.".to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let exe = installed_studio_exe();
+        match std::process::Command::new(&exe).spawn() {
+            Ok(_) => {
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(1200));
+                    app.exit(0);
+                });
+                Ok(format!(
+                    "Installed and started {} so the new version is running now.",
+                    exe.display()
+                ))
+            }
+            Err(e) => Ok(format!(
+                "Installed. Could not start {} automatically ({e}); open AgentOS Studio from the Start menu.",
                 exe.display()
-            ))
+            )),
         }
-        Err(e) => Ok(format!(
-            "Installed. Could not start {} automatically ({e}); open AgentOS Studio from the Start menu.",
-            exe.display()
-        )),
     }
 }
 
@@ -1771,5 +1804,25 @@ mod tests {
             sha256_hex(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn windows_setup_installs_without_a_wizard_and_relaunches() {
+        let args = installer_args();
+        if cfg!(windows) {
+            assert!(
+                args.contains(&"/S"),
+                "silent flag missing, the wizard would appear: {args:?}"
+            );
+            assert!(
+                args.contains(&"/R"),
+                "relaunch flag missing, Studio would stay closed: {args:?}"
+            );
+        } else {
+            assert!(
+                args.is_empty(),
+                "other platforms run the installer as shipped: {args:?}"
+            );
+        }
     }
 }

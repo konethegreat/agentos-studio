@@ -16,6 +16,7 @@ const KIND_LABEL: Record<string, string> = {
   "digest.sent": "Digest",
   "fleet_report.sent": "Fleet report",
   "update.applied": "Update",
+  "update.started": "Update started",
 };
 
 const KIND_TONE: Record<string, string> = {
