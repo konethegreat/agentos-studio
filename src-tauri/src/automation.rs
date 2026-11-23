@@ -366,7 +366,8 @@ pub struct TickReport {
     pub fix_missions: Vec<String>,
     /// The fleet pause switch is on: nothing new starts or merges this pass.
     pub paused: bool,
-    /// The network is unreachable: nothing new starts this pass, and silence is not judged stuck.
+    /// The network is unreachable and no local model is pinned: nothing new starts this pass, and
+    /// silence is not judged stuck.
     pub offline: bool,
     /// The global metered budget is spent: metered missions neither start nor keep running.
     pub budget_stopped: bool,
