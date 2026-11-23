@@ -70,10 +70,10 @@ An orchestrator that keeps the fleet moving without you, a report feed to read i
   short list of things that genuinely need you. The only escalations it passes to you are the ones
   that would destroy production data or need credentials. Turn it off from Today or Goals.
 - **Reports feed.** Every step the fleet takes is now written to a `reports` table: mission started,
-  routed, reviewed, merged, blocked and unstuck, escalations the orchestrator answered, autonomy
-  passes, digests, fleet reports and applied updates. A new **Reports** view under Work is a
-  read-only feed with kind and repository filters, a "since you last looked" summary, and unread
-  counts, which drive the new badge on the Work icon. Reading it marks it read.
+  routed, reviewed, merged, blocked and unstuck, start failures, escalations the orchestrator
+  answered, autonomy passes, digests, fleet reports and applied updates. A new **Reports** view
+  under Work is a read-only feed with kind and repository filters, a "since you last looked"
+  summary, and unread counts, which drive the new badge on the Work icon. Reading it marks it read.
 - **Today leads with the orchestrator.** The "Waiting on you" card is gone. Today shows the
   orchestrator's state, its running, queued, blocked and answered counts, the schedule (digest
   times, next Studio check, the weekly ship), the work that is in flight now, and a link into the
