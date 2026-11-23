@@ -122,6 +122,12 @@ After two orchestrator answers the safe answer stands. Only an escalation marked
 destructive, or one whose question matches an owner pattern (credentials, payments, production data),
 is left for the owner, under **Needs you** in Goals and on the Today orchestrator card.
 
+A `stop` answer always lands, even though a retry can restart the mission while the question waits:
+the answer blocks the mission first and cancels it second, because a plain cancel only reaches
+`queued` and `blocked` missions. A mission stopped this way ends `failed` with the reason in
+`review_note`, and a queued mission whose goal is `failed` or `done` is stopped with its goal on the
+next tick instead of sitting in the queue where nothing can start it.
+
 ## Obsidian views
 
 Every time the goal note is written, Studio also writes the goal's folder next to it,

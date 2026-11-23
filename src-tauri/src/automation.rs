@@ -300,6 +300,37 @@ pub fn set_max_concurrent(n: usize) {
     kv_set(KV_MAX, &n.clamp(1, 12).to_string());
 }
 
+/// Queued missions whose goal is failed or done can never start, because startable requires the
+/// goal to be running. Stop them with the goal so they do not sit in the queue for ever, holding
+/// a repository slot in the owner's head. Returns the ids stopped.
+fn stop_orphaned_queued(all: &[Mission]) -> Vec<String> {
+    let mut stopped = Vec::new();
+    for m in all.iter().filter(|m| m.status == "queued") {
+        let Some(gid) = crate::goals::goal_of(&m.id) else {
+            continue;
+        };
+        let Ok(Some(g)) = crate::goals::get(&gid) else {
+            continue;
+        };
+        if !matches!(g.status.as_str(), "failed" | "done") {
+            continue;
+        }
+        if missions::cancel(&m.id, &format!("its goal {gid} is {}", g.status)).is_ok() {
+            stopped.push(m.id.clone());
+        }
+    }
+    stopped
+}
+
+/// Queued missions in the order they last changed, oldest first. A repository has one slot, and
+/// missions::list hands queued rows back newest first; without this reorder a steady stream of new
+/// work in one repository starves the mission that has waited longest. Pure.
+fn dispatch_order(queued: Vec<&Mission>) -> Vec<&Mission> {
+    let mut q = queued;
+    q.sort_by_key(|m| (m.updated_at, m.id.clone()));
+    q
+}
+
 /// Which queued missions may start now, never past the global cap. Per repository: with
 /// `per_repo` 1 a mission runs alone in its repository; above 1, up to `per_repo` missions share
 /// it, each in its own worktree (kanban worktrees for Hermes, Studio worktrees for the rest). Pure.
@@ -341,6 +372,49 @@ pub fn startable(
         room -= 1;
     }
     out
+}
+
+/// Failed starts before one report row is written. Two attempts are a retry.
+const START_FAIL_QUIET: u32 = 3;
+
+fn start_fail_key(id: &str) -> String {
+    format!("start.fail.{id}")
+}
+
+/// Count a failed start so a queued mission that can never start shows up in the report feed.
+/// A router deferral is a wait, not a failure. The third failed start writes one row; later
+/// attempts stay silent, and a start that works clears the count for the next run.
+fn note_start_failure(id: &str, why: &str) {
+    if why.contains("deferred until") {
+        return;
+    }
+    let count = kv(&start_fail_key(id))
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(0)
+        .saturating_add(1);
+    kv_set(&start_fail_key(id), &count.to_string());
+    if count != START_FAIL_QUIET {
+        return;
+    }
+    let repo = missions::get(id)
+        .ok()
+        .flatten()
+        .map(|m| m.repo)
+        .unwrap_or_default();
+    let _ = crate::reports::record_here(
+        "mission.start_failed",
+        &repo,
+        &format!("{id} could not start: {why}"),
+        &format!("The scheduler tried to start {id} {count} times and was refused each time. It stays queued; nothing else changes."),
+        id,
+    );
+}
+
+/// A start that worked clears the failure count; the next failure starts counting again.
+fn clear_start_failures(id: &str) {
+    if let Ok(c) = store::open() {
+        let _ = store::kv_delete(&c, &start_fail_key(id));
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, Default)]
@@ -564,6 +638,8 @@ pub fn tick(v: &Vault) -> TickReport {
     // never at Watch, and only once the missions they depend on are done.
     {
         let now = chrono::Utc::now().timestamp();
+        // A mission whose goal was stopped can never start again; stop it with the goal.
+        stop_orphaned_queued(&all);
         let mut goal_cache: std::collections::HashMap<String, Option<crate::goals::Goal>> =
             std::collections::HashMap::new();
         // A mission the router deferred to a quota reset waits; it does not take a slot.
@@ -604,14 +680,20 @@ pub fn tick(v: &Vault) -> TickReport {
             queued
         };
         for id in startable(
-            &queued,
+            &dispatch_order(queued),
             &running,
             report.max_concurrent,
             crate::kanban::parallel_per_repo(),
         ) {
             match missions::start(v, &id) {
-                Ok(_) => report.dispatched.push(id),
-                Err(e) => report.error = Some(e.to_string()),
+                Ok(_) => {
+                    clear_start_failures(&id);
+                    report.dispatched.push(id);
+                }
+                Err(e) => {
+                    note_start_failure(&id, &e.to_string());
+                    report.error = Some(e.to_string());
+                }
             }
         }
     }
@@ -851,6 +933,53 @@ mod tests {
     }
 
     #[test]
+    fn a_queued_mission_whose_goal_was_stopped_is_stopped_with_it() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let goal = crate::goals::create(&crate::goals::NewGoal {
+            outcome: "Finish".into(),
+            repos: vec!["demo".into()],
+            checks: vec![crate::goals::Check {
+                kind: "file".into(),
+                target: "README.md".into(),
+                repo: None,
+            }],
+            budget_usd: 0.0,
+            deadline: None,
+            autonomy: None,
+        })
+        .unwrap();
+        crate::goals::set_status(&goal.id, &["planning"], "failed", "stopped").unwrap();
+        let m = missions::create("demo", "work", "a", "implementer", "auto", "", "", 0.0).unwrap();
+        crate::goals::attach(&goal.id, &m.id).unwrap();
+        assert_eq!(m.status, "queued");
+        let stopped = stop_orphaned_queued(&missions::list(10).unwrap());
+        assert_eq!(stopped, vec![m.id.clone()], "the orphan is named");
+        assert_eq!(
+            missions::get(&m.id).unwrap().unwrap().status,
+            "failed",
+            "a mission whose goal is stopped can never start, so it must not sit queued"
+        );
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn the_oldest_queued_mission_gets_its_repository_slot_first() {
+        let mut old = m("M-1", "a", "queued");
+        old.updated_at = 100;
+        let mut new = m("M-2", "a", "queued");
+        new.updated_at = 900;
+        let order = dispatch_order(vec![&new, &old]);
+        assert_eq!(order[0].id, "M-1", "the wait is first in line");
+        assert_eq!(
+            startable(&order, &[], 3, 1),
+            vec!["M-1"],
+            "the repository's one slot goes to the mission that has waited longest"
+        );
+    }
+
+    #[test]
     fn worktree_missions_of_any_agent_share_a_repository_up_to_the_cap() {
         let cc = |id: &str, repo: &str, status: &str| {
             let mut x = m(id, repo, status);
@@ -960,6 +1089,44 @@ mod tests {
             }
             None => assert_eq!(after.status, "blocked", "never running with no worker"),
         }
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn a_queued_mission_that_cannot_start_reaches_the_report_feed_once() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let m = missions::create("demo", "g", "a", "implementer", "auto", "", "", 0.0).unwrap();
+        let why = "no installed headless agent can take this mission";
+        note_start_failure(&m.id, why);
+        note_start_failure(&m.id, why);
+        assert!(
+            crate::reports::list(0, "", 10).unwrap().is_empty(),
+            "two failures are still a retry"
+        );
+        note_start_failure(&m.id, why);
+        let rows = crate::reports::list(0, "", 10).unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].kind, "mission.start_failed");
+        assert!(rows[0].title.contains(&m.id));
+        note_start_failure(&m.id, why);
+        assert_eq!(
+            crate::reports::list(0, "", 10).unwrap().len(),
+            1,
+            "the repeat row is throttled"
+        );
+        note_start_failure(&m.id, "M-900: deferred until 1900000000: no quota");
+        assert_eq!(
+            crate::reports::list(0, "", 10).unwrap().len(),
+            1,
+            "a router deferral is a wait, not a failure"
+        );
+        clear_start_failures(&m.id);
+        let c = crate::store::open().unwrap();
+        assert!(crate::store::kv_get(&c, &start_fail_key(&m.id))
+            .unwrap()
+            .is_none());
         crate::store::set_test_db(None);
     }
 

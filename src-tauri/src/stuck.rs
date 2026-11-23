@@ -143,9 +143,46 @@ fn bus_last(v: &Vault, m: &Mission, task: &str) -> i64 {
     times.into_iter().flatten().max().unwrap_or(m.updated_at)
 }
 
+/// A running mission whose bus task no longer exists. There is no heartbeat source at all, so it
+/// is judged like a dead worker: one requeue (a fresh attempt creates a new task), then blocked.
+fn check_vanished(m: &Mission, task: &str, now: i64) -> Option<String> {
+    let last = [Some(m.updated_at), kv_i64(&format!("{KV_BEAT}{}", m.id))]
+        .into_iter()
+        .flatten()
+        .max()
+        .unwrap_or(m.updated_at);
+    match judge(false, last, now, retries(&m.id)) {
+        Verdict::Healthy => None,
+        Verdict::Retry => {
+            record_retry(&m.id, now);
+            let quiet = (now - last) / 60;
+            let note =
+                format!("its bus task {task} is gone (nothing for {quiet} min); retrying once");
+            Some(
+                match missions::block(&m.id, &note, false)
+                    .and_then(|_| missions::unblock(&m.id, &note))
+                {
+                    Ok(_) => format!("{}: {note}", m.id),
+                    Err(e) => format!("{}: {note}; requeue failed: {e:#}", m.id),
+                },
+            )
+        }
+        Verdict::Block => {
+            let reason = format!("Stuck: its bus task {task} is gone, so nothing is working on it");
+            let _ = missions::block(&m.id, &reason, false);
+            reset(&m.id);
+            Some(format!("{}: blocked", m.id))
+        }
+    }
+}
+
 /// Judge a running bus mission and act on the verdict. Returns what was done, if anything.
 pub fn check_bus(v: &Vault, m: &Mission, task: &str, now: i64) -> Option<String> {
-    let state = v.task_state(task)?;
+    let Some(state) = v.task_state(task) else {
+        // The task file is gone, so no worker can ever write a heartbeat for this mission.
+        // Without this branch the mission stays `running` for ever and holds a scheduler slot.
+        return check_vanished(m, task, now);
+    };
     let agent = m.agent.trim().to_lowercase();
     let headless = crate::bus::headless_available(&agent);
     // An IDE agent's unclaimed offer is the reassignment rule's business, not this one.
@@ -396,6 +433,53 @@ mod tests {
         assert!(check_bus(&v, &m, &task, much_later)
             .unwrap()
             .contains("blocked"));
+        let after = missions::get(&m.id).unwrap().unwrap();
+        assert_eq!(after.status, "blocked");
+        assert!(after.review_note.unwrap().starts_with("Stuck:"));
+        assert_eq!(retries(&m.id), 0, "history cleared");
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn a_running_mission_whose_task_vanished_is_requeued_then_blocked() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let v = Vault::new(d.path().join("vault"));
+        v.scaffold().unwrap();
+        let m =
+            missions::create("repo", "g", "a", "implementer", "claude-code", "", "", 0.0).unwrap();
+        let t = v
+            .delegate_task(crate::vault::DelegateArgs {
+                title: "t".into(),
+                assigned_to: "claude-code".into(),
+                creator: "test".into(),
+                project: "repo".into(),
+                context_files: Vec::new(),
+                instructions: "do it".into(),
+                priority: "high".into(),
+            })
+            .unwrap();
+        let task = t["id"].as_str().unwrap().to_string();
+        let m = missions::dispatch(&m.id, &task).unwrap();
+        v.claim_task(&task, "claude-code").unwrap();
+        // The task file disappears: deleted by hand, or lost when the vault moved between
+        // machines. Nothing will ever write a heartbeat for it again.
+        let (rec, _) = v.get_task(&task).unwrap();
+        std::fs::remove_file(&rec.path).unwrap();
+        assert!(v.task_state(&task).is_none());
+        let later = chrono::Utc::now().timestamp() + DEAD_GRACE_SECS + 5;
+        let note = check_bus(&v, &m, &task, later).expect("a vanished task is judged");
+        assert!(note.contains("gone"), "{note}");
+        assert_eq!(retries(&m.id), 1);
+        assert_eq!(
+            missions::get(&m.id).unwrap().unwrap().status,
+            "queued",
+            "one requeue, so the scheduler can start a fresh attempt"
+        );
+        let much_later = later + DEAD_GRACE_SECS + 5;
+        let note = check_bus(&v, &m, &task, much_later).expect("still judged after requeue");
+        assert!(note.contains("blocked"), "{note}");
         let after = missions::get(&m.id).unwrap().unwrap();
         assert_eq!(after.status, "blocked");
         assert!(after.review_note.unwrap().starts_with("Stuck:"));

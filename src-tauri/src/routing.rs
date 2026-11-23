@@ -170,6 +170,164 @@ pub fn allowed_tools(repo_dir: &Path) -> Vec<String> {
     load(repo_dir).map(|p| p.allowed_tools).unwrap_or_default()
 }
 
+/// Build and test ecosystems a repository uses, from the build files at its root or one level
+/// down. A headless worker needs the matching runners to verify its own work.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BuildFiles {
+    pub node: bool,
+    pub pnpm: bool,
+    pub yarn: bool,
+    pub bun: bool,
+    pub cargo: bool,
+    pub go: bool,
+    pub python: bool,
+    pub dotnet: bool,
+}
+
+/// Build and test runners a worker may use to verify work. Anything else is refused, so this is
+/// never a general shell.
+const RUNNER_TOOLS: [&str; 30] = [
+    "npm",
+    "npx",
+    "pnpm",
+    "yarn",
+    "bun",
+    "node",
+    "deno",
+    "python",
+    "python3",
+    "py",
+    "uv",
+    "pytest",
+    "ruff",
+    "cargo",
+    "rustc",
+    "go",
+    "dotnet",
+    "mvn",
+    "gradle",
+    "make",
+    "cmake",
+    "ninja",
+    "tsc",
+    "eslint",
+    "prettier",
+    "vitest",
+    "jest",
+    "playwright",
+    "flutter",
+    "dart",
+];
+
+fn is_build_skip(name: &str) -> bool {
+    matches!(
+        name,
+        ".git" | "node_modules" | "target" | ".worktrees" | "dist" | "build" | "vendor"
+    )
+}
+
+fn note_build_file(b: &mut BuildFiles, name: &str) {
+    let n = name.to_lowercase();
+    match n.as_str() {
+        "package.json" => b.node = true,
+        "pnpm-lock.yaml" => b.pnpm = true,
+        "yarn.lock" => b.yarn = true,
+        "bun.lockb" | "bun.lock" => b.bun = true,
+        "cargo.toml" => b.cargo = true,
+        "go.mod" => b.go = true,
+        "pyproject.toml" | "setup.py" | "requirements.txt" | "uv.lock" | "pytest.ini"
+        | "tox.ini" => b.python = true,
+        _ if n.ends_with(".csproj") || n.ends_with(".sln") => b.dotnet = true,
+        _ => {}
+    }
+}
+
+fn note_dir(b: &mut BuildFiles, dir: &Path) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.flatten() {
+        note_build_file(b, &e.file_name().to_string_lossy());
+    }
+}
+
+/// Build files at the repository root and in its immediate subfolders (a workspace often keeps
+/// its app one level down). Skips `.git`, build output and dependency folders.
+pub fn detect_build_files(dir: &Path) -> BuildFiles {
+    let mut b = BuildFiles::default();
+    note_dir(&mut b, dir);
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return b;
+    };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_lowercase();
+        if is_build_skip(&name) {
+            continue;
+        }
+        let p = e.path();
+        if p.is_dir() {
+            note_dir(&mut b, &p);
+        }
+    }
+    b
+}
+
+fn runner_of(cmd: &str) -> Option<&'static str> {
+    let c = cmd.rsplit("&& ").next().unwrap_or(cmd).trim();
+    let first = c.split_whitespace().next()?.to_lowercase();
+    RUNNER_TOOLS.iter().find(|t| **t == first).copied()
+}
+
+/// The rules a headless worker needs to run a goal's own verification commands and the build
+/// families its repository uses, in the same `Bash(...)` syntax as the repository policy. A
+/// worker told to keep checks green must be able to run them: one denied command ends an
+/// Antigravity run before it can commit or open the pull request.
+pub fn verification_tools(goal_commands: &[String], files: BuildFiles) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |tool: &str| {
+        let rule = format!("Bash({tool} *)");
+        if !out.contains(&rule) {
+            out.push(rule);
+        }
+    };
+    for c in goal_commands {
+        if let Some(t) = runner_of(c) {
+            push(t);
+        }
+    }
+    if files.node {
+        push("npm");
+        push("npx");
+        push("node");
+    }
+    if files.pnpm {
+        push("pnpm");
+    }
+    if files.yarn {
+        push("yarn");
+    }
+    if files.bun {
+        push("bun");
+    }
+    if files.cargo {
+        push("cargo");
+        push("rustc");
+    }
+    if files.go {
+        push("go");
+    }
+    if files.python {
+        push("python");
+        push("python3");
+        push("uv");
+        push("pytest");
+    }
+    if files.dotnet {
+        push("dotnet");
+    }
+    out
+}
+
 ///
 /// The policy is what is merged on origin's default branch (an opt-in is a merged pull request),
 /// so a stale or diverged owner checkout neither hides it nor grants tools that were never
@@ -320,5 +478,71 @@ mod tests {
         assert_eq!(c.provider, "claude-subscription");
         assert_eq!(c.model, "opus");
         assert!(defaults_for(d.path(), "reviewer").is_none());
+    }
+
+    #[test]
+    fn verification_rules_name_the_goal_runners_and_the_build_families() {
+        let files = BuildFiles {
+            node: true,
+            python: true,
+            ..BuildFiles::default()
+        };
+        let rules = verification_tools(
+            &[
+                "npm test".into(),
+                "cd src-tauri && cargo test -j 2".into(),
+                "python -m pytest".into(),
+            ],
+            files,
+        );
+        for want in [
+            "Bash(npm *)",
+            "Bash(cargo *)",
+            "Bash(python *)",
+            "Bash(npx *)",
+            "Bash(pytest *)",
+        ] {
+            assert!(
+                rules.contains(&want.to_string()),
+                "missing {want}: {rules:?}"
+            );
+        }
+        assert!(rules.contains(&"Bash(npm *)".to_string()));
+        assert_eq!(
+            rules.iter().filter(|r| *r == "Bash(npm *)").count(),
+            1,
+            "deduplicated"
+        );
+        assert!(!rules.iter().any(|r| r == "Bash(*)"));
+        // Anything that is not a known runner is never granted a rule.
+        let none = verification_tools(
+            &[
+                "rm -rf /".into(),
+                "curl http://x".into(),
+                "pwsh -c 1".into(),
+            ],
+            BuildFiles::default(),
+        );
+        assert!(none.is_empty(), "{none:?}");
+    }
+
+    #[test]
+    fn build_files_are_found_at_the_root_and_one_level_down() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("Cargo.toml"), "").unwrap();
+        std::fs::create_dir_all(d.path().join("app")).unwrap();
+        std::fs::write(d.path().join("app/package.json"), "{}").unwrap();
+        let b = detect_build_files(d.path());
+        assert!(b.cargo && b.node && !b.python && !b.go);
+        std::fs::create_dir_all(d.path().join("node_modules/x")).unwrap();
+        std::fs::write(d.path().join("node_modules/x/pyproject.toml"), "").unwrap();
+        std::fs::create_dir_all(d.path().join(".git")).unwrap();
+        std::fs::write(d.path().join(".git/go.mod"), "").unwrap();
+        let again = detect_build_files(d.path());
+        assert!(!again.python && !again.go, "skips builds folders and .git");
+        assert_eq!(
+            detect_build_files(&d.path().join("missing")),
+            BuildFiles::default()
+        );
     }
 }

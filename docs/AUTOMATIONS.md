@@ -158,6 +158,12 @@ deliberately boring.
 - **Parallel missions per repository** applies to every agent now that every mission has its own
   worktree: with the setting at 1 a mission runs alone in its repository, above 1 up to that many
   share it.
+- **Queue order and dead queues.** Queued missions start oldest first, so a steady stream of new
+  work in one repository cannot starve the mission that has waited longest for that repository's
+  slot. A queued mission whose goal is `failed` or `done` can never start, so the tick stops it with
+  its goal (`failed`, reason in `review_note`) instead of leaving it in the queue. A mission whose
+  start is refused three times in a row writes one `mission.start_failed` row to the report feed;
+  later refusals stay silent and a start that works clears the count.
 - **The orchestrator runs after every tick.** `orchestrator::pass` answers routine escalations with
   their safe answer (`by = orchestrator`), routes a queued mission whose goal names UI work to
   Antigravity and CLI, cron, vault, Notion or cross-repository work to Hermes (anything else stays
