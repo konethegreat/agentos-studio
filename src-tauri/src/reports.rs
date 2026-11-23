@@ -11,13 +11,14 @@ use serde::Serialize;
 use crate::store;
 
 /// Every kind a row may carry.
-pub const KINDS: [&str; 11] = [
+pub const KINDS: [&str; 12] = [
     "mission.started",
     "mission.routed",
     "mission.reviewed",
     "mission.merged",
     "mission.blocked",
     "mission.unstuck",
+    "mission.start_failed",
     "escalation.auto_answered",
     "autonomy.pass",
     "digest.sent",

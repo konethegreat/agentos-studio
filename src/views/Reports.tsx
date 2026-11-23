@@ -11,6 +11,7 @@ const KIND_LABEL: Record<string, string> = {
   "mission.merged": "Merged",
   "mission.blocked": "Stopped",
   "mission.unstuck": "Unstuck",
+  "mission.start_failed": "Start failed",
   "escalation.auto_answered": "Answered",
   "autonomy.pass": "Autonomy",
   "digest.sent": "Digest",
@@ -22,6 +23,7 @@ const KIND_LABEL: Record<string, string> = {
 const KIND_TONE: Record<string, string> = {
   "mission.merged": "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30",
   "mission.blocked": "bg-red-500/10 text-red-300 ring-red-500/30",
+  "mission.start_failed": "bg-red-500/10 text-red-300 ring-red-500/30",
   "mission.unstuck": "bg-amber-500/10 text-amber-300 ring-amber-500/30",
   "escalation.auto_answered": "bg-sky-500/10 text-sky-300 ring-sky-500/30",
   "update.applied": "bg-sky-500/10 text-sky-300 ring-sky-500/30",

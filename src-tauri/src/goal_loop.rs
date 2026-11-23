@@ -686,14 +686,22 @@ fn apply(v: &Vault, e: &Escalation) -> Result<()> {
         }
         ("stuck" | "destructive", "retry") => {
             if let Some(m) = e.mission_id.as_deref() {
+                // The answer can arrive after the mission already moved (the board's Retry
+                // button, a watchdog requeue) or name a mission that is gone. Failing here would
+                // leave the marker unset and retry the same error every pass.
+                let Some(cur) = missions::get(m)? else {
+                    return Ok(());
+                };
                 // CI still failing on approved work: the next pass creates another fix mission.
-                if missions::get(m)?.is_some_and(|x| x.status == "done") {
+                if cur.status == "done" {
                     kv_set(&heal_key(m), &format!("rerun:{}", store::now()));
                     return Ok(());
                 }
-                missions::unblock(m, &format!("Retry: {why}"))?;
-                crate::stuck::reset(m);
-                crate::review_agent::clear_auto(m);
+                if cur.status == "blocked" {
+                    missions::unblock(m, &format!("Retry: {why}"))?;
+                    crate::stuck::reset(m);
+                    crate::review_agent::clear_auto(m);
+                }
             }
             Ok(())
         }
@@ -719,7 +727,14 @@ fn apply(v: &Vault, e: &Escalation) -> Result<()> {
         (_, "stop") => {
             if let Some(m) = e.mission_id.as_deref() {
                 kv_del(&hold_key(m));
-                let _ = missions::cancel(m, &format!("Stopped: {why}"));
+                let why = format!("Stopped: {why}");
+                // A retry can restart the mission while the question waits, and cancel only
+                // reaches queued and blocked missions. Block first, then cancel, so a stop always
+                // takes effect instead of being dropped and followed by another round of churn.
+                if missions::cancel(m, &why).is_err() {
+                    let _ = missions::block(m, &why, false);
+                    let _ = missions::cancel(m, &why);
+                }
             }
             if let Some(gid) = e.goal_id.as_deref() {
                 fail_goal(v, gid, &format!("Stopped: {why}"))?;
@@ -898,6 +913,144 @@ mod tests {
         ));
         assert!(is_destructive("dangerous command refused"));
         assert!(!is_destructive("quiet for 15 minutes after one retry"));
+    }
+
+    #[test]
+    fn a_retry_answer_survives_the_mission_having_already_moved_on() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let v = Vault::new(d.path());
+        let m = missions::create("demo", "do", "done", "implementer", "claude-code", "", "", 0.0)
+            .unwrap();
+        missions::block(&m.id, "stuck", false).unwrap();
+        let (e, _) = escalation::raise(
+            None,
+            Some(&m.id),
+            "stuck",
+            "Retry?",
+            &["retry", "stop"],
+            "stop",
+        )
+        .unwrap();
+        // The answer arrives after the owner retried the mission from the board.
+        missions::unblock(&m.id, "retry from the board").unwrap();
+        let answered = escalation::answer(&e.id, "retry", "studio").unwrap();
+        apply(&v, &answered).expect("an already moving mission is not an error");
+        assert_eq!(missions::get(&m.id).unwrap().unwrap().status, "queued");
+
+        // A reply that names a mission that no longer exists is applied cleanly too, so the
+        // pass records the marker instead of failing on it every minute.
+        let (gone, _) = escalation::raise(
+            None,
+            Some("M-9999"),
+            "stuck",
+            "Retry?",
+            &["retry", "stop"],
+            "stop",
+        )
+        .unwrap();
+        let answered = escalation::answer(&gone.id, "retry", "studio").unwrap();
+        apply(&v, &answered).expect("a vanished mission is not an error");
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn a_stop_answer_ends_a_mission_that_restarted_while_the_question_waited() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let v = Vault::new(d.path());
+        let g = goals::create(&goals::NewGoal {
+            outcome: "Finish".into(),
+            repos: vec!["agentos-sandbox-1".into()],
+            checks: vec![goals::Check {
+                kind: "command".into(),
+                target: "npm test".into(),
+                repo: None,
+            }],
+            budget_usd: 0.0,
+            deadline: None,
+            autonomy: Some("full".into()),
+        })
+        .unwrap();
+        goals::set_status(&g.id, &["planning"], "running", "").unwrap();
+        let m = missions::create(
+            "agentos-sandbox-1",
+            &g.id,
+            "accept",
+            "implementer",
+            "claude-code",
+            "",
+            "",
+            0.0,
+        )
+        .unwrap();
+        // The retry restarted the mission while the stop question was still waiting: cancel only
+        // reaches queued and blocked missions.
+        let c = crate::store::open().unwrap();
+        c.execute(
+            "UPDATE missions SET status = 'running' WHERE id = ?1",
+            rusqlite::params![m.id],
+        )
+        .unwrap();
+        let (e, _) = escalation::raise(
+            Some(&g.id),
+            Some(&m.id),
+            "stuck",
+            "Retry it, or stop it?",
+            &["retry", "stop"],
+            "stop",
+        )
+        .unwrap();
+        let answered = escalation::answer(&e.id, "stop", "orchestrator").unwrap();
+        apply(&v, &answered).expect("a stop answer must always take effect");
+        assert_eq!(
+            missions::get(&m.id).unwrap().unwrap().status,
+            "failed",
+            "a restarted mission is stopped too, not left running under a failed goal"
+        );
+        assert_eq!(goals::get(&g.id).unwrap().unwrap().status, "failed");
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn a_stop_answer_for_an_already_failed_goal_is_applied_cleanly() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let v = Vault::new(d.path());
+        let g = goals::create(&goals::NewGoal {
+            outcome: "Finish".into(),
+            repos: vec!["agentos-sandbox-1".into()],
+            checks: vec![goals::Check {
+                kind: "command".into(),
+                target: "npm test".into(),
+                repo: None,
+            }],
+            budget_usd: 0.0,
+            deadline: None,
+            autonomy: Some("full".into()),
+        })
+        .unwrap();
+        goals::set_status(&g.id, &["planning"], "failed", "stopped by hand").unwrap();
+        let (e, _) = escalation::raise(
+            Some(&g.id),
+            None,
+            "budget",
+            "Over budget",
+            &["raise", "stop"],
+            "stop",
+        )
+        .unwrap();
+        let answered = escalation::auto_answer(&e.id, "timeout").unwrap();
+        apply(&v, &answered).expect("stopping a failed goal changes nothing");
+        assert_eq!(
+            goals::get(&g.id).unwrap().unwrap().status,
+            "failed",
+            "the recorded failure stands"
+        );
+        crate::store::set_test_db(None);
     }
 
     #[test]
