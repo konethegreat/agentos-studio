@@ -35,6 +35,25 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.6.3
+
+The scheduler no longer leaves work in the queue for ever.
+
+- **Oldest mission first.** Queued missions start in the order they last changed, so a busy
+  repository cannot starve the mission that has waited longest for its slot.
+- **Dead queues stop with their goal.** A queued mission whose goal was failed or done can never
+  start, so the tick stops it with the goal and records the reason instead of leaving it in the
+  queue.
+- **Stop answers always land.** A stop escalation answer now blocks before it cancels, so it takes
+  effect even when a retry restarted the mission while the question waited.
+- **Start failures are visible.** Three refused starts write one `mission.start_failed` row to the
+  Reports feed; a start that works clears the count.
+- **Workers can run their own checks.** Headless workers get the goal's command checks and the
+  repository's build runners (npm, pnpm, yarn, bun, cargo, go, python, dotnet) in their allowlist,
+  still limited to named runners, never a general shell.
+- **Verification resumes.** A goal left in `verifying` by a closed app or a check error is picked
+  up again, and a running mission whose bus task vanished is requeued once and then blocked.
+
 ## What is new in 2.6.2
 
 A Studio update is now one click and a short restart, not a wizard.
