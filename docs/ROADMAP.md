@@ -3,6 +3,23 @@
 Phases are ordered by dependency, not by excitement. Each one lists what it needs from the
 phase before it, so nothing is scheduled that cannot be built yet.
 
+## 2.5.0: replayable runs and offline mode (shipped)
+
+- **Replayable run exports.** `timeline::export_timeline` writes a mission's full record to
+  `04_Agent_Engine/runs/<id>.md` through `Vault::write_note`: prompt and acceptance criteria,
+  provider and model, reviewer verdict and note, pull request, step count, cost, duration and every
+  step with its tool calls and results. Ids are validated against `[A-Za-z0-9_-]` before they
+  become file names, and every text field passes the constitution redactor.
+- **Offline mode.** `offline::decide` is a pure table over (online, automatic pinning, pin record,
+  active provider, local models). While offline with a model pulled, Studio switches Hermes to the
+  `local` provider through `hermes_engine::set_active_provider`, which verifies the read-back, and
+  saves the previous provider in the store. When the network returns, or the owner turns automatic
+  pinning off, it restores that provider; if the owner switched providers during the episode the
+  record is dropped without touching config. A 60 second loop emits `agentos://offline`; the
+  status bar and a banner read it.
+- **One rule for starting work.** `offline::network_usable()` (network up or local pin) gates the
+  scheduler and the stuck watchdog, so they cannot disagree.
+
 ## v0.3.0 (shipped)
 
 | Area | Ships |
@@ -927,8 +944,6 @@ repairs, and a daily fleet health report.
 
 ## Ideas worth considering
 
-- Replayable runs: export a run (prompt, tool calls, results) as a Markdown report in the vault.
-- Offline mode: detect no network and pin a local model automatically, with a clear banner.
 - Team routing policies: shared JSON policy files in a repo, so a team agrees on model choices.
 
 ## Competitive notes

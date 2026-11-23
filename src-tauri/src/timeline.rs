@@ -504,6 +504,7 @@ repo: {repo}
 role: {role}
 agent: {agent}
 model: {model}
+provider: {provider}
 status: {status}
 cost_usd: {cost:.4}
 duration_s: {dur}
@@ -522,7 +523,9 @@ pr_url: {pr}
 ## Summary
 
 - Agents: {agents}
+- Provider: {provider}
 - Handoffs: {handoffs}, Asks: {asks}
+- Steps: {steps}
 - Duration: {dur}s
 - Metered cost: ${cost:.2}
 ",
@@ -534,6 +537,11 @@ pr_url: {pr}
             "inherit"
         } else {
             &m.model
+        },
+        provider = if m.provider.trim().is_empty() {
+            "default"
+        } else {
+            m.provider.trim()
         },
         status = m.status,
         cost = tl.total_cost_usd,
@@ -547,10 +555,24 @@ pr_url: {pr}
         },
         handoffs = tl.handoffs,
         asks = tl.asks,
+        steps = tl.steps.len(),
     );
     if let (Some(rv), Some(verdict)) = (&m.reviewer, &m.review_verdict) {
         out.push_str(&format!(
             "- Review: {verdict} by {rv}
+"
+        ));
+        if let Some(note) = m.review_note.as_deref().filter(|n| !n.trim().is_empty()) {
+            out.push_str(&format!(
+                "- Review note: {}
+",
+                crate::constitution_gate::redact(note.trim())
+            ));
+        }
+    }
+    if !pr.is_empty() {
+        out.push_str(&format!(
+            "- Pull request: {pr}
 "
         ));
     }
@@ -592,24 +614,48 @@ pr_url: {pr}
             );
         }
     }
+    out.push_str(
+        "
+---
+
+Recorded from the source logs at export time. Long tool output is clipped where the source clipped it; the export itself omits nothing.
+",
+    );
     out
 }
 
 /// Export one mission's prompt, tool calls and results to `04_Agent_Engine/runs/<id>.md` in the vault.
 pub fn export_markdown(v: &Vault, id: &str) -> Result<String> {
-    let tl = mission(v, id)?;
-    let md = format_markdown(&tl);
-    let rel = format!("04_Agent_Engine/runs/{id}.md");
-    let dest = v
-        .root
-        .join("04_Agent_Engine")
-        .join("runs")
-        .join(format!("{id}.md"));
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)?;
+    if !valid_id(id) {
+        anyhow::bail!("'{id}' is not a mission id: letters, digits, '-' and '_' only");
     }
-    std::fs::write(&dest, md)?;
+    let tl = mission(v, id)?;
+    export_timeline(v, &tl)
+}
+
+/// Write a built timeline to `04_Agent_Engine/runs/<id>.md` through the vault writer, so the
+/// traversal guard and the atomic write apply.
+pub fn export_timeline(v: &Vault, tl: &Timeline) -> Result<String> {
+    let id = &tl.mission.id;
+    if !valid_id(id) {
+        anyhow::bail!("'{id}' is not a mission id: letters, digits, '-' and '_' only");
+    }
+    let rel = report_rel(id);
+    v.write_note(&rel, &format_markdown(tl))?;
     Ok(rel)
+}
+
+/// Mission ids become file names, so they never carry separators or dot segments.
+fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn report_rel(id: &str) -> String {
+    format!("04_Agent_Engine/runs/{id}.md")
 }
 
 #[cfg(test)]
@@ -633,6 +679,12 @@ mod tests {
             role: "implementer".into(),
             agent: "hermes".into(),
             status: "done".into(),
+            provider: "custom".into(),
+            model: "qwen3-coder".into(),
+            pr_url: Some("https://github.com/o/r/pull/5".into()),
+            reviewer: Some("qoder".into()),
+            review_verdict: Some("approve".into()),
+            review_note: Some("Checked the diff".into()),
             ..Default::default()
         };
         let tl = Timeline {
@@ -656,7 +708,63 @@ mod tests {
         assert!(md.contains("Tests pass"));
         assert!(md.contains("Bash"));
         assert!(md.contains("npm test"));
+        assert!(md.contains("provider: custom"));
+        assert!(md.contains("- Provider: custom"));
+        assert!(md.contains("- Steps: 1"));
+        assert!(md.contains("- Review: approve by qoder"));
+        assert!(md.contains("- Review note: Checked the diff"));
+        assert!(md.contains("- Pull request: https://github.com/o/r/pull/5"));
+        assert!(md.contains("the export itself omits nothing"));
         assert!(!md.contains("secretvalue1234567890"));
+    }
+
+    #[test]
+    fn export_refuses_ids_that_could_escape_the_runs_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = Vault::new(dir.path());
+        for bad in ["../evil", "M-1/x", "", "a b", ".."] {
+            let err = export_markdown(&v, bad).unwrap_err().to_string();
+            assert!(err.contains("not a mission id"), "{bad}: {err}");
+        }
+        assert!(
+            !dir.path().join("04_Agent_Engine").exists(),
+            "nothing was written"
+        );
+    }
+
+    #[test]
+    fn report_paths_stay_inside_the_runs_folder() {
+        assert_eq!(report_rel("M-012"), "04_Agent_Engine/runs/M-012.md");
+        assert!(valid_id("M-012_a"));
+        assert!(!valid_id(".."));
+        assert!(!valid_id("a/b"));
+    }
+
+    #[test]
+    fn export_timeline_writes_the_report_into_the_vault() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = Vault::new(dir.path());
+        let tl = Timeline {
+            mission: Mission {
+                id: "M-100".into(),
+                repo: "r".into(),
+                goal: "Ship it".into(),
+                acceptance: "Green".into(),
+                agent: "hermes".into(),
+                ..Default::default()
+            },
+            steps: Vec::new(),
+            agents: Vec::new(),
+            handoffs: 0,
+            asks: 0,
+            total_cost_usd: 0.0,
+            duration_s: 0,
+        };
+        let rel = export_timeline(&v, &tl).unwrap();
+        assert_eq!(rel, "04_Agent_Engine/runs/M-100.md");
+        let text = std::fs::read_to_string(dir.path().join(&rel)).unwrap();
+        assert!(text.contains("# M-100: Ship it"));
+        assert!(text.contains("## Timeline"));
     }
 
     #[test]

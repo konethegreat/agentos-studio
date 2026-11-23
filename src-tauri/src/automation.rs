@@ -366,7 +366,8 @@ pub struct TickReport {
     pub fix_missions: Vec<String>,
     /// The fleet pause switch is on: nothing new starts or merges this pass.
     pub paused: bool,
-    /// The network is unreachable: nothing new starts this pass, and silence is not judged stuck.
+    /// The network is unreachable and no local model is pinned: nothing new starts this pass, and
+    /// silence is not judged stuck.
     pub offline: bool,
     /// The global metered budget is spent: metered missions neither start nor keep running.
     pub budget_stopped: bool,
@@ -593,8 +594,9 @@ pub fn tick(v: &Vault) -> TickReport {
                 }
             })
             .collect();
-        // No network: nothing new starts (every agent needs a provider); work resumes when it is back.
-        let offline = !queued.is_empty() && !crate::agent_limits::online();
+        // No network and no local pin: nothing new starts (every agent needs a provider); work
+        // resumes when the network is back, or starts now on a pinned local model.
+        let offline = !queued.is_empty() && !crate::offline::network_usable();
         report.offline = offline;
         let queued: Vec<&Mission> = if report.paused || offline {
             Vec::new()

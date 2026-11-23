@@ -35,6 +35,27 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.5.0
+
+Runs you can replay anywhere, and work that keeps moving when the network does not.
+
+- **Replayable run exports.** Export writes a mission's full record to
+  `04_Agent_Engine/runs/<id>.md` in the vault: the prompt and acceptance criteria, the provider next
+  to the model, the reviewer verdict and note, the pull request, the step count, metered cost and
+  duration, and every timeline step with its agent, tool calls and results. Every text field is
+  redacted first, the mission id is validated before it becomes a file name, and the write goes
+  through the same vault writer as every other note, so the traversal guard and the atomic write
+  apply.
+- **Offline mode pins a local model.** When the network is gone and Ollama has a model pulled,
+  Studio switches Hermes to that local model through the provider switch it already verifies, keeps
+  the scheduler and the stuck watchdog running, and puts the previous provider back when the
+  network returns. The previous provider is kept in the store, so a restart mid-episode still
+  restores, and if you switch providers during the episode the record is dropped and your choice
+  stands. The banner states the live condition and offers one control: turn automatic pinning off.
+- **One rule for "can work run".** The scheduler gate and the stuck watchdog share a single rule,
+  the network is up or a local model is pinned, so with no network and no local model nothing new
+  starts and nothing is marked stuck, exactly as before.
+
 ## What is new in 2.4.0
 
 Self-healing reaches the fleet, and the Update Center covers every tool that runs it.
@@ -113,7 +134,7 @@ The first release of the Beyond roadmap (docs/BEYOND.md): a fleet that does not 
 ## What is new in 1.3.0
 
 - **Pause and resume missions without cancelling.** Running missions can be paused (halting kanban or stopping the bus worker while keeping the worktree and progress) and resumed back into work or review.
-- **Markdown run export.** Export any mission's prompt, acceptance criteria, cost, tool calls, and results to `04_Agent_Engine/runs/<id>.md` in the vault, with secrets redacted.
+- **Markdown run export.** Export any mission's prompt, acceptance criteria, provider and model, reviewer verdict and note, pull request, step count, cost, tool calls, and results to `04_Agent_Engine/runs/<id>.md` in the vault, with secrets redacted.
 - **Eval-gated model scorecards (Providers, Model layer).** Scorecards combine real mission approval rate and cost with evaluation replays per role, provider, and model, and gate folder default promotions on at least 3 improving eval replays.
 - **Antigravity reviews with PR context.** Antigravity reviewers can read the pull request diff and history when answering review questions.
 
@@ -135,7 +156,7 @@ The first release of the Beyond roadmap (docs/BEYOND.md): a fleet that does not 
 ## What is new in 1.2.6
 
 - **Usage limits do not stop the fleet.** When an agent hits its plan's limit (Claude's 5-hour window, for example), its mission goes to the next free agent at once, and new work goes elsewhere until the limit resets. A worker that goes quiet is retried on a different agent.
-- **Offline mode.** With no network, nothing new starts and nothing is marked stuck; work resumes when the network returns, and the status bar says so.
+- **Offline mode.** With no network and no local model, nothing new starts and nothing is marked stuck; work resumes when the network returns. When Ollama has a model pulled, Studio pins it in Hermes and keeps queued work running until the network returns, then restores the previous provider. The status bar and banner say which.
 - **Failed goals restart.** An opted-in repository whose goal failed starts a fresh goal for what is left, at most twice a day.
 - **Fix.** No false "Hermes did not finish within 4s" warning at launch.
 

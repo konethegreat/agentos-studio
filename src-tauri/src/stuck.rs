@@ -156,8 +156,9 @@ pub fn check_bus(v: &Vault, m: &Mission, task: &str, now: i64) -> Option<String>
         // An IDE agent that claimed the task: its activity is all there is to watch.
         true
     };
-    // No network: silence is expected. Judge again once it returns.
-    if !crate::agent_limits::online() {
+    // No network and no local pin: silence is expected. With a local model pinned, the worker is
+    // expected to answer, so the usual judgement applies.
+    if !crate::offline::network_usable() {
         kv_put(&format!("{KV_BEAT}{}", m.id), &now.to_string());
         return None;
     }

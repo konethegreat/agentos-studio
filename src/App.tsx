@@ -36,6 +36,7 @@ import { CliDock, CliProvider, useCli } from "./components/CliDrawer";
 import { CommandBar } from "./components/CommandBar";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { StatusBar } from "./components/StatusBar";
+import { OfflineBanner } from "./components/OfflineBanner";
 import { Memory } from "./views/Memory";
 import { Onboarding } from "./components/Onboarding";
 import { Help } from "./views/Help";
@@ -473,6 +474,7 @@ function Studio() {
         <main className="flex min-w-0 flex-1 flex-col">
           <StatusBar hermes={hermes} stack={status} onOpenDiagnostics={() => go("diagnostics")} onRefresh={() => void loadHermes(true)} onGo={(v, notice) => go(v as View, notice)} />
           <UpdateBanner onOpen={() => go("updates")} />
+          <OfflineBanner />
           <div className="relative min-h-0 flex-1">
             {view === "today" && <Today target={noticeTarget} />}
             {visited.has("chat") && (
