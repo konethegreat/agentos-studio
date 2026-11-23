@@ -1246,6 +1246,16 @@ pub async fn offline_status() -> CmdResult<crate::offline::OfflineStatus> {
     blocking(|| Ok(crate::offline::status())).await
 }
 
+/// Turn automatic local pinning on or off, then report the state it applies to.
+#[tauri::command]
+pub async fn offline_set_auto_local(auto: bool) -> CmdResult<crate::offline::OfflineStatus> {
+    blocking(move || {
+        crate::offline::set_auto_local(auto)?;
+        Ok(crate::offline::status())
+    })
+    .await
+}
+
 /// The documentation that ships with the build, for the in-app help view.
 #[tauri::command]
 pub async fn help_docs() -> CmdResult<Vec<crate::help::Doc>> {

@@ -593,8 +593,9 @@ pub fn tick(v: &Vault) -> TickReport {
                 }
             })
             .collect();
-        // No network: nothing new starts (every agent needs a provider); work resumes when it is back.
-        let offline = !queued.is_empty() && !crate::agent_limits::online();
+        // No network and no local pin: nothing new starts (every agent needs a provider); work
+        // resumes when the network is back, or starts now on a pinned local model.
+        let offline = !queued.is_empty() && !crate::offline::network_usable();
         report.offline = offline;
         let queued: Vec<&Mission> = if report.paused || offline {
             Vec::new()

@@ -258,6 +258,20 @@ pub fn run_gui() {
                     std::thread::sleep(Duration::from_secs(updates::next_check_secs(&report)));
                 }
             });
+            // Offline mode: every 60 seconds, probe the network, pin one local model while it is
+            // gone and put the previous provider back when it returns. The banner and the status
+            // bar read the event, so nothing in the UI polls for this.
+            let off = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(15));
+                loop {
+                    let st = crate::offline::cycle();
+                    if off.emit(crate::offline::EV_OFFLINE, st).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_secs(60));
+                }
+            });
             // Heartbeat: Hermes version, provider, model and MCP count every 15 seconds.
             let beat = hermes.clone();
             std::thread::spawn(move || loop {
@@ -563,6 +577,7 @@ pub fn run_gui() {
             commands::set_router_auto,
             commands::help_docs,
             commands::offline_status,
+            commands::offline_set_auto_local,
             commands::tool_policies,
             commands::set_tool_policy,
             commands::tool_policy_model,

@@ -1,10 +1,10 @@
 import { CircleCheck, Download, Monitor, Moon, Pause, Play, RefreshCw, SquareTerminal, Sun, TriangleAlert } from "lucide-react";
 import { NEXT_PREF, setThemePref, themePref, type ThemePref } from "../lib/theme";
 import type { ReactNode } from "react";
-import type { FleetPause, HermesStatus, Notice, StackStatus } from "../lib/api";
+import type { FleetPause, HermesStatus, Notice, OfflineStatus, StackStatus } from "../lib/api";
 import { useCli } from "./CliDrawer";
 import { NoticeBell } from "./NoticeBell";
-import { api } from "../lib/api";
+import { api, events } from "../lib/api";
 import { useEffect, useState } from "react";
 
 function Chip({ children, title, onClick, tone = "" }: { children: ReactNode; title?: string; onClick?: () => void; tone?: string }) {
@@ -113,15 +113,19 @@ export function StatusBar({
   const cli = useCli();
   const [available, setAvailable] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
-  const [offline, setOffline] = useState<{ online: boolean; local_models: string[]; note: string } | null>(null);
+  const [offline, setOffline] = useState<OfflineStatus | null>(null);
 
   useEffect(() => {
     const check = () => void api.studioUpdateCheck().then(setAvailable).catch(() => undefined);
     check();
     void api.offlineStatus().then(setOffline).catch(() => undefined);
+    const off = events.offline(setOffline);
     // An app left open for days still hears about a release: check again every six hours.
     const t = window.setInterval(check, 6 * 60 * 60 * 1000);
-    return () => window.clearInterval(t);
+    return () => {
+      window.clearInterval(t);
+      void off.then((f) => f());
+    };
   }, []);
 
   async function install() {
@@ -168,7 +172,7 @@ export function StatusBar({
           title={offline.note}
           className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 text-label text-amber-300 ring-1 ring-amber-500/25"
         >
-          Offline{offline.local_models.length > 0 ? ` · ${offline.local_models.length} local` : ""}
+          Offline{offline.pin ? ` · ${offline.pin.local_model}` : offline.local_models.length > 0 ? ` · ${offline.local_models.length} local` : ""}
         </span>
       )}
       {available && (

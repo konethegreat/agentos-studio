@@ -371,6 +371,22 @@ export interface ProjectResult {
 }
 
 
+export interface OfflinePin {
+  provider: string;
+  model: string;
+  base_url: string | null;
+  local_model: string;
+  since: number;
+}
+
+export interface OfflineStatus {
+  online: boolean;
+  local_models: string[];
+  note: string;
+  auto_local: boolean;
+  pin: OfflinePin | null;
+}
+
 export interface HermesStatus {
   installed: boolean;
   hermes_path: string | null;
@@ -1539,8 +1555,8 @@ export const api = {
   unattendedProfile: () => invoke<UnattendedProfile>("unattended_profile"),
   hubTools: () => invoke<string[]>("hub_tools"),
 
-  offlineStatus: () =>
-    invoke<{ online: boolean; local_models: string[]; note: string }>("offline_status"),
+  offlineStatus: () => invoke<OfflineStatus>("offline_status"),
+  offlineSetAutoLocal: (auto: boolean) => invoke<OfflineStatus>("offline_set_auto_local", { auto }),
 
   helpDocs: () => invoke<{ title: string; path: string; body: string }[]>("help_docs"),
 
@@ -1706,6 +1722,8 @@ export const events = {
     listen<SetupEvent>("agentos://setup-progress", (e) => cb(e.payload)),
   hermesStatus: (cb: (s: HermesStatus) => void): Promise<UnlistenFn> =>
     listen<HermesStatus>("agentos://hermes-status", (e) => cb(e.payload)),
+  offline: (cb: (s: OfflineStatus) => void): Promise<UnlistenFn> =>
+    listen<OfflineStatus>("agentos://offline", (e) => cb(e.payload)),
   chat: (cb: (e: ChatEvent) => void): Promise<UnlistenFn> => listen<ChatEvent>("agentos://chat-event", (e) => cb(e.payload)),
   cli: (cb: (e: CliLine) => void): Promise<UnlistenFn> => listen<CliLine>("agentos://cli-output", (e) => cb(e.payload)),
   boot: (cb: (p: BootProgress) => void): Promise<UnlistenFn> => listen<BootProgress>("agentos://boot", (e) => cb(e.payload)),
