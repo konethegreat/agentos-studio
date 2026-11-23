@@ -198,8 +198,22 @@ mod tests {
     fn records_and_lists_newest_first_with_filters() {
         let (_d, _g) = db();
         record_here("mission.started", "repo-a", "M-1 started", "working", "M-1").unwrap();
-        record_here("mission.merged", "repo-b", "M-2 merged", "green", "https://x/pull/2").unwrap();
-        record_here("mission.blocked", "repo-a", "M-3 blocked", "no retry left", "M-3").unwrap();
+        record_here(
+            "mission.merged",
+            "repo-b",
+            "M-2 merged",
+            "green",
+            "https://x/pull/2",
+        )
+        .unwrap();
+        record_here(
+            "mission.blocked",
+            "repo-a",
+            "M-3 blocked",
+            "no retry left",
+            "M-3",
+        )
+        .unwrap();
 
         let all = list(0, "", 10).unwrap();
         assert_eq!(all.len(), 3);

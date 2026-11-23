@@ -224,7 +224,14 @@ pub fn status() -> Status {
 pub fn choose_executor(goal: &str, repo: &str) -> &'static str {
     let text = format!("{} {}", goal, repo).to_lowercase();
     let has = |words: &[&str]| words.iter().any(|w| text.contains(w));
-    if has(&["cron", "notion", "vault", "hermes", "kanban", "shell script"]) {
+    if has(&[
+        "cron",
+        "notion",
+        "vault",
+        "hermes",
+        "kanban",
+        "shell script",
+    ]) {
         return "hermes";
     }
     if has(&[
@@ -270,11 +277,17 @@ mod tests {
     #[test]
     fn ui_work_goes_to_antigravity() {
         assert_eq!(
-            choose_executor("Rebuild the settings screen in the React frontend", "agentos-studio"),
+            choose_executor(
+                "Rebuild the settings screen in the React frontend",
+                "agentos-studio"
+            ),
             "antigravity"
         );
         assert_eq!(
-            choose_executor("Fix the landing page layout and Tailwind styles", "k-one-it-solutions-website"),
+            choose_executor(
+                "Fix the landing page layout and Tailwind styles",
+                "k-one-it-solutions-website"
+            ),
             "antigravity"
         );
     }
@@ -282,7 +295,10 @@ mod tests {
     #[test]
     fn cli_and_fleet_work_goes_to_hermes() {
         assert_eq!(
-            choose_executor("Add a cron job that syncs the vault each morning", "fleet-tools"),
+            choose_executor(
+                "Add a cron job that syncs the vault each morning",
+                "fleet-tools"
+            ),
             "hermes"
         );
         assert_eq!(
@@ -358,7 +374,10 @@ mod tests {
         assert_eq!(answered.answered_by.as_deref(), Some("orchestrator"));
         let open = escalation::get(&dangerous.id).unwrap().unwrap();
         assert_eq!(open.status, "open");
-        assert_eq!(reports::list(0, "", 10).unwrap()[0].kind, "escalation.auto_answered");
+        assert_eq!(
+            reports::list(0, "", 10).unwrap()[0].kind,
+            "escalation.auto_answered"
+        );
         let st = status();
         assert_eq!(st.auto_answered_today, 1);
         assert_eq!(st.needs_you.len(), 1);

@@ -1161,13 +1161,8 @@ fn spawn_job_joined(
             permissions::audit(action, &target, &msg, "ok");
             if action == "update.apply" {
                 let title = format!("{} updated", label(&product_owned));
-                let _ = crate::reports::record_here(
-                    "update.applied",
-                    "",
-                    &title,
-                    &msg,
-                    &target_owned,
-                );
+                let _ =
+                    crate::reports::record_here("update.applied", "", &title, &msg, &target_owned);
             }
             pg.finish(true, msg);
         }
@@ -1270,7 +1265,10 @@ fn installed_studio_exe() -> PathBuf {
 /// Run the installer, wait for it, then start the installed Studio and close this one. A failed
 /// installer keeps this window open and reports why, so the owner never loses the app.
 fn install_and_restart(pg: &Progress, path: &Path, app: &AppHandle) -> Result<String> {
-    pg.emit("step", "Running the installer. Studio waits for it to finish.");
+    pg.emit(
+        "step",
+        "Running the installer. Studio waits for it to finish.",
+    );
     let mut child = std::process::Command::new(path)
         .spawn()
         .with_context(|| format!("starting {}", path.display()))?;
@@ -1316,10 +1314,7 @@ pub fn apply_update(app: AppHandle, product: &str) -> Result<String> {
     Ok(start_apply(app, product)?.0)
 }
 
-fn start_apply(
-    app: AppHandle,
-    product: &str,
-) -> Result<(String, std::thread::JoinHandle<()>)> {
+fn start_apply(app: AppHandle, product: &str) -> Result<(String, std::thread::JoinHandle<()>)> {
     check_product(product)?;
     let status = match product {
         "hermes" => check_hermes(),
