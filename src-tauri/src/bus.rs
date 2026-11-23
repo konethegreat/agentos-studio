@@ -301,6 +301,42 @@ pub fn repo_from_body(body: &str) -> Option<PathBuf> {
         .filter(|p| p.is_dir())
 }
 
+/// The goal a mission belongs to, from the `Part of goal G-001:` line the planner writes or the
+/// `done checks of goal G-001` wording of a completion fix mission.
+pub fn goal_from_body(body: &str) -> Option<String> {
+    let re = Regex::new(r"(?i)\bgoal\s+(G-\d+)").expect("static regex");
+    re.captures(body).map(|c| c[1].to_uppercase())
+}
+
+/// The repository policy's tool rules plus the runners this task needs: the goal's own command
+/// checks and the build families its checkout uses. A worker told to keep checks green must be
+/// able to run them; one denied command ends an Antigravity run before it can commit or open the
+/// pull request.
+fn worker_extra_tools(body: &str) -> Vec<String> {
+    let mut extra = repo_from_body(body)
+        .map(|r| crate::routing::allowed_tools(&r))
+        .unwrap_or_default();
+    let commands: Vec<String> = goal_from_body(body)
+        .and_then(|id| crate::goals::get(&id).ok().flatten())
+        .map(|g| {
+            g.checks
+                .iter()
+                .filter(|c| c.kind == "command")
+                .map(|c| c.target.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let files = workdir_from_body(body)
+        .map(|d| crate::routing::detect_build_files(&d))
+        .unwrap_or_default();
+    for rule in crate::routing::verification_tools(&commands, files) {
+        if !extra.contains(&rule) {
+            extra.push(rule);
+        }
+    }
+    extra
+}
+
 /// The folder a worker runs in: the mission's `Worktree:` when it exists, else `Repository:`.
 pub fn workdir_from_body(body: &str) -> Option<PathBuf> {
     line_value(body, "Worktree")
@@ -650,12 +686,7 @@ pub fn spawn_worker(
             "{task_id} has no Repository line naming an existing folder, so no worker was started. Dispatch it with a repository."
         )
     })?;
-    let base_claude = || {
-        let extra = repo_from_body(&task.body)
-            .map(|r| crate::routing::allowed_tools(&r))
-            .unwrap_or_default();
-        crate::routing::claude_allowed_tools(&extra)
-    };
+    let base_claude = || crate::routing::claude_allowed_tools(&worker_extra_tools(&task.body));
     // An agent pack narrows the worker: its persona first, then only the tools its ceiling keeps.
     let pack = match line_value(&task.body, "Agent pack") {
         Some(id) => Some(crate::agent_packs::for_worker_in(
@@ -709,11 +740,9 @@ pub fn spawn_worker(
             bail!("agent packs run on claude-code or hermes; Antigravity cannot apply a pack's ceiling")
         }
         "antigravity" => {
-            let extra = repo_from_body(&task.body)
-                .map(|r| crate::routing::allowed_tools(&r))
-                .unwrap_or_default();
-            let allow =
-                crate::routing::agy_allow_rules(&crate::routing::claude_allowed_tools(&extra));
+            let allow = crate::routing::agy_allow_rules(&crate::routing::claude_allowed_tools(
+                &worker_extra_tools(&task.body),
+            ));
             let sf = vault
                 .worker_logs()
                 .join(format!("{task_id}.agy-settings.json"));
@@ -1284,6 +1313,71 @@ mod tests {
         assert_eq!(repo_from_body(&body).unwrap(), d.path());
         assert!(repo_from_body("Repository: Z:/does/not/exist").is_none());
         assert!(repo_from_body("no repository line").is_none());
+    }
+
+    #[test]
+    fn a_worker_gets_the_verification_tools_its_goal_declares() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join("package.json"), "{}").unwrap();
+        std::fs::write(repo.join("Cargo.toml"), "").unwrap();
+        std::fs::write(repo.join("pyproject.toml"), "").unwrap();
+        let body_without_goal = format!("Repository: {}\n\nDo it\n", repo.display());
+        // Build families alone are enough: a worker told to keep tests green needs the runners.
+        let plain = worker_extra_tools(&body_without_goal);
+        assert!(plain.contains(&"Bash(npm *)".to_string()), "{plain:?}");
+        assert!(plain.contains(&"Bash(cargo *)".to_string()), "{plain:?}");
+        assert!(
+            !plain.iter().any(|r| r == "Bash(*)"),
+            "never a general shell"
+        );
+
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let g = crate::goals::create(&crate::goals::NewGoal {
+            outcome: "ship it".into(),
+            repos: vec![repo.display().to_string()],
+            checks: vec![
+                crate::goals::Check {
+                    kind: "command".into(),
+                    target: "npm test".into(),
+                    repo: None,
+                },
+                crate::goals::Check {
+                    kind: "command".into(),
+                    target: "python -m pytest".into(),
+                    repo: None,
+                },
+                crate::goals::Check {
+                    kind: "url".into(),
+                    target: "https://example.com".into(),
+                    repo: None,
+                },
+            ],
+            budget_usd: 0.0,
+            deadline: None,
+            autonomy: Some("full".into()),
+        })
+        .unwrap();
+        let body = format!(
+            "Repository: {}\n\nPart of goal {}: do it\n",
+            repo.display(),
+            g.id
+        );
+        assert_eq!(goal_from_body(&body).as_deref(), Some(g.id.as_str()));
+        let extra = worker_extra_tools(&body);
+        for want in ["Bash(npm *)", "Bash(python *)", "Bash(pytest *)"] {
+            assert!(extra.contains(&want.to_string()), "missing {want}: {extra:?}");
+        }
+        // The same rules reach Antigravity in its own syntax, and nothing wider leaks in.
+        let agy = crate::routing::agy_allow_rules(&crate::routing::claude_allowed_tools(&extra));
+        assert!(
+            agy.contains(&"command(regex:npm .*)".to_string()),
+            "{agy:?}"
+        );
+        assert!(!agy.iter().any(|r| r == "command(regex:.*)"), "{agy:?}");
+        crate::store::set_test_db(None);
     }
 
     #[test]

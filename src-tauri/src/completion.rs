@@ -36,9 +36,10 @@ pub fn mission_settled(m: &Mission, merge_outcome: Option<&str>) -> bool {
     m.status == "done" && merge_outcome.is_some()
 }
 
-/// May the goal's checks run now? Running, with missions, every one settled. Pure.
+/// May the goal's checks run now? Running (or a `verifying` left by an interrupted pass), with
+/// missions, every one settled. Pure.
 pub fn ready_to_verify(g: &Goal, ms: &[Mission], outcome: impl Fn(&str) -> Option<String>) -> bool {
-    g.status == "running"
+    matches!(g.status.as_str(), "running" | "verifying")
         && !ms.is_empty()
         && ms
             .iter()
@@ -310,7 +311,9 @@ pub struct Outcome {
 pub fn pass(v: &Vault) -> Outcome {
     let mut out = Outcome::default();
     for g in goals::list(200).unwrap_or_default() {
-        if g.status != "running" {
+        // `verifying` is included so a pass interrupted after it set that status is resumed; the
+        // tick mutex means no other pass of this process is running those checks.
+        if g.status != "running" && g.status != "verifying" {
             continue;
         }
         let ms = goals::missions_of(&g.id).unwrap_or_default();
@@ -320,7 +323,14 @@ pub fn pass(v: &Vault) -> Outcome {
             continue;
         }
         if let Err(e) = verify(v, &g, &ms, &mut out) {
-            let _ = goals::set_note(&g.id, &format!("Checking the goal failed: {e:#}"));
+            // Back to `running` so the next pass retries instead of stranding the goal in
+            // `verifying` for ever.
+            let _ = goals::set_status(
+                &g.id,
+                &["verifying"],
+                "running",
+                &format!("Checking the goal failed: {e:#}"),
+            );
         }
     }
     out
@@ -515,6 +525,14 @@ mod tests {
         let mut paused = goal();
         paused.status = "paused".into();
         assert!(!ready_to_verify(&paused, &ms, merged));
+        // A pass interrupted after it entered `verifying` (the app closed, a check errored) must
+        // not leave the goal stranded: the next pass resumes the checks.
+        let mut interrupted = goal();
+        interrupted.status = "verifying".into();
+        assert!(
+            ready_to_verify(&interrupted, &ms, merged),
+            "an interrupted verification is resumed"
+        );
     }
 
     #[test]
