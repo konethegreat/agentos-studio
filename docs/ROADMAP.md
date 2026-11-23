@@ -3,6 +3,26 @@
 Phases are ordered by dependency, not by excitement. Each one lists what it needs from the
 phase before it, so nothing is scheduled that cannot be built yet.
 
+## 2.6.3: scheduler dead ends closed (shipped)
+
+- **Oldest-first dispatch.** `automation::dispatch_order` starts queued missions oldest first;
+  `missions::list` hands queued rows back newest first, which starved the oldest mission of a
+  repository's single slot.
+- **Dead queues.** `automation::stop_orphaned_queued` cancels a queued mission whose goal is
+  `failed` or `done`, because `planner::goal_mission_startable` can never pass for it. Live cases
+  M-097 (under failed G-028) and M-183 (under failed G-068) had been queued for ever.
+- **Stop answers.** `goal_loop` blocks before it cancels on a `stop` answer, because a retry can
+  restart the mission while the question waits and `missions::cancel` only reaches queued and
+  blocked missions.
+- **Start failures.** Three refused starts write one `mission.start_failed` report row (kv
+  `start.fail.<id>`); a successful start clears the count.
+- **Worker tooling.** `bus::worker_extra_tools` plus `routing::verification_tools` grant the goal's
+  command checks and the repository's build families to headless workers, limited to named
+  runners.
+- **Stranded verification.** `completion::pass` resumes a goal left in `verifying`, and a check
+  error returns it to `running`. `stuck::check_vanished` requeues a mission whose bus task is gone
+  once, then blocks it.
+
 ## 2.6.2: Studio updates install without a wizard (shipped)
 
 - **Silent Windows update.** `install_and_restart` runs the NSIS setup with `/S /R`
