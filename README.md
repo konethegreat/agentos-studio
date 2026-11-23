@@ -35,6 +35,17 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.6.1
+
+The orchestrator stops cycling stuck work on the same agent.
+
+- **Stuck missions move to a different executor.** A `stuck` escalation (a mission blocked after
+  its retry, including one that keeps finishing without a pull request) was answered with its safe
+  answer, which stopped the mission and failed its goal. Now the orchestrator answers `retry` and
+  moves the mission to another usable headless executor, clearing its retry and no-PR counters, so
+  the work gets a real second and third chance on a different agent. After two orchestrator answers
+  the safe answer stands, so one failing mission cannot retry forever. Each reroute is a report row.
+
 ## What is new in 2.6.0
 
 An orchestrator that keeps the fleet moving without you, a report feed to read instead of a queue to work, and one update path that no longer stalls.

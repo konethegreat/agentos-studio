@@ -3,6 +3,15 @@
 Phases are ordered by dependency, not by excitement. Each one lists what it needs from the
 phase before it, so nothing is scheduled that cannot be built yet.
 
+## 2.6.1: a stuck mission moves to another executor (shipped)
+
+- **Stuck policy.** `stuck` escalations are answered `retry` while another headless executor is
+  usable; the mission moves to it with kv `mission.nopr.<id>` and the stuck retry counters cleared
+  (`orchestrator::stuck_plan`, `stuck_target`, `reroute_stuck`). Two answers per mission (kv
+  `orchestrator.stuck.<id>`), then the safe answer stands. Before this, the orchestrator answered
+  with the safe answer, which stopped the mission and failed its goal, while earlier retry loops
+  repeated the same failing agent nine times.
+
 ## 2.6.0: the orchestrator, the reports feed and a fixed update path (shipped)
 
 - **Orchestrator.** `orchestrator::pass` runs after every scheduler tick (kv `orchestrator.enabled`,

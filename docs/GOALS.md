@@ -114,7 +114,11 @@ anyone else is created at Watch.
 
 Routine escalations do not wait for the owner. The orchestrator (`orchestrator.rs`, see the 2.6.0
 section of [ROADMAP.md](ROADMAP.md)) answers each one on its next pass with the escalation's own safe
-answer, recorded as answered by `orchestrator`, and writes a report row. Only an escalation marked
+answer, recorded as answered by `orchestrator`, and writes a report row. A `stuck` escalation is
+answered `retry` instead of its safe answer while another headless executor is usable, and the
+mission moves to that executor with its retry and no-PR counters cleared; this is what stops a
+mission that keeps finishing without a pull request from being retried against the same agent.
+After two orchestrator answers the safe answer stands. Only an escalation marked
 destructive, or one whose question matches an owner pattern (credentials, payments, production data),
 is left for the owner, under **Needs you** in Goals and on the Today orchestrator card.
 
