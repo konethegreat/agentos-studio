@@ -56,7 +56,7 @@ brings it back at once.
 
 The Claude and Antigravity providers are Hermes plugins, so Updates also watches them
 (`hermes plugins check-updates --json`): a plugin that has an update or needs fixing for the
-installed Hermes appears next to Hermes, Claude Code and Studio, and Update runs
-`hermes plugins update`. Updates are checked shortly after launch and every three hours; when a
-check cannot reach GitHub, npm or the plugin sources, the next check runs in fifteen minutes
-instead of waiting.
+installed Hermes appears next to Hermes, Claude Code, the Antigravity and Qoder CLIs and Studio,
+listed with its installed and available version, and Update runs `hermes plugins update`. Updates
+are checked shortly after launch and every three hours; when a check cannot reach GitHub, npm or
+the plugin sources, the next check runs in fifteen minutes instead of waiting.

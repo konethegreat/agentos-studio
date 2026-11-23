@@ -210,6 +210,7 @@ export type DailyFleetReport = {
 
 export type DiagnosticAction = {
   taskId: string;
+  missionId: string | null;
   kind: string;
   action: string;
   detail: string;

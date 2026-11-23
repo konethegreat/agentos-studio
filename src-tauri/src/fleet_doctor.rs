@@ -235,6 +235,7 @@ pub struct KanbanDiag {
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticAction {
     pub task_id: String,
+    pub mission_id: Option<String>,
     pub kind: String,
     pub action: String,
     pub detail: String,
@@ -286,15 +287,66 @@ pub fn step() {
     }
 }
 
+static RECOVERY_LOCK: Mutex<()> = Mutex::new(());
+
 pub fn run_now() -> FleetDoctorReport {
-    let report = report_from_results(
+    let mut report = report_from_results(
         chrono::Utc::now().timestamp(),
         kanban::diagnostics_json(),
         missions::list_checked(MISSION_LIMIT + 1),
         repository_snapshots(),
     );
+    {
+        let _serial = RECOVERY_LOCK.lock().unwrap();
+        recover(&mut report.diagnostic_actions);
+    }
     *report_lock().lock().unwrap() = Some(report.clone());
     report
+}
+
+/// Run the recoverable findings through the scheduler's retry path, re-checking the link first so
+/// a mission that moved since the scan is never touched. Anything held stays for the owner.
+fn recover(actions: &mut [DiagnosticAction]) {
+    let paused = crate::pause::paused();
+    for action in actions.iter_mut().filter(|a| a.action == "retry_mission") {
+        if paused {
+            action.action = "held".into();
+            action.detail = format!("the fleet is paused; nothing was queued: {}", action.detail);
+            continue;
+        }
+        let Some(id) = action.mission_id.clone() else {
+            action.action = "needs_review".into();
+            action.detail = "the mission link was lost before recovery; left on board".into();
+            continue;
+        };
+        let outcome = missions::get(&id)
+            .map_err(|e| anyhow::anyhow!("{e:#}"))
+            .and_then(|m| m.ok_or_else(|| anyhow::anyhow!("mission {id} disappeared")))
+            .and_then(|m| {
+                anyhow::ensure!(
+                    m.task_id
+                        .as_deref()
+                        .and_then(|t| t.strip_prefix(kanban::PREFIX))
+                        == Some(action.task_id.as_str()),
+                    "the mission link changed"
+                );
+                crate::automation::recover_blocked(&m, &action.detail)
+            });
+        match outcome {
+            Ok(crate::automation::Recovery::Retried(why)) => {
+                action.action = "retried".into();
+                action.detail = why;
+            }
+            Ok(crate::automation::Recovery::Held(why)) => {
+                action.action = "held".into();
+                action.detail = why;
+            }
+            Err(e) => {
+                action.action = "needs_review".into();
+                action.detail = format!("recovery was not attempted: {e:#}");
+            }
+        }
+    }
 }
 
 fn report_from_results(
@@ -449,6 +501,7 @@ pub fn diagnose_tasks(diags: &[KanbanDiag], missions: &[Mission]) -> Vec<Diagnos
         }).expect("group contains a diagnostic");
         let mut action = DiagnosticAction {
             task_id: task_id.into(),
+            mission_id: None,
             kind: d.kind.clone(),
             action: "needs_review".into(),
             detail: "no linked Studio mission found; left on board".into(),
@@ -457,10 +510,21 @@ pub fn diagnose_tasks(diags: &[KanbanDiag], missions: &[Mission]) -> Vec<Diagnos
             m.task_id.as_deref().and_then(|id| id.strip_prefix(kanban::PREFIX)) == Some(task_id)
         });
         let Some(mission) = linked.next() else { return action; };
+        action.mission_id = Some(mission.id.clone());
         if linked.next().is_some() {
+            action.mission_id = None;
             action.detail = "multiple Studio missions reference this task; inspect linkage".into();
         } else if mission.agent != "hermes" {
             action.detail = "linked mission is not owned by Hermes; left on board".into();
+        } else if mission.status == "blocked"
+            && matches!(d.kind.as_str(), "repeated_crashes" | "repeated_failures")
+            && crate::automation::model_failure(&d.detail)
+        {
+            action.action = "retry_mission".into();
+            action.detail = format!(
+                "the mission is blocked on its model or provider, not its work; the scheduler retry budget decides whether to queue it again: {}",
+                d.detail
+            );
         } else if mission.status != "running" {
             action.detail = format!("linked mission is {}; inspect its state before recovery; left on board", mission.status);
         } else if matches!(d.kind.as_str(), "repeated_crashes" | "repeated_failures") {
@@ -813,6 +877,192 @@ mod tests {
         }
         assert_eq!(m.provider, "claude-subscription-directsdk");
         assert_eq!(m.model, "pinned-model");
+    }
+
+    #[test]
+    fn blocked_model_failures_route_to_the_scheduler_retry() {
+        for (kind, detail) in [
+            (
+                "repeated_crashes",
+                "No reply: gemini-4-hydrogen-high didn't produce a reply this time",
+            ),
+            (
+                "repeated_failures",
+                "worker exited cleanly (rc=0) without kanban_complete; broken pipe",
+            ),
+            (
+                "repeated_failures",
+                "billing, credits, or account entitlement is exhausted",
+            ),
+        ] {
+            let actions =
+                diagnose_tasks(&[diag(kind, detail)], &[mission("blocked", "kanban:KT-1")]);
+            assert_eq!(actions[0].action, "retry_mission", "{detail}");
+            assert_eq!(actions[0].mission_id.as_deref(), Some("M-1"));
+            assert!(actions[0].detail.contains("retry budget"));
+        }
+        assert_eq!(
+            diagnose_tasks(
+                &[diag("repeated_failures", "test suite failed")],
+                &[mission("blocked", "kanban:KT-1")]
+            )[0]
+            .action,
+            "needs_review",
+            "a blocked mission whose work failed stays for a human"
+        );
+        assert_eq!(
+            diagnose_tasks(
+                &[diag(
+                    "repeated_failures",
+                    "No reply: x didn't produce a reply"
+                )],
+                &[mission("running", "kanban:KT-1")]
+            )[0]
+            .action,
+            "needs_review",
+            "a running worker is never requeued behind its back"
+        );
+    }
+
+    #[test]
+    fn doctor_requeues_a_blocked_model_failure_once_then_holds() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        crate::automation::set_enabled(true);
+        let m = missions::create(
+            "repo",
+            "goal",
+            "acceptance",
+            "implementer",
+            "hermes",
+            "claude-subscription",
+            "",
+            0.0,
+        )
+        .unwrap();
+        let detail = "No reply: gemini-4-hydrogen-high didn't produce a reply this time";
+        missions::dispatch(&m.id, "kanban:KT-1").unwrap();
+        missions::block(&m.id, "worker crashed", false).unwrap();
+        let mut actions = diagnose_tasks(
+            &[diag("repeated_crashes", detail)],
+            &[missions::get(&m.id).unwrap().unwrap()],
+        );
+        recover(&mut actions);
+        assert_eq!(actions[0].action, "retried", "{:?}", actions[0]);
+        assert_eq!(
+            missions::get(&m.id).unwrap().unwrap().status,
+            "queued",
+            "the scheduler queued it again"
+        );
+
+        missions::dispatch(&m.id, "kanban:KT-1").unwrap();
+        missions::block(&m.id, "worker crashed", false).unwrap();
+        let c = crate::store::open().unwrap();
+        crate::store::kv_set(
+            &c,
+            &crate::automation::model_retry_key(&m.id),
+            &crate::automation::MODEL_RETRIES.to_string(),
+        )
+        .unwrap();
+        let mut actions = diagnose_tasks(
+            &[diag("repeated_crashes", detail)],
+            &[missions::get(&m.id).unwrap().unwrap()],
+        );
+        recover(&mut actions);
+        assert_eq!(actions[0].action, "held", "{:?}", actions[0]);
+        assert!(actions[0].detail.contains("attempts are spent"));
+        assert_eq!(
+            missions::get(&m.id).unwrap().unwrap().status,
+            "blocked",
+            "a spent budget never loops the mission"
+        );
+        crate::store::set_test_db(None);
+    }
+
+    /// Replay of the agentos-studio board as recorded on 2026-11-23. The fixture holds the two
+    /// blocked cards from the 2026-11-17 Gemini episode that were still blocked (their
+    /// `tasks.last_failure_error` and `task_runs.outcome` read read-only from the board) and the
+    /// three blocked `needs_input` cards. The 2026-11-17 cards that were resolved are no longer on
+    /// the board, so this replays what the recorded rows can still prove.
+    #[test]
+    fn recorded_blocked_board_replays_with_only_model_failures_requeued() {
+        let raw = include_str!("../tests/fixtures/kanban-diagnostics-2026-11-23.json");
+        let diags = parse_diagnostics(raw).expect("the recorded diagnostics must parse");
+        assert_eq!(
+            diags.len(),
+            5,
+            "two blocked model failures and three blocked needs_input cards"
+        );
+
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        crate::automation::set_enabled(true);
+        let _ = crate::pause::resume();
+
+        let mut linked = Vec::new();
+        for diag in &diags {
+            let m = missions::create(
+                "repo",
+                "goal",
+                "acceptance",
+                "implementer",
+                "hermes",
+                "claude-subscription",
+                "",
+                0.0,
+            )
+            .unwrap();
+            missions::dispatch(&m.id, &format!("kanban:{}", diag.task_id)).unwrap();
+            missions::block(&m.id, "worker crashed", false).unwrap();
+            linked.push(missions::get(&m.id).unwrap().unwrap());
+        }
+
+        let mut actions = diagnose_tasks(&diags, &linked);
+        assert_eq!(actions.len(), 5);
+        let retry: Vec<_> = actions
+            .iter()
+            .filter(|a| a.action == "retry_mission")
+            .collect();
+        assert_eq!(retry.len(), 2, "{actions:?}");
+        assert!(
+            retry.iter().any(|a| a.task_id == "t_456f2788"),
+            "No reply card"
+        );
+        assert!(
+            retry.iter().any(|a| a.task_id == "t_9b07991f"),
+            "entitlement card"
+        );
+        assert!(
+            actions
+                .iter()
+                .filter(|a| a.action == "needs_review")
+                .all(|a| a.detail.contains("linked mission is blocked")),
+            "needs_input cards stay for a human: {actions:?}"
+        );
+
+        recover(&mut actions);
+        for action in &actions {
+            let expected = match action.task_id.as_str() {
+                "t_456f2788" | "t_9b07991f" => "retried",
+                _ => "needs_review",
+            };
+            assert_eq!(action.action, expected, "{action:?}");
+        }
+        for m in &linked {
+            let task = m.task_id.as_deref().unwrap_or_default();
+            let status = missions::get(&m.id).unwrap().unwrap().status;
+            if task.ends_with("t_456f2788") || task.ends_with("t_9b07991f") {
+                assert_eq!(
+                    status, "queued",
+                    "the scheduler queued the model failure again"
+                );
+            } else {
+                assert_eq!(status, "blocked", "the needs_input card is untouched");
+            }
+        }
+        crate::store::set_test_db(None);
     }
 
     #[test]

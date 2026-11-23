@@ -178,21 +178,25 @@ fn model_failure_retry(m: &Mission, reason: &str) -> anyhow::Result<String> {
         .unwrap_or(0);
     let short: String = reason.chars().take(300).collect();
     if model_failure_step(attempts) == "block" {
-        missions::block(
-            &m.id,
-            &format!(
-                "The model failed {} times in a row, so this needs a look: {short}",
-                attempts + 1
-            ),
-            false,
-        )?;
+        if m.status != "blocked" {
+            missions::block(
+                &m.id,
+                &format!(
+                    "The model failed {} times in a row, so this needs a look: {short}",
+                    attempts + 1
+                ),
+                false,
+            )?;
+        }
         return Ok(format!(
             "{}: the model failed again after {attempts} fresh attempts; blocked",
             m.id
         ));
     }
     kv_set(&model_retry_key(&m.id), &(attempts + 1).to_string());
-    missions::block(&m.id, &format!("Hermes kanban: {short}"), false)?;
+    if m.status != "blocked" {
+        missions::block(&m.id, &format!("Hermes kanban: {short}"), false)?;
+    }
     missions::unblock(
         &m.id,
         &format!(
@@ -206,6 +210,64 @@ fn model_failure_retry(m: &Mission, reason: &str) -> anyhow::Result<String> {
         "{}: the model stopped replying; queued again for a fresh attempt",
         m.id
     ))
+}
+
+/// The scheduler's answer to a fleet doctor recovery request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Recovery {
+    Retried(String),
+    Held(String),
+}
+
+/// Requeue a blocked mission whose recorded failure was its model or provider, not its work.
+/// Scheduler policy still decides: a paused fleet, automations off, a spent metered budget, a
+/// held goal, a lane deferral or a spent retry budget all leave the mission blocked. Routes and
+/// provider settings are never changed here.
+pub fn recover_blocked(m: &Mission, reason: &str) -> anyhow::Result<Recovery> {
+    if crate::pause::paused() {
+        return Ok(Recovery::Held("the fleet is paused".into()));
+    }
+    if m.status != "blocked" {
+        return Ok(Recovery::Held(format!(
+            "the mission is {}, not blocked",
+            m.status
+        )));
+    }
+    if !model_failure(reason) {
+        return Ok(Recovery::Held(
+            "the recorded failure is not a model or provider failure".into(),
+        ));
+    }
+    if !enabled() {
+        return Ok(Recovery::Held("automations are off".into()));
+    }
+    if crate::budget::status().exhausted {
+        return Ok(Recovery::Held("the global metered budget is spent".into()));
+    }
+    if over_budget(m, 0.0) {
+        return Ok(Recovery::Held(format!(
+            "the mission passed its ${:.2} budget",
+            m.budget_usd
+        )));
+    }
+    if crate::goal_loop::held(&m.id) {
+        return Ok(Recovery::Held("the goal holds this mission".into()));
+    }
+    let now = chrono::Utc::now().timestamp();
+    if crate::assign::deferred_until(&m.id).is_some_and(|t| t > now) {
+        return Ok(Recovery::Held(
+            "the router deferred it to a lane reset".into(),
+        ));
+    }
+    let attempts: u32 = kv(&model_retry_key(&m.id))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    if model_failure_step(attempts) == "block" {
+        return Ok(Recovery::Held(format!(
+            "its {MODEL_RETRIES} fresh model attempts are spent"
+        )));
+    }
+    model_failure_retry(m, reason).map(Recovery::Retried)
 }
 
 fn kv(key: &str) -> Option<String> {
@@ -1007,6 +1069,118 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("The model failed 3 times in a row"));
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn recovery_queues_a_blocked_model_failure_within_the_retry_budget() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        set_enabled(true);
+        let mission = missions::create(
+            "repo",
+            "goal",
+            "acceptance",
+            "implementer",
+            "hermes",
+            "claude-subscription",
+            "",
+            0.0,
+        )
+        .unwrap();
+        missions::dispatch(&mission.id, "kanban:t_test").unwrap();
+        missions::block(&mission.id, "worker crashed", false).unwrap();
+        let reason = "No reply: gemini-4-hydrogen-high didn't produce a reply this time";
+
+        let fresh = missions::get(&mission.id).unwrap().unwrap();
+        let outcome = recover_blocked(&fresh, reason).unwrap();
+        assert!(matches!(outcome, Recovery::Retried(_)), "{outcome:?}");
+        assert_eq!(
+            missions::get(&mission.id).unwrap().unwrap().status,
+            "queued",
+            "the scheduler queued the mission again"
+        );
+        assert_eq!(
+            kv(&model_retry_key(&mission.id)).as_deref(),
+            Some("1"),
+            "the retry budget was spent"
+        );
+
+        missions::dispatch(&mission.id, "kanban:t_test2").unwrap();
+        missions::block(&mission.id, "worker crashed again", false).unwrap();
+        kv_set(&model_retry_key(&mission.id), &MODEL_RETRIES.to_string());
+        let spent = recover_blocked(&missions::get(&mission.id).unwrap().unwrap(), reason).unwrap();
+        assert!(
+            matches!(spent, Recovery::Held(ref why) if why.contains("attempts are spent")),
+            "{spent:?}"
+        );
+        assert_eq!(
+            missions::get(&mission.id).unwrap().unwrap().status,
+            "blocked",
+            "a spent retry budget leaves the mission blocked"
+        );
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn recovery_holds_anything_the_scheduler_would_not_start() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        set_enabled(true);
+        let reason = "No reply: gemini-4-hydrogen-high didn't produce a reply this time";
+        let mission = missions::create(
+            "repo",
+            "goal",
+            "acceptance",
+            "implementer",
+            "hermes",
+            "claude-subscription",
+            "",
+            0.0,
+        )
+        .unwrap();
+
+        let queued = recover_blocked(&mission, reason).unwrap();
+        assert!(
+            matches!(queued, Recovery::Held(ref why) if why.contains("not blocked")),
+            "{queued:?}"
+        );
+
+        missions::dispatch(&mission.id, "kanban:t_test").unwrap();
+        missions::block(&mission.id, "worker crashed", false).unwrap();
+        let not_model = recover_blocked(
+            &missions::get(&mission.id).unwrap().unwrap(),
+            "cargo test failed: 3 tests failed",
+        )
+        .unwrap();
+        assert!(
+            matches!(not_model, Recovery::Held(ref why) if why.contains("not a model or provider failure")),
+            "{not_model:?}"
+        );
+
+        set_enabled(false);
+        let off = recover_blocked(&missions::get(&mission.id).unwrap().unwrap(), reason).unwrap();
+        assert!(
+            matches!(off, Recovery::Held(ref why) if why.contains("automations are off")),
+            "{off:?}"
+        );
+        set_enabled(true);
+
+        crate::pause::pause("test hold").unwrap();
+        let paused =
+            recover_blocked(&missions::get(&mission.id).unwrap().unwrap(), reason).unwrap();
+        assert!(
+            matches!(paused, Recovery::Held(ref why) if why.contains("paused")),
+            "{paused:?}"
+        );
+        crate::pause::resume().unwrap();
+        assert_eq!(
+            missions::get(&mission.id).unwrap().unwrap().status,
+            "blocked",
+            "a held recovery never changes the board"
+        );
         crate::store::set_test_db(None);
     }
 

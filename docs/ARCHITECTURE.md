@@ -119,7 +119,7 @@ the first paint is never competing with a full probe.
 | `hermes_surfaces.rs` | Hermes features shown, not rebuilt: built-in memory and journey, insights, security audit, cron jobs, profiles with Studio's role assignment, and `hermes send` for mission notices. Reads Hermes files directly; every change runs a Hermes command behind Studio's permission check. |
 | `acp.rs` (spike, unwired) | Agent Client Protocol client for `hermes acp`: new or loaded session, one streamed turn, permission requests answered through a channel, cancel. Kept to re-run `tests/live/live_acp_spike.rs` against new Hermes releases; see `ACP-SPIKE.md`. |
 | `pty.rs` (new) | Real terminals: spawn a shell, interactive Hermes, `hermes --resume <id>`, Claude Code or `claude --resume <id>` in a PTY; streams bytes as UTF-8 safe chunks, accepts keystrokes and resizes. |
-| `updates.rs` (new) | Version detection for Hermes, Claude Code and Studio; changelog extraction; skip and snooze state; OS notifications; backup, update and rollback runners. |
+| `updates.rs` (new) | Version detection for Hermes, Claude Code, the Antigravity and Qoder CLIs, every Hermes plugin (itemized with current and latest versions) and Studio; changelog extraction; skip and snooze state; OS notifications; backup, update and rollback runners. |
 | `org.rs` (new) | `studio.db`: workspaces, nested folders, chat placement, pins, tags, attachments, archive; links folders to Hermes projects through `hermes project`. |
 | `github.rs` (new) | Typed wrappers over `gh ... --json` for auth, repos, branches, commits, PRs (diff, checks, review, merge, create), issues (create, comment, close) and Actions runs (logs, rerun). |
 | `permissions.rs` (new) | Per-action policy (`allow`, `ask`, `deny`) enforced in Rust before any sensitive command runs, the append-only audit log, scoped MCP tool policies per agent and per project (repo > agent > global, stored in `kv` under `perm.`), and the unattended worker profile (environment allowlist and the guarantees Safety shows). |
@@ -576,13 +576,19 @@ route in `quota_grid::lanes`, one success reopens it, and provider-side failures
 Today screen (`fleet_doctor_run_now`):
 
 - Runs bounded Hermes kanban diagnostics and links findings to recorded `kanban:` mission IDs.
-  Returns advisories only: no repin, reclaim, archive, credential repair or model probe commands
-  are requested. Hermes diagnostics may initialize, migrate or repair its own board database.
+  A blocked mission whose recorded failure is a model or provider failure becomes a
+  `retry_mission` request; every other finding stays an advisory. Hermes diagnostics may
+  initialize, migrate or repair its own board database.
+- Recovery runs only through `automation::recover_blocked`: the fleet must not be paused, the
+  mission must still be blocked, the failure must still classify as a model or provider failure,
+  and automations, budgets, the goal hold, the lane deferral and the `MODEL_RETRIES` budget all
+  keep their veto. Routes and provider settings are never edited, no reclaim is requested and no
+  worktree is archived. `fleet_doctor::recover` re-reads the mission and refuses a changed link.
 - Computes 6-hour stalled mission verdicts (`waiting_on`, `action_taken`, `action_needed`) and
   opted-in registered Git repositories with no goal started within 1 hour, surfaced in `Today.tsx`.
   Ordinary project folders are excluded. Failed registry, configuration, state or mission reads
   produce an incomplete report and suppress idle inferences rather than imply healthy state.
 - Diagnostics have a 30-second timeout; local Git reads share a 15-second deadline with lazy
   fetching disabled. The manual desktop command runs on a blocking worker, not the UI thread.
-- Automatic recovery through scheduler controls, historical replay and isolated live acceptance
-  remain pending. This stabilization is unreleased.
+- Isolated live diagnostic acceptance (`live_fleet_doctor`) is still open; see
+  [`SELF-HEALING.md`](SELF-HEALING.md).

@@ -34,10 +34,11 @@ Studio also reads and writes files owned by the tools it drives:
 
 | When | Where | Why |
 |---|---|---|
-| 20 seconds after start, then every 6 hours | `api.github.com` | Read release lists for AgentOS Studio and Hermes Agent to show an update notice |
-| Same check | `registry.npmjs.org` | Read the latest Claude Code version |
+| 20 seconds after start, then every 3 hours | `api.github.com` | Read release lists for AgentOS Studio, Hermes Agent and the Antigravity CLI to show an update notice |
+| Same check | `registry.npmjs.org` | Read the latest Claude Code and Qoder CLI versions |
 | Same check | `raw.githubusercontent.com` | Read the Claude Code changelog |
-| When you press Update | `github.com` release assets | Download the signed update and its manifest |
+| Same check | The installed Hermes' plugin sources | `hermes plugins check-updates --json` reports which plugins have an update |
+| When you press Update | `github.com` release assets, `registry.npmjs.org`, or the vendor's update path | Run the tool's own update command or download the signed Studio update and its manifest |
 | Whenever an OpenRouter key is stored | `openrouter.ai` credits endpoint | Show the remaining credit balance in Usage |
 | Periodically for offline awareness | A TCP connect to `1.1.1.1:443` or `api.openrouter.ai:443` | Decide whether the network is reachable. It opens a socket and closes it; no data is sent |
 | Continuously for local models | `localhost:11434` | Ask a local Ollama runtime which models it has. Stays on your machine |
