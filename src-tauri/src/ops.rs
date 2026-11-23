@@ -90,12 +90,18 @@ pub async fn last_update_report() -> CmdResult<Option<Value>> {
 }
 
 #[tauri::command]
-pub async fn apply_update(
-    app: AppHandle,
-    product: String,
-    approved: Option<bool>,
-) -> CmdResult<String> {
-    blocking(move || updates::apply_update(app, &product, approved.unwrap_or(false))).await
+pub async fn apply_update(app: AppHandle, product: String) -> CmdResult<String> {
+    blocking(move || updates::apply_update(app, &product)).await
+}
+
+#[tauri::command]
+pub async fn update_auto_apply() -> CmdResult<String> {
+    blocking(|| Ok(updates::auto_apply_policy())).await
+}
+
+#[tauri::command]
+pub async fn set_update_auto_apply(policy: String) -> CmdResult<()> {
+    blocking(move || updates::set_auto_apply(&policy)).await
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, BookOpenCheck, CircleDollarSign, FileText, Flag, Pause, Play, RefreshCw, Stethoscope, Sunrise, UserCheck, UserRoundCog, Users } from "lucide-react";
+import { ArrowRight, BookOpenCheck, Bot, CircleDollarSign, FileText, Flag, Pause, Play, RefreshCw, Stethoscope, Sunrise, Users } from "lucide-react";
 import {
   api,
   errorText,
@@ -9,9 +9,10 @@ import {
   type GoalDetail,
   type Learned,
   type Mission,
-  type ShadowRecord,
   type WorkerInfo,
 } from "../lib/api";
+import { studio, type OrchestratorStatus } from "../lib/studio";
+import { useUpdates } from "../components/Updates";
 import { Markdown } from "../components/Markdown";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Card, Empty } from "../components/ui";
@@ -37,16 +38,6 @@ const MISSION_STYLE: Record<string, string> = {
   failed: "text-red-300",
 };
 
-const KIND_LABEL: Record<string, string> = {
-  budget: "Budget passed",
-  second_reject: "Rejected twice",
-  stuck: "Stuck after retry",
-  destructive: "Destructive approval",
-  merge: "Merge outside the allow list",
-  done_check: "Done check failed twice",
-  plan_failed: "Planning failed three times",
-};
-
 const IN_PROGRESS = ["planning", "running", "verifying", "paused"];
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
@@ -62,20 +53,23 @@ function go(view: string) {
   window.dispatchEvent(new CustomEvent<string>("agentos:go", { detail: view }));
 }
 
-function deadlineText(e: Escalation): string {
-  const left = Math.max(0, e.deadline_at - Math.floor(Date.now() / 1000));
-  const mins = Math.round(left / 60);
-  const when = mins >= 60 ? `${Math.round(mins / 60)} h` : `${mins} min`;
-  return `${when} left, then ${e.safe_answer}`;
+function OrchStat({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return (
+    <div className="rounded-lg border border-line bg-canvas/60 px-3 py-2">
+      <div className={`text-sm font-semibold ${tone}`}>{value}</div>
+      <div className="text-label text-slate-500">{label}</div>
+    </div>
+  );
 }
 
 /**
- * Today: the home screen. What waits on the owner comes first, in the digest's order (open
- * escalations, then goals whose plan needs approval), then goals in progress, the agents working
- * now, metered spend and the last digest.
+ * Today: the home screen. The orchestrator card says whether the fleet is running and whether
+ * anything needs the owner, then goals in progress, the agents working now, metered spend and the
+ * last digest.
  */
 export function Today({ target = null }: { target?: RecordTarget | null }) {
   const toast = useToast();
+  const updates = useUpdates();
   const source = useRecordTarget(target, api.escalationDetail);
   const refreshSource = source.refresh;
   const [rows, setRows] = useState<GoalDetail[] | null>(null);
@@ -84,7 +78,9 @@ export function Today({ target = null }: { target?: RecordTarget | null }) {
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
   const [pause, setPause] = useState<FleetPause | null>(null);
   const [digest, setDigest] = useState<string | null>(null);
-  const [shadow, setShadow] = useState<ShadowRecord[]>([]);
+  const [digestTimes, setDigestTimes] = useState("");
+  const [weeklyShip, setWeeklyShip] = useState<number | null>(null);
+  const [orch, setOrch] = useState<OrchestratorStatus | null>(null);
   const [learned, setLearned] = useState<Learned[]>([]);
   const [doctor, setDoctor] = useState<FleetDoctorReport | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -93,14 +89,16 @@ export function Today({ target = null }: { target?: RecordTarget | null }) {
   const load = useCallback(async () => {
     refreshSource();
     try {
-      const [g, e, m, w, p, d, s, l, fd] = await Promise.all([
+      const [g, e, m, w, p, d, ds, sb, o, l, fd] = await Promise.all([
         api.goals(),
         api.escalations(100).catch(() => [] as Escalation[]),
         api.missions().catch(() => [] as Mission[]),
         api.workers().catch(() => [] as WorkerInfo[]),
         api.fleetPauseState().catch(() => null as FleetPause | null),
         api.digestLatest().catch(() => null as string | null),
-        api.shadowStatus().then((x) => x.record).catch(() => [] as ShadowRecord[]),
+        api.digestSettings().catch(() => null),
+        api.selfBuildStatus().catch(() => null),
+        studio.orchestrator.status().catch(() => null as OrchestratorStatus | null),
         api.playbookLearned(24).catch(() => [] as Learned[]),
         api.fleetDoctorStatus().catch(() => null as FleetDoctorReport | null),
       ]);
@@ -110,7 +108,9 @@ export function Today({ target = null }: { target?: RecordTarget | null }) {
       setWorkers(w);
       setPause(p);
       setDigest(d);
-      setShadow(s);
+      setDigestTimes(ds?.times ?? "");
+      setWeeklyShip(sb?.last_weekly_ship_at ?? null);
+      setOrch(o);
       setLearned(l);
       setDoctor(fd);
       setUpdatedAt(Date.now());
@@ -133,19 +133,6 @@ export function Today({ target = null }: { target?: RecordTarget | null }) {
       toast("ok", `${e.id}: ${answer}`);
     } catch (err) {
       toast("error", errorText(err));
-    } finally {
-      setBusy(null);
-      await load();
-    }
-  }
-
-  async function approve(id: string) {
-    setBusy(id);
-    try {
-      const g = await api.approveGoalPlan(id);
-      toast("ok", g.note || `${id} is ${g.status}`);
-    } catch (e) {
-      toast("error", errorText(e));
     } finally {
       setBusy(null);
       await load();
@@ -178,13 +165,27 @@ export function Today({ target = null }: { target?: RecordTarget | null }) {
     }
   }
 
-  const openAsks = useMemo(() => asks.filter((a) => a.status === "open"), [asks]);
-  const awaiting = useMemo(() => (rows ?? []).filter((r) => r.goal.status === "awaiting"), [rows]);
+  async function toggleOrchestrator() {
+    if (!orch) return;
+    setBusy("orchestrator");
+    try {
+      setOrch(await studio.orchestrator.set(!orch.enabled));
+      toast("ok", orch.enabled ? "Orchestrator off. Nothing is delegated or auto-answered." : "Orchestrator on.");
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const active = useMemo(() => (rows ?? []).filter((r) => IN_PROGRESS.includes(r.goal.status)), [rows]);
   const running = useMemo(() => missions.filter((m) => m.status === "running" || m.status === "review"), [missions]);
   const spent = useMemo(() => (rows ?? []).reduce((n, r) => n + r.spent_usd, 0), [rows]);
   const budgets = useMemo(() => (rows ?? []).reduce((n, r) => n + r.goal.budget_usd, 0), [rows]);
-  const waiting = openAsks.length + awaiting.length;
+  const needsYou = useMemo(() => {
+    if (!orch) return [];
+    return orch.needs_you.map((id) => ({ id, question: asks.find((a) => a.id === id)?.question ?? "Open in Goals to see the question." }));
+  }, [orch, asks]);
   const digestText = digestParts(digest);
 
   return (
@@ -193,7 +194,6 @@ export function Today({ target = null }: { target?: RecordTarget | null }) {
         <Sunrise className="size-4 text-amber-300" />
         <h1 className="text-body font-semibold text-slate-100">Today</h1>
         <span className="text-label text-slate-500">{new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</span>
-        {waiting > 0 && <Badge className="bg-amber-500/15 text-amber-200 ring-amber-400/25">{waiting} waiting on you</Badge>}
         <div className="ml-auto flex items-center gap-2">
           <span className="text-label text-slate-600">{updatedAt ? `checked ${relativeTime(new Date(updatedAt).toISOString())}` : "reading"}</span>
           <Button size="sm" variant="ghost" icon={<RefreshCw className="size-3.5" />} onClick={() => void load()}>
@@ -234,79 +234,92 @@ export function Today({ target = null }: { target?: RecordTarget | null }) {
 
       <div className="grid grid-cols-1 gap-4 p-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0 space-y-4">
-          <Card className={`p-0 ${waiting > 0 ? "border-amber-500/30" : ""}`}>
+          <Card className={`p-0 ${needsYou.length > 0 ? "border-amber-500/30" : ""}`}>
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
-              <UserCheck className={`size-4 ${waiting > 0 ? "text-amber-300" : "text-emerald-300"}`} />
-              <h2 className="text-sm font-semibold text-slate-100">Waiting on you</h2>
-              <span className="text-label text-slate-500">Questions and plans stop work until you answer.</span>
+              <Bot className={`size-4 ${needsYou.length > 0 ? "text-amber-300" : "text-emerald-300"}`} />
+              <h2 className="text-sm font-semibold text-slate-100">Orchestrator</h2>
+              <Badge
+                className={
+                  orch
+                    ? orch.enabled
+                      ? orch.paused
+                        ? "bg-orange-500/10 text-orange-300 ring-orange-500/25"
+                        : "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25"
+                      : "bg-white/5 text-slate-400 ring-white/10"
+                    : "bg-white/5 text-slate-400 ring-white/10"
+                }
+              >
+                {orch ? (orch.enabled ? (orch.paused ? "Paused with the fleet" : "Running") : "Off") : "Reading"}
+              </Badge>
+              <span className="text-label text-slate-500">Delegates work, unsticks stalled missions and answers routine questions without you.</span>
+              {orch && (
+                <div className="ml-auto">
+                  <Button size="sm" variant="ghost" busy={busy === "orchestrator"} onClick={() => void toggleOrchestrator()}>
+                    {orch.enabled ? "Turn off" : "Turn on"}
+                  </Button>
+                </div>
+              )}
             </div>
-            {rows === null ? (
-              <div className="px-4 py-3 text-small text-slate-500">Reading goals and escalations...</div>
-            ) : waiting === 0 ? (
-              <div className="flex items-center gap-2 px-4 py-3 text-small text-emerald-300">
-                <Flag className="size-3.5" />
-                Nothing waits on you. Everything either runs or is finished.
+            <div className="space-y-3 px-4 py-3">
+              {orch === null ? (
+                <div className="text-small text-slate-500">Reading the orchestrator state...</div>
+              ) : !orch.enabled ? (
+                <div className="text-small text-amber-300">
+                  The orchestrator is off. Missions still run when you start them, but nothing is routed, unstuck or auto-answered.
+                </div>
+              ) : needsYou.length > 0 ? (
+                <div className="space-y-1.5">
+                  {needsYou.map((n) => (
+                    <div key={n.id} className="flex flex-wrap items-center gap-2 text-small">
+                      <Badge className="bg-amber-500/10 text-amber-300 ring-amber-500/25">Needs you</Badge>
+                      <span className="min-w-0 flex-1 text-slate-200">{n.question}</span>
+                      <Button size="sm" variant="secondary" icon={<ArrowRight className="size-3.5" />} onClick={() => go("goals")}>
+                        Answer
+                      </Button>
+                    </div>
+                  ))}
+                  <p className="text-label text-slate-500">Only production data, credentials and money reach you. Answering is the one job left.</p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-small text-emerald-300">
+                  <Flag className="size-3.5" />
+                  Nothing needs you. The orchestrator is running the fleet.
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <OrchStat label="Running" value={orch?.running ?? 0} tone="text-sky-300" />
+                <OrchStat label="Queued" value={orch?.queued ?? 0} tone="text-slate-200" />
+                <OrchStat label="Blocked" value={orch?.blocked ?? 0} tone={orch && orch.blocked > 0 ? "text-amber-300" : "text-slate-200"} />
+                <OrchStat label="Answered today" value={orch?.auto_answered_today ?? 0} tone="text-emerald-300" />
               </div>
-            ) : (
-              <>
-                {openAsks.map((e) => (
-                  <div key={e.id} className="border-t border-line px-4 py-2.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-label text-slate-500">{e.id}</span>
-                      <Badge className="bg-amber-500/10 text-amber-300 ring-amber-500/25">{KIND_LABEL[e.kind] ?? e.kind}</Badge>
-                      <span className="min-w-0 flex-1 text-small text-slate-200">{e.question}</span>
-                      <span className="text-label text-slate-500" title="With no answer by then, Studio takes the safe answer">
-                        {deadlineText(e)}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label text-slate-500">
+                <span title="Digest slots run by the scheduler">Digest {digestTimes || "not set"}</span>
+                <span title="Studio checks every tool at start and every 3 hours">
+                  Studio check {updates.checkedAt ? new Date(updates.checkedAt * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "not yet"}
+                </span>
+                <span title="The weekly self-build ship">Weekly ship {weeklyShip ? at(weeklyShip) : "not yet"}</span>
+                <button onClick={() => go("reports")} className="ml-auto inline-flex items-center gap-1 text-emerald-300 hover:underline">
+                  Read today's reports <ArrowRight className="size-3" />
+                </button>
+              </div>
+              {running.length > 0 && (
+                <div className="space-y-1.5 border-t border-line pt-2">
+                  <div className="text-label font-semibold uppercase tracking-wide text-slate-500">Working now</div>
+                  {running.slice(0, 5).map((m) => (
+                    <div key={m.id} className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-mono text-label text-slate-500">{m.id}</span>
+                      <Badge className="bg-sky-500/10 text-sky-300 ring-sky-500/30">{m.agent || "auto"}</Badge>
+                      <span className="min-w-0 flex-1 truncate text-slate-200">{m.goal}</span>
+                      <span className="text-label text-slate-500">{m.status === "review" ? "in review" : `since ${at(m.created_at)}`}</span>
+                      <span className="text-label text-slate-600" title="Last recorded activity">
+                        active {at(m.updated_at)}
                       </span>
-                      {e.options.map((o) => (
-                        <Button
-                          key={o}
-                          size="sm"
-                          variant={o === e.safe_answer ? "secondary" : "primary"}
-                          busy={busy === e.id}
-                          onClick={() => void reply(e, o)}
-                        >
-                          {o}
-                        </Button>
-                      ))}
                     </div>
-                    {shadow
-                      .filter((r) => r.escalation === e.id && r.outcome === "pending")
-                      .map((r) => (
-                        <p key={r.due_at} className="mt-1 flex items-center gap-1.5 text-label text-sky-300">
-                          <UserRoundCog className="size-3.5" />
-                          Shadow will answer {r.planned} at{" "}
-                          {new Date(r.due_at * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}, because{" "}
-                          {r.reason}. Answer yourself before then to overrule it.
-                        </p>
-                      ))}
-                  </div>
-                ))}
-                {awaiting.map(({ goal }) => (
-                  <div key={goal.id} className="border-t border-line px-4 py-2.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-label text-slate-500">{goal.id}</span>
-                      <Badge className={GOAL_STATUS.awaiting}>plan ready</Badge>
-                      <span className="min-w-0 flex-1 text-small text-slate-200">{goal.outcome}</span>
-                      <span className="text-label text-slate-500">{goal.repos.join(", ") || "no repositories"}</span>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        icon={<Play className="size-3.5" />}
-                        busy={busy === goal.id}
-                        onClick={() => void approve(goal.id)}
-                      >
-                        Approve plan
-                      </Button>
-                      <Button size="sm" variant="ghost" icon={<ArrowRight className="size-3.5" />} onClick={() => go("goals")}>
-                        Open
-                      </Button>
-                    </div>
-                    {goal.note && <p className="mt-0.5 text-label text-slate-500">{goal.note}</p>}
-                  </div>
-                ))}
-              </>
-            )}
+                  ))}
+                  {running.length > 5 && <p className="text-label text-slate-600">{running.length - 5} more running on the Agent Bus board.</p>}
+                </div>
+              )}
+            </div>
           </Card>
 
           <Card className="p-0">

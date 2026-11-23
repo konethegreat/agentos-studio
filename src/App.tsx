@@ -43,6 +43,8 @@ import { Help } from "./views/Help";
 import { GuideProvider } from "./components/Guides";
 import { Missions } from "./views/Missions";
 import { Goals } from "./views/Goals";
+import { Reports } from "./views/Reports";
+import { studio } from "./lib/studio";
 import { NavRail, type RailGroup, type RailView } from "./components/NavRail";
 import { ToastProvider, useToast } from "./components/Toasts";
 import { UpdateBanner, UpdatesProvider, useUpdates } from "./components/Updates";
@@ -71,7 +73,7 @@ const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ defaul
 const ComputerUse = lazy(() => import("./views/ComputerUse").then((m) => ({ default: m.ComputerUse })));
 const Explorer = lazy(() => import("./views/Explorer").then((m) => ({ default: m.Explorer })));
 
-const VIEWS = ["today", "chat", "goals", "autonomy", "projects", "prompts", "skills", "capabilities", "memory", "context", "help", "explorer", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
+const VIEWS = ["today", "chat", "goals", "reports", "autonomy", "projects", "prompts", "skills", "capabilities", "memory", "context", "help", "explorer", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
 type View = (typeof VIEWS)[number];
 const isView = (v: string): v is View => (VIEWS as readonly string[]).includes(v);
 
@@ -97,6 +99,7 @@ const GROUPS: RailGroup[] = [
     defaultView: "projects",
     tabs: [
       { id: "goals", label: "Goals", hint: "One sentence in, finished work out: outcomes, done checks, autonomy and the missions each goal created" },
+      { id: "reports", label: "Reports", hint: "The record of what the orchestrator and the fleet did in every repository. Read it; nothing here needs you." },
       { id: "autonomy", label: "Autonomy", hint: "Repositories that keep themselves busy: each keeps docs/agentos/PHASES.md and TASKS.md, and Studio keeps one goal in flight for it" },
       { id: "projects", label: "Projects", hint: "Hermes projects, their folders, and the chats that ran inside them" },
       { id: "prompts", label: "Prompts", hint: "Saved prompts that know their project: draft from the repo, check, sharpen, and hand work to another agent or app" },
@@ -170,6 +173,7 @@ function Studio() {
   const [hermes, setHermes] = useState<HermesStatus | null>(null);
   const [board, setBoard] = useState<Board | null>(null);
   const [ciFailing, setCiFailing] = useState(0);
+  const [reportUnread, setReportUnread] = useState(0);
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -424,9 +428,27 @@ function Studio() {
     };
   }, []);
 
+  // The Work rail badge counts reports the owner has not read yet. Reading the page clears it.
+  useEffect(() => {
+    let stop = false;
+    const load = () =>
+      void studio.reports
+        .unread()
+        .then((n) => {
+          if (!stop) setReportUnread(n);
+        })
+        .catch(() => undefined);
+    load();
+    const t = window.setInterval(load, 60_000);
+    return () => {
+      stop = true;
+      window.clearInterval(t);
+    };
+  }, [view]);
+
   // Where each rail count comes from, so the badge names its source and the tab that holds it.
   const BADGE_SOURCE: Record<string, Pick<RailGroup, "badgeLabel" | "badgeTab">> = {
-    work: { badgeLabel: "Agent Bus tasks pending or in progress", badgeTab: "mission" },
+    work: { badgeLabel: "unread reports", badgeTab: "reports" },
     system: { badgeLabel: "updates available", badgeTab: "updates" },
     code: { badgeLabel: "failing CI runs", badgeTab: "github" },
   };
@@ -437,14 +459,14 @@ function Studio() {
         ...(BADGE_SOURCE[g.id] ?? {}),
         badge:
           g.id === "work"
-            ? (board ? board.pending.length + board.in_progress.length : 0)
+            ? reportUnread
             : g.id === "system"
               ? updates.alerts.length
               : g.id === "code"
                 ? ciFailing
                 : 0,
       })),
-    [board, updates.alerts.length, ciFailing],
+    [reportUnread, updates.alerts.length, ciFailing],
   );
 
   const home = settings?.home ?? "";
@@ -516,6 +538,7 @@ function Studio() {
             {view === "fleet" && <FleetManager repos={repos} scanning={scanning} onRescan={scan} />}
             {view === "agents" && <Agents />}
             {view === "goals" && <Goals target={noticeTarget} />}
+            {view === "reports" && <Reports />}
             {view === "timeline" && <Timeline />}
             {view === "constitution" && <ConstitutionStudio memoryTick={memoryTick} />}
             {view === "updates" && <UpdateCenter />}

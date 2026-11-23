@@ -158,6 +158,13 @@ deliberately boring.
 - **Parallel missions per repository** applies to every agent now that every mission has its own
   worktree: with the setting at 1 a mission runs alone in its repository, above 1 up to that many
   share it.
+- **The orchestrator runs after every tick.** `orchestrator::pass` answers routine escalations with
+  their safe answer (`by = orchestrator`), routes a queued mission whose goal names UI work to
+  Antigravity and CLI, cron, vault, Notion or cross-repository work to Hermes (anything else stays
+  with the quota-aware router), and unsticks a running mission that never got a task id: retry once,
+  then block with the reason. Only a `destructive` escalation whose question matches an owner
+  pattern (production, credentials, an API key, a secret, payments, billing, an invoice) is left
+  for the owner. Every step writes a report row, which is what the Reports view reads.
 - **Budgets** count only metered providers: the spend is read from Hermes usage data in `state.db`
   (worker sessions and Hermes reviewer sessions); subscriptions count zero. A Hermes mission whose
   metered spend passes its budget is blocked.

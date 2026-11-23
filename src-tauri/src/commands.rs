@@ -1141,23 +1141,6 @@ pub async fn studio_update_check(app: tauri::AppHandle) -> CmdResult<Option<Stri
     Ok(found.map(|u| u.version.clone()))
 }
 
-/// Download, verify the signature, install and restart. The signature is checked by the plugin
-/// against the public key baked into the build, so a tampered asset is refused.
-#[tauri::command]
-pub async fn studio_update_install(app: tauri::AppHandle) -> CmdResult<String> {
-    use tauri_plugin_updater::UpdaterExt;
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
-        return Ok("up to date".into());
-    };
-    let version = update.version.clone();
-    update
-        .download_and_install(|_chunk, _total| {}, || {})
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(format!("{version} installed, restart to use it"))
-}
-
 #[tauri::command]
 pub async fn session_usage(session_id: String) -> CmdResult<Option<crate::usage::SessionUsage>> {
     blocking(move || crate::usage::usage(&session_id)).await
@@ -2400,4 +2383,57 @@ pub async fn extension_list_runs(
     limit: Option<usize>,
 ) -> CmdResult<Vec<crate::permissions::AuditEntry>> {
     blocking(move || crate::extension_runtime::list_runs(limit.unwrap_or(50))).await
+}
+
+// ---------------------------------------------------------------------------
+// Orchestrator and reports
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn orchestrator_status() -> CmdResult<crate::orchestrator::Status> {
+    blocking(|| Ok(crate::orchestrator::status())).await
+}
+
+#[tauri::command]
+pub async fn orchestrator_set(enabled: bool) -> CmdResult<crate::orchestrator::Status> {
+    blocking(move || {
+        crate::orchestrator::set_enabled(enabled);
+        Ok(crate::orchestrator::status())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn reports_list(
+    since_id: Option<i64>,
+    repo: Option<String>,
+    limit: Option<usize>,
+) -> CmdResult<Vec<crate::reports::Report>> {
+    blocking(move || {
+        crate::reports::list(
+            since_id.unwrap_or(0),
+            repo.as_deref().unwrap_or(""),
+            limit.unwrap_or(200),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn reports_summary(hours: Option<i64>) -> CmdResult<Vec<crate::reports::RepoSummary>> {
+    blocking(move || {
+        let since = crate::store::now() - hours.unwrap_or(24).clamp(1, 24 * 30) * 3600;
+        crate::reports::summary(since)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn reports_unread() -> CmdResult<i64> {
+    blocking(crate::reports::unread).await
+}
+
+#[tauri::command]
+pub async fn reports_mark_read(id: i64) -> CmdResult<()> {
+    blocking(move || crate::reports::mark_read(id)).await
 }

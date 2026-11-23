@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronDown, ChevronRight, Flag, Plus, RefreshCw, Target, Trash2, X } from "lucide-react";
 import { api, errorText, type AutonomyLevel, type Escalation, type GoalCheck, type GoalDetail, type NewGoal, type Project } from "../lib/api";
+import { studio, type OrchestratorStatus } from "../lib/studio";
 import { Badge, Button, Card, Empty, inputClass } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { useRecordTarget, type RecordTarget } from "../lib/nav";
@@ -54,6 +55,7 @@ export function Goals({ target = null }: { target?: RecordTarget | null }) {
   const [level, setLevel] = useState<AutonomyLevel | "">("");
   const [defaults, setDefaults] = useState<Record<string, AutonomyLevel>>({});
   const [asks, setAsks] = useState<Escalation[]>([]);
+  const [orch, setOrch] = useState<OrchestratorStatus | null>(null);
 
   useEffect(() => { if (target) setSelected(target.id); }, [target]);
 
@@ -62,6 +64,7 @@ export function Goals({ target = null }: { target?: RecordTarget | null }) {
     try {
       setRows(await api.goals());
       setAsks(await api.escalations(100));
+      setOrch(await studio.orchestrator.status().catch(() => null));
     } catch (e) {
       toast("error", errorText(e));
       setRows([]);
@@ -180,6 +183,10 @@ export function Goals({ target = null }: { target?: RecordTarget | null }) {
   const setCheck = (i: number, c: Partial<GoalCheck>) => setChecks((all) => all.map((x, j) => (j === i ? { ...x, ...c } : x)));
   const listed = source.record && !rows?.some((row) => row.goal.id === source.record?.goal.id) ? [source.record, ...(rows ?? [])] : rows;
   const detail = selected === target?.id ? source.record : rows?.find((r) => r.goal.id === selected) ?? null;
+  const watchGoals = useMemo(
+    () => (listed ?? []).map((r) => r.goal).filter((g) => g.autonomy === "watch" && g.status !== "done" && g.status !== "failed"),
+    [listed],
+  );
   const openCount = rows?.filter((r) => r.goal.status !== "done" && r.goal.status !== "failed").length ?? 0;
 
   return (
@@ -304,18 +311,49 @@ export function Goals({ target = null }: { target?: RecordTarget | null }) {
         </Card>
       )}
 
-      {asks.some((a) => a.status === "open") && (
-        <Card className="mx-5 mt-4 space-y-2 border-amber-500/30 p-4">
-          <div className="flex items-center gap-2">
-            <Flag className="size-4 text-amber-300" />
-            <h2 className="text-small font-semibold text-slate-100">Waiting on you</h2>
-            <span className="text-label text-slate-500">Studio only asks for these; with no answer by the deadline it takes the safe answer.</span>
+      {orch && (
+        <Card className={`mx-5 mt-4 space-y-2 p-4 ${orch.needs_you.length > 0 ? "border-amber-500/30" : ""}`}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Flag className={`size-4 ${orch.needs_you.length > 0 ? "text-amber-300" : "text-emerald-300"}`} />
+            <h2 className="text-small font-semibold text-slate-100">Needs you</h2>
+            <span className="text-label text-slate-500">Only production data, credentials and money stop work for you.</span>
+            <span className="ml-auto text-label text-slate-600">{orch.auto_answered_today} answered by the orchestrator today</span>
           </div>
-          {asks
-            .filter((a) => a.status === "open")
-            .map((a) => (
-              <EscalationRow key={a.id} e={a} busy={busy} onAnswer={(ans) => void reply(a, ans)} />
-            ))}
+          {orch.needs_you.length === 0 ? (
+            <p className="flex items-center gap-2 text-small text-emerald-300">
+              <Flag className="size-3.5" />
+              Nothing needs you. The orchestrator answers everything else.
+            </p>
+          ) : (
+            orch.needs_you.map((id) => {
+              const e = asks.find((a) => a.id === id);
+              return e ? (
+                <EscalationRow key={id} e={e} busy={busy} onAnswer={(ans) => void reply(e, ans)} />
+              ) : (
+                <div key={id} className="rounded-lg bg-white/[0.02] p-2 text-small text-slate-200 ring-1 ring-line">
+                  <span className="font-mono text-label text-slate-500">{id}</span> is open. Open Reports for its history.
+                </div>
+              );
+            })
+          )}
+          {watchGoals.length > 0 && (
+            <div className="border-t border-line pt-2">
+              <div className="text-label font-semibold uppercase tracking-wide text-slate-500">Held by you</div>
+              <p className="mt-0.5 text-label text-slate-500">Watch goals wait for your click at every step. Raise the level to let the orchestrator run them.</p>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {watchGoals.map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => setSelected(g.id)}
+                    className="max-w-72 truncate rounded-lg bg-white/[0.03] px-2 py-1 text-label text-slate-300 ring-1 ring-line hover:bg-white/[0.06]"
+                    title={g.outcome}
+                  >
+                    <span className="font-mono text-slate-500">{g.id}</span> {g.outcome}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </Card>
       )}
 

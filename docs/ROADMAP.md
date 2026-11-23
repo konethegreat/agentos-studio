@@ -3,6 +3,27 @@
 Phases are ordered by dependency, not by excitement. Each one lists what it needs from the
 phase before it, so nothing is scheduled that cannot be built yet.
 
+## 2.6.0: the orchestrator, the reports feed and a fixed update path (shipped)
+
+- **Orchestrator.** `orchestrator::pass` runs after every scheduler tick (kv `orchestrator.enabled`,
+  default on). It answers routine escalations as `orchestrator`, routes queued missions to an agent
+  through the same `missions::set_agent` the router uses, and unsticks running missions with no task
+  id: retry once, then block with the reason. Only escalations flagged destructive or matching an
+  owner pattern go to `needs_you`. `orchestrator_status` serves the Today card.
+- **Reports.** Schema 13 adds `reports`. Every mission start, route, review, merge, block and
+  unstick, every escalation the orchestrator answered, autonomy passes, digests, fleet reports and
+  applied updates are rows. Work > Reports is a read-only feed with kind and repository filters, a
+  "since you last looked" summary and unread counts that drive the Work badge. Reading marks read
+  through a forward-only cursor (`reports.read_until`); rows prune past 2000.
+- **Today and Goals.** Today leads with the orchestrator and its schedule, not a "Waiting on you"
+  queue. Goals keeps a **Needs you** card for the Law 1 escalations only.
+- **Update fix.** `apply_update` drops the approval argument, so banner, StatusBar chip and Update
+  Center share one path: download, verify, record, install; for Studio, run the installer, wait,
+  start the installed app and exit the old process. Checks run at start, every three hours and on
+  window focus. `update_auto_apply` / `set_update_auto_apply` add the policy `cli` (default), `all`
+  and `off`. A Hermes plugin that fails the batch update is retried alone with
+  `hermes plugins update <name>`.
+
 ## 2.5.0: replayable runs and offline mode (shipped)
 
 - **Replayable run exports.** `timeline::export_timeline` writes a mission's full record to
@@ -398,7 +419,8 @@ executes, reviews, merges, verifies and reports, asking only when a rule says it
   when the reason says so), a merge outside the allow list at Ask on risk. Each has a question,
   answers, a safe answer and a deadline (60 minutes by default, kv
   `escalation.timeout_minutes`); with no answer by the deadline the safe answer is taken. Answered
-  in Work: Goals, under Waiting on you.
+  in Work: Goals, under **Needs you**, or answered automatically by the orchestrator (see the 2.6.0
+  section) when the question is routine.
 - **Self-healing CI:** a failing check on an approved mission's pull request has its failed jobs
   rerun once. Passing on the rerun makes it a flaky test: a gotcha note in the vault and a line on
   the timeline and in the digest, with no further retries. Failing again creates one fix mission

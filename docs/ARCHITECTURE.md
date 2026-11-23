@@ -142,6 +142,8 @@ the first paint is never competing with a full probe.
 | `completion.rs` | Done checks for a goal whose missions are merged, in a detached worktree of the default branch; the report, outcome notes, Notion republish, one fix mission per failure and the `done_check` escalation. |
 | `digest.rs` | Morning and evening digest (vault, Notion, `hermes send`) and escalation replies read from the gateway's `state.db` messaging sessions, read only. |
 | `pause.rs` | The fleet pause switch: kv `fleet.paused` gates starting, merging and applying answers, and drives `hermes pause` and `hermes resume`. |
+| `orchestrator.rs` | One pass after every scheduler tick: answers routine escalations (`by = orchestrator`), routes queued missions to an agent and unsticks running missions that never got a task id (retry once, then block with the reason). `Status` returns enabled and paused state, running, queued and blocked counts, auto-answers today and the short `needs_you` list. Only escalations marked destructive or matching an owner pattern are passed through. Toggle in kv `orchestrator.enabled` (default on). |
+| `reports.rs` | The fleet record (schema 13): `record`/`record_here` write one row per step (mission started, routed, reviewed, merged, blocked and unstuck, escalation answered, autonomy pass, digest, fleet report, update applied) with kind, repo, title, body and an optional reference. `list`, `summary`, `count_kind_since`, `unread` and `mark_read` (cursor `reports.read_until`, forward only) back the Reports view and its badge; rows prune past 2000. |
 
 ### Approval flow
 
@@ -319,7 +321,7 @@ when pinned, with the pin stored in `studio.db` (`kv.nav.pinned`). Six groups:
 | Code | GitHub |
 | System | MCP and Providers, Updates, Safety, Setup, Diagnostics |
 
-Badges are counts, not decoration: open bus tasks on Work, pending updates on System, failing
+Badges are counts, not decoration: unread reports on Work, pending updates on System, failing
 workflow runs on Code (from `gh run list` for the repository bound to the current folder, refreshed
 every three minutes). `Alt+1..6` select a group, `Ctrl+K` still reaches every tab by name.
 
@@ -328,15 +330,15 @@ the Hermes version and a single health chip that opens Diagnostics.
 
 ### Today (home)
 
-Studio opens on Today, the screen that answers "what needs me now". It reads only existing
-commands: `goals_list` and `escalations_list` for the waiting section and goals in progress,
-`list_missions` and `list_workers` for running agents, `fleet_pause_state` for the pause banner, and
-`digest_latest`, a read-only addition that returns the newest note under `04_Agent_Engine/digests`
-so the UI never writes a digest. Waiting on you comes first, in the digest's order (open
-escalations, then goals in `awaiting`), so the screen and the morning message agree. From Today the
-owner answers an escalation from its own options, approves a plan and resumes a paused fleet; every
-other action links to Goals, Mission Control or Safety. The view polls every 15 seconds and has a
-manual Refresh.
+Studio opens on Today, the screen that shows what the fleet is doing and asks for the owner only
+when the law requires it. It leads with the **Orchestrator** card, from `orchestrator_status`: on or
+paused with one toggle, the running, queued, blocked and answered-today counts, the schedule (digest
+times, next Studio check from `updates.last`, the weekly ship) and the `needs_you` list. The card
+links into **Reports**, the unread feed of everything the fleet did. Beneath it: goals in progress,
+running agents, spend and the last digest. It reads only existing commands: `goals_list`,
+`escalations_list`, `list_missions`, `list_workers`, `fleet_pause_state`, `digest_settings`,
+`self_build_status`, the read-only `digest_latest` and `orchestrator_status`. The view polls every
+15 seconds and has a manual Refresh.
 
 ## Working directory resolution
 
