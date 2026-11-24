@@ -70,9 +70,14 @@ all missions done -> definition-of-done checks -> report
    reviewer runs, the constitution gate judges the lines the pull request adds (dashes,
    placeholder tags, hidden Unicode, credentials, docs changed with code under `src/`); any
    finding sends the mission back to its implementer as a reject from `constitution-gate`.
+   One review per round, one retry after a failed review, then the mission is blocked with the
+   reason. The failure count is kept in the review state across the retry, so a reviewer that
+   cannot run at all blocks the mission instead of being started again every 10 minutes.
 4. **Automatic merge.** When `merge_blockers` is empty, the constitution gate passes on the diff
    as it is at merge time, and the level allows it, Studio squash merges and deletes the branch,
-   with the provenance trailers from Phase E.
+   with the provenance trailers from Phase E. A merge that fails is recorded per mission and
+   retried with growing waits (5, 30, 120, 720 then 1440 minutes), so a conflicting pull request
+   does not cost a `gh` call on every pass; the board's Merge button always runs at once.
 5. **Self-healing.** A failing check on a mission's pull request is rerun once. Passing on the
    rerun makes it a flaky test: a gotcha note, a digest line, no retry loop. Failing again creates a
    fix mission on the same branch with the failing log attached.
@@ -170,7 +175,8 @@ and against each active goal's budget.
 - No Hermes worker outside a mission: the planner's kanban database is private and deleted.
 - No silent merge outside the rules above, and no merge without an approving reviewer from another
   agent.
-- No retry loops: one CI rerun, one stuck retry, one fix mission per failing check.
+- No retry loops: one CI rerun, one stuck retry, one fix mission per failing check, one failed
+  automatic review before the mission blocks, and a growing wait between failed merges.
 
 ## Build order (one pull request each)
 

@@ -653,10 +653,15 @@ pub fn auto_review_due(m: &Mission, state: Option<&str>, now: i64, eligible: boo
     }
 }
 
-/// How many automatic reviews of this round failed, from the kv state. Pure.
+/// How many automatic reviews of this round failed, from the kv state. Pure. A `running` state
+/// carries the count too, because the scheduler writes it the moment it starts a review; without
+/// it every retry would look like a first attempt and the mission would never block.
 pub fn auto_failures(state: Option<&str>) -> u32 {
     state
-        .and_then(|s| s.strip_prefix("failed:"))
+        .and_then(|s| {
+            s.strip_prefix("failed:")
+                .or_else(|| s.strip_prefix("running:"))
+        })
         .and_then(|s| s.split(':').nth(1))
         .and_then(|n| n.parse().ok())
         .unwrap_or(0)
@@ -700,7 +705,10 @@ pub fn run_auto(v: &Vault, id: &str) -> Result<Mission> {
         );
         return missions::block(id, &format!("Automatic review: {reason}"), false);
     };
-    kv_set(&auto_key(id), &format!("running:{}", crate::store::now()));
+    kv_set(
+        &auto_key(id),
+        &format!("running:{}:{tries}", crate::store::now()),
+    );
     let started = std::time::Instant::now();
     let summary = format!(
         "automatic review by {reviewer}{}",
@@ -765,7 +773,13 @@ pub fn auto_in_background(vault_root: PathBuf, id: String) {
     if cfg!(test) {
         return;
     }
-    kv_set(&auto_key(&id), &format!("running:{}", crate::store::now()));
+    // Keep the failure count of this round: the thread reads it back before judging, and a plain
+    // `running:<now>` would reset it to zero on every retry.
+    let tries = auto_failures(auto_state(&id).as_deref());
+    kv_set(
+        &auto_key(&id),
+        &format!("running:{}:{tries}", crate::store::now()),
+    );
     std::thread::spawn(move || {
         let v = Vault::new(&vault_root);
         if let Err(e) = run_auto(&v, &id) {
@@ -921,6 +935,17 @@ mod tests {
         );
         assert_eq!(auto_failures(Some("failed:900:1:a: b")), 1);
         assert_eq!(auto_failures(None), 0);
+        assert_eq!(
+            auto_failures(Some("running:1000:1")),
+            1,
+            "a started review keeps the round's failure count"
+        );
+        assert!(!auto_review_due(
+            &m,
+            Some("running:1000:1"),
+            1000 + 60,
+            true
+        ));
         m.pr_url = None;
         assert!(!auto_review_due(&m, None, 1_000, true), "nothing to review");
         m.pr_url = Some("https://github.com/o/r/pull/1".into());

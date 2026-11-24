@@ -59,6 +59,62 @@ pub fn merge_outcome(id: &str) -> Option<String> {
     kv_get(&merge_key(id))
 }
 
+/// Minutes to wait before each retry of a failed automatic merge. A conflicting pull request is
+/// tried again after 5 minutes, then 30, 2 hours, 12 hours, and once a day after that.
+pub const MERGE_RETRY_DELAYS_MIN: [i64; 5] = [5, 30, 120, 720, 1440];
+
+/// kv key for failed merges of a mission: `<attempts>:<epoch of the last attempt>:<reason>`.
+/// Separate from `merge_outcome`, which only records decided outcomes (merged, skipped, closed):
+/// a failed merge leaves the work unmerged, so the mission does not count as settled.
+pub fn merge_fail_key(id: &str) -> String {
+    format!("mission.mergefail.{id}")
+}
+
+/// Parse a `mission.mergefail.<id>` value. Pure.
+pub fn parse_merge_fail(raw: &str) -> (u32, Option<i64>, String) {
+    let mut parts = raw.splitn(3, ':');
+    let attempts = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let at = parts.next().and_then(|s| s.parse().ok());
+    let reason = parts.next().unwrap_or("").to_string();
+    (attempts, at, reason)
+}
+
+/// Should a failed merge be attempted again now? No failures means yes. After each failure the
+/// wait grows; the last delay repeats. Pure.
+pub fn merge_retry_due(attempts: u32, waited_secs: i64) -> bool {
+    if attempts == 0 {
+        return true;
+    }
+    let idx = (attempts as usize - 1).min(MERGE_RETRY_DELAYS_MIN.len() - 1);
+    waited_secs >= MERGE_RETRY_DELAYS_MIN[idx] * 60
+}
+
+fn merge_fail_state(id: &str) -> (u32, Option<i64>, String) {
+    parse_merge_fail(&kv_get(&merge_fail_key(id)).unwrap_or_default())
+}
+
+fn record_merge_failure(m: &Mission, e: &anyhow::Error) {
+    let (n, _, _) = merge_fail_state(&m.id);
+    let n = n + 1;
+    let reason: String = format!("{e:#}")
+        .replace(['\n', '\r'], " ")
+        .chars()
+        .take(200)
+        .collect();
+    kv_set(
+        &merge_fail_key(&m.id),
+        &format!("{n}:{}:{reason}", store::now()),
+    );
+    let delay = MERGE_RETRY_DELAYS_MIN[(n as usize - 1).min(MERGE_RETRY_DELAYS_MIN.len() - 1)];
+    let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+        mission_id: Some(&m.id),
+        kind: "note",
+        from_agent: "agentos-studio",
+        summary: &format!("merge attempt {n} failed: {reason}; next try in {delay} min"),
+        ..Default::default()
+    });
+}
+
 fn hold_key(id: &str) -> String {
     format!("mission.hold.{id}")
 }
@@ -312,6 +368,12 @@ fn merge_step(v: &Vault, m: &Mission, goal: Option<&Goal>, p: &mut Pass) -> Resu
     if merge_outcome(&m.id).is_some() {
         return Ok(());
     }
+    // A merge that keeps failing is retried with growing gaps: a conflicting or blocked pull
+    // request must not cost a gh call and an audit row on every scheduler pass.
+    let (attempts, last, _) = merge_fail_state(&m.id);
+    if !merge_retry_due(attempts, store::now() - last.unwrap_or(0)) {
+        return Ok(());
+    }
     let level = goal.map(|g| g.autonomy.as_str()).unwrap_or("ask");
     let allowlisted = crate::review_agent::project_dir(&m.repo)
         .map(|d| crate::routing::merge_allowed(&d))
@@ -381,7 +443,11 @@ fn try_merge(v: &Vault, m: &Mission, p: &mut Pass) -> Result<()> {
     if heal_state(&m.id).is_some_and(|s| s.starts_with("rerun:")) {
         record_flaky(v, m, &repo, number);
     }
-    crate::review_agent::merge(&m.id, true)?;
+    if let Err(e) = crate::review_agent::merge(&m.id, true) {
+        record_merge_failure(m, &e);
+        return Err(e);
+    }
+    kv_del(&merge_fail_key(&m.id));
     kv_set(&merge_key(&m.id), &format!("merged:{}", store::now()));
     let _ = crate::reports::record_here(
         "mission.merged",
@@ -904,6 +970,30 @@ mod tests {
             updated_at: 0,
             verify: None,
         }
+    }
+
+    #[test]
+    fn a_failed_merge_waits_longer_each_time_and_then_daily() {
+        assert!(merge_retry_due(0, 0));
+        assert!(!merge_retry_due(1, 4 * 60));
+        assert!(merge_retry_due(1, 5 * 60));
+        assert!(!merge_retry_due(2, 29 * 60));
+        assert!(merge_retry_due(2, 30 * 60));
+        assert!(!merge_retry_due(3, 119 * 60));
+        assert!(merge_retry_due(3, 120 * 60));
+        assert!(!merge_retry_due(5, 23 * 60 * 60));
+        assert!(merge_retry_due(5, 24 * 60 * 60));
+        assert!(merge_retry_due(40, 24 * 60 * 60), "last delay repeats");
+        assert_eq!(
+            parse_merge_fail("3:1795540000:not merging: pull request is not mergeable"),
+            (
+                3,
+                Some(1_795_540_000),
+                "not merging: pull request is not mergeable".to_string()
+            )
+        );
+        assert_eq!(parse_merge_fail(""), (0, None, String::new()));
+        assert_eq!(merge_fail_key("M-001"), "mission.mergefail.M-001");
     }
 
     #[test]
