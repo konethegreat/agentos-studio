@@ -182,7 +182,13 @@ fn bus_pass(v: &Vault) {
                 }
                 Err(e) => {
                     if let Ok(mut f) = BUS_FAILED.lock() {
-                        f.push(id.clone());
+                        if !f.contains(&id) {
+                            f.push(id.clone());
+                        }
+                        let len = f.len();
+                        if len > 200 {
+                            f.drain(..len - 200);
+                        }
                     }
                     let _ =
                         v.log_activity(&id, &format!("bus watcher could not start {agent}: {e:#}"));
