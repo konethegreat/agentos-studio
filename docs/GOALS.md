@@ -130,10 +130,41 @@ destructive, or one whose question matches an owner pattern (credentials, paymen
 is left for the owner, under **Needs you** in Goals and on the Today orchestrator card.
 
 A `stop` answer always lands, even though a retry can restart the mission while the question waits:
-the answer blocks the mission first and cancels it second, because a plain cancel only reaches
-`queued` and `blocked` missions. A mission stopped this way ends `failed` with the reason in
-`review_note`, and a queued mission whose goal is `failed` or `done` is stopped with its goal on the
+the answer clears the mission's hold and stops it first, and cancels it second, because a plain
+cancel only reaches `queued` and `blocked` missions. A mission stopped this way goes `paused` with
+the reason in `review_note`, and its goal is paused with it, so its queued siblings keep their
+state instead of being cancelled. **Resume goal** in Goals returns the goal to `running`; the
+paused missions stay paused until each one is resumed, so the fleet never restarts work the owner
+stopped. Only a budget, planner or done-check stop fails the goal, because reopening starts from a
+failed goal. A queued mission whose goal is `failed` or `done` is stopped with its goal on the
 next tick instead of sitting in the queue where nothing can start it.
+
+## Reopening failed work
+
+Failed missions stay failed until one of two paths reopens them.
+
+- **Automatic round.** When nothing is queued anywhere and the fleet is not paused, the scheduler
+  reopens one failed goal per pass. Goals go oldest first, one goal per repository, and a goal is
+  taken only when all its missions are settled (`failed`, `done` or `queued`) and its failed count
+  fits the pass's mission budget. One goal per pass means a reopened batch is drained before the
+  next one opens. Each goal gets one automatic round (kv `goal.reopen.<id>`); a second reopen
+  needs the owner.
+- **Owner click.** **Reopen failed missions** on a failed goal queues every failed mission in it at
+  once. It is refused while any mission in the goal is `running` or `review`, so a reopen never
+  races work that is still finishing.
+
+Reopening is whole-goal. The goal moves `failed` to `running` first, so the scheduler never sees
+missions queued under a failed goal and stops them as orphans. Each failed mission goes back to
+`queued` with its task id, reviewer, verdict, pull request and verify state cleared; its spend is
+kept, so the goal's budget stays honest. The previous round is forgotten: merge outcome and
+failed-merge wait, hold, reject count, self-healing state, no-PR count, automatic reviewer choice
+and the stuck, destructive, second-reject and merge questions it answered. The old pull request
+URL is kept in the mission note, and the goal's note says who reopened it and what was queued.
+
+`AGENTOS_REOPEN_BUDGET=<goals>/<missions>` caps an automatic pass (default `1/6`; goals are
+clamped to 1 to 5 and missions to 1 to 24). The mission number is the largest failed count a goal
+may have and still reopen as a whole; a goal with more failed missions waits for the owner's
+click.
 
 ## Obsidian views
 
@@ -179,6 +210,8 @@ and against each active goal's budget.
   agent.
 - No retry loops: one CI rerun, one stuck retry, one fix mission per failing check, one failed
   automatic review before the mission blocks, and a growing wait between failed merges.
+- No reopen loops: one automatic round per failed goal, one goal per scheduler pass and only while
+  nothing else is queued, and the next reopen after that waits for the owner's click.
 
 ## Build order (one pull request each)
 
