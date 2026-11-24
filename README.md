@@ -35,6 +35,22 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.6.5
+
+Two retry loops that burned GitHub calls and agent runs every few minutes are gone.
+
+- **A reviewer that keeps failing is blocked.** The scheduler marked a review `running` the moment
+  it started one, and that marker erased the round's failure count, so a mission whose reviewer
+  could not run was reviewed again ten minutes later, for ever. The count now survives the start
+  marker: the second failure blocks the mission with the reason, which is the escalation the goal
+  rules already describe.
+- **A merge that keeps failing backs off.** An approved pull request that cannot be merged (a
+  conflict, a protection rule, a gate blocker that persists) was retried on every scheduler pass:
+  one `gh` call and one audit row every few seconds, thousands a day, with nothing to show for it.
+  Failures are now recorded per mission (kv `mission.mergefail.<id>`) and retried after 5 minutes,
+  30 minutes, 2, 12, then 24 hours. A successful merge clears the record, the reason and the next
+  wait are written to the timeline, and the manual Merge button is never delayed.
+
 ## What is new in 2.6.4
 
 Finished work reaches GitHub even when the worker does not.

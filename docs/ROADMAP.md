@@ -3,6 +3,20 @@
 Phases are ordered by dependency, not by excitement. Each one lists what it needs from the
 phase before it, so nothing is scheduled that cannot be built yet.
 
+## 2.6.5: retry loops stopped (ready)
+
+- **Review failures counted through the start.** `review_agent::auto_in_background` and `run_auto`
+  write `running:<epoch>:<tries>` instead of `running:<epoch>`; `auto_failures` reads the count
+  from both states. Before, every automatic review looked like a first attempt, so a reviewer that
+  could never run (a disabled provider, a missing CLI) was retried every 10 minutes and the
+  mission never reached `AUTO_TRIES`, which is what blocks it.
+- **Merge failures back off.** `goal_loop::record_merge_failure` writes
+  `mission.mergefail.<id>` (`<attempts>:<epoch>:<reason>`) when `review_agent::merge` fails, and
+  `merge_retry_due` waits 5, 30, 120, 720 then 1440 minutes. A mission merged by hand is not
+  delayed: the board's Merge button calls `review_agent::merge` directly. Live case: four
+  approved pull requests with conflicts had produced about 4,500 failed `github.pr.merge` audit
+  rows since 2026-11-13, one every scheduler pass.
+
 ## 2.6.4: every finished mission reaches GitHub (ready)
 
 - **Delivery on worker exit.** `bus::close_after_worker_exit` runs when a mission worker exits with
