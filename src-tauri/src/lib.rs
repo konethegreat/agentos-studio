@@ -86,6 +86,7 @@ pub mod pty;
 pub mod quota_grid;
 pub mod receipts;
 pub mod reports;
+pub mod retention;
 pub mod review_agent;
 pub mod router;
 pub mod routing;

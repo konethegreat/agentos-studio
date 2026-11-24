@@ -278,15 +278,84 @@ pub fn worker_prompt(task_id: &str, agent: &str, body: &str) -> String {
     } else {
         ""
     };
+    let spec = clip_spec(body.trim(), SPEC_MAX_CHARS);
     format!(
         "You are {agent}, working AgentOS task {task_id}. It is already claimed for you on the agentos-hub Agent Bus.\n\n\
-         --- TASK SPEC ---\n{body}\n--- END TASK SPEC ---\n\n\
+         --- TASK SPEC ---\n{spec}\n--- END TASK SPEC ---\n\n\
          Follow the AgentOS constitution (CLAUDE.md / AGENTS.md / SYSTEM_CONTEXT). Work autonomously.\n\
          If the spec names a Worktree you are already in it, on its own Branch: commit there, push with `git push -u origin HEAD`, \
          and open the pull request with `gh pr create`. Never merge and never push to the default branch.{shell}\n\
          When finished, call the agentos-hub MCP tool complete_task with task_id \"{task_id}\", agent_name \"{agent}\" \
          and a concrete summary_of_work (what changed, files, PR URL, verification). If you cannot finish, explain why in your final message."
     )
+}
+
+/// A task body grows one activity line per event for the life of the task. A worker gets the head
+/// (goal, acceptance, mission lines) and the tail (recent activity), never the whole history, so a
+/// long-lived task cannot grow its prompt without bound.
+pub const SPEC_MAX_CHARS: usize = 12_000;
+
+pub fn clip_spec(body: &str, max: usize) -> String {
+    let total = body.chars().count();
+    if total <= max {
+        return body.to_string();
+    }
+    let head_len = max / 2;
+    let tail_len = max - head_len;
+    let head: String = body.chars().take(head_len).collect();
+    let tail: String = body.chars().skip(total - tail_len).collect();
+    format!(
+        "{head}\n\n[... {} characters of task history trimmed by AgentOS Studio; the full task stays in the vault ...]\n\n{tail}",
+        total - max
+    )
+}
+
+/// A worker log is rotated before the next run once it passes this size, and the drawer reads only
+/// the tail of it, so neither the disk file nor the IPC payload grows with the fleet's age.
+pub const LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+pub const LOG_TAIL_BYTES: u64 = 256 * 1024;
+
+/// Move a log past `LOG_MAX_BYTES` to `<name>.1`, replacing the previous rotation. Returns whether
+/// it rotated.
+pub fn rotate_log(path: &Path) -> bool {
+    let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    if size <= LOG_MAX_BYTES {
+        return false;
+    }
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "worker.log".to_string());
+    name.push_str(".1");
+    let old = path.with_file_name(name);
+    let _ = fs::remove_file(&old);
+    fs::rename(path, old).is_ok()
+}
+
+/// The last `max` bytes of a text file, starting at a line boundary, with a marker when it was
+/// truncated. A missing file reads as empty.
+pub fn read_log_tail(path: &Path, max: u64) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = fs::File::open(path) else {
+        return String::new();
+    };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    if len <= max {
+        let mut s = String::new();
+        let _ = f.read_to_string(&mut s);
+        return s;
+    }
+    if f.seek(SeekFrom::Start(len - max)).is_err() {
+        return String::new();
+    }
+    let mut buf = Vec::new();
+    let _ = f.read_to_end(&mut buf);
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    let tail = match text.find('\n') {
+        Some(i) => text[i + 1..].to_string(),
+        None => text,
+    };
+    format!("[... log truncated to its last {max} bytes ...]\n{tail}")
 }
 
 fn line_value(body: &str, key: &str) -> Option<String> {
@@ -716,6 +785,7 @@ pub fn spawn_worker(
     };
     fs::create_dir_all(vault.worker_logs())?;
     let log_path = vault.worker_logs().join(format!("{task_id}.log"));
+    rotate_log(&log_path);
     let (exe_name, args, stdin_text): (&str, Vec<String>, Option<String>) = match agent {
         "hermes" => {
             let qf = vault.worker_logs().join(format!("{task_id}.prompt.md"));
@@ -1147,6 +1217,54 @@ mod tests {
         let c = worker_prompt("TASK-1", "claude-code", "spec body");
         assert!(!c.contains(AGY_SHELL_NOTE));
         assert!(c.contains("complete_task"));
+    }
+
+    #[test]
+    fn a_short_task_body_reaches_the_worker_whole() {
+        assert_eq!(
+            clip_spec("goal: do the thing", SPEC_MAX_CHARS),
+            "goal: do the thing"
+        );
+    }
+
+    #[test]
+    fn a_long_task_body_keeps_its_head_and_tail_and_marks_the_trim() {
+        let body = format!(
+            "HEAD-GOAL\n{}- {}\nTAIL-EVENT",
+            "x".repeat(20_000),
+            "y".repeat(100)
+        );
+        let clipped = clip_spec(&body, SPEC_MAX_CHARS);
+        assert!(clipped.starts_with("HEAD-GOAL"));
+        assert!(clipped.ends_with("TAIL-EVENT"));
+        assert!(clipped.contains("characters of task history trimmed"));
+        assert!(clipped.chars().count() <= SPEC_MAX_CHARS + 200);
+    }
+
+    #[test]
+    fn a_log_over_the_cap_is_rotated_once_and_a_tail_read_starts_at_a_line() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("TASK-1.log");
+        fs::write(&path, "small").unwrap();
+        assert!(!rotate_log(&path));
+
+        let big = vec![b'z'; (LOG_MAX_BYTES + 1) as usize];
+        fs::write(&path, &big).unwrap();
+        assert!(rotate_log(&path));
+        assert!(!path.exists());
+        assert!(d.path().join("TASK-1.log.1").exists());
+
+        let lines = d.path().join("lines.log");
+        fs::write(&lines, "first line\nsecond line\nthird line\n").unwrap();
+        let tail = read_log_tail(&lines, 20);
+        assert!(tail.starts_with("[... log truncated to its last 20 bytes ...]"));
+        assert!(tail.ends_with("third line\n"));
+        assert!(!tail.contains("first line"));
+        assert_eq!(
+            read_log_tail(&lines, 4096),
+            "first line\nsecond line\nthird line\n"
+        );
+        assert_eq!(read_log_tail(&d.path().join("missing.log"), 4096), "");
     }
 
     #[test]
