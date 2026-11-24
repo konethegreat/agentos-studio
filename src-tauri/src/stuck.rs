@@ -228,14 +228,7 @@ pub fn check_bus(v: &Vault, m: &Mission, task: &str, now: i64) -> Option<String>
             let secs = crate::agent_limits::reset_secs(run)
                 .unwrap_or(crate::agent_limits::DEFAULT_LIMIT_SECS);
             crate::agent_limits::mark(&agent, now + secs);
-            return Some(handoff(
-                v,
-                m,
-                task,
-                &agent,
-                "hit its usage limit",
-                now,
-            ));
+            return Some(handoff(v, m, task, &agent, "hit its usage limit", now));
         }
     }
     let last = bus_last(v, m, task);

@@ -434,14 +434,26 @@ mod tests {
         claude.disabled = Some("its organization disabled Claude Code access".into());
         assert!(
             matches!(
-                assign(&mission("x", "implementer"), &[claude.clone()], &[], true, 0),
+                assign(
+                    &mission("x", "implementer"),
+                    &[claude.clone()],
+                    &[],
+                    true,
+                    0
+                ),
                 Refuse(_)
             ),
             "a cut-off agent cannot take the mission"
         );
         let with_agy = vec![claude, card("antigravity", "antigravity", None)];
         assert_eq!(
-            agent_of(&assign(&mission("x", "implementer"), &with_agy, &[], false, 0)),
+            agent_of(&assign(
+                &mission("x", "implementer"),
+                &with_agy,
+                &[],
+                false,
+                0
+            )),
             "antigravity"
         );
     }

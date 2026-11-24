@@ -548,7 +548,10 @@ mod tests {
         );
         assert_eq!(c.health, "unavailable");
         assert!(c.health_detail.contains("disabled Claude Code access"));
-        assert_eq!(c.disabled.as_deref(), Some("its organization disabled Claude Code access"));
+        assert_eq!(
+            c.disabled.as_deref(),
+            Some("its organization disabled Claude Code access")
+        );
     }
 
     #[test]
