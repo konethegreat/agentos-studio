@@ -48,7 +48,7 @@ pub struct Policy {
 /// The read-only `gh` queries are here because work that must state facts (a portfolio, a
 /// changelog, a plan from open issues) needs them, and a headless worker that is denied them
 /// gives up without a pull request.
-pub const BASE_TOOLS: [&str; 11] = [
+pub const BASE_TOOLS: [&str; 13] = [
     "mcp__agentos-hub",
     "Bash(git *)",
     "Bash(gh pr *)",
@@ -60,6 +60,8 @@ pub const BASE_TOOLS: [&str; 11] = [
     "Bash(gh release view*)",
     "Bash(gh run list*)",
     "Bash(gh run view*)",
+    "Bash(gh search *)",
+    "Bash(gh api repos/*/readme*)",
 ];
 
 /// The `--allowedTools` list for a Claude Code worker: the base rules plus the repository's own,
@@ -417,6 +419,8 @@ mod tests {
                 "command(regex:gh release view.*)",
                 "command(regex:gh run list.*)",
                 "command(regex:gh run view.*)",
+                "command(regex:gh search .*)",
+                "command(regex:gh api repos/.*/readme.*)",
                 "command(regex:npm test.*)",
                 "command(regex:node .*\\.js)",
                 "command(regex:Get-ChildItem.*)",

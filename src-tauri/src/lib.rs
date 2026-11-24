@@ -76,6 +76,7 @@ pub mod planner;
 pub mod plans;
 pub mod playbook;
 pub mod policy;
+pub mod pr_recovery;
 pub mod procs;
 pub mod projects;
 pub mod prompts;
