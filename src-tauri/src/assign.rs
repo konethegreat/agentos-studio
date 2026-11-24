@@ -102,7 +102,7 @@ pub fn assign(
     let needs = required_tools(&m.goal, &m.acceptance);
     let fit: Vec<&AgentCard> = cards
         .iter()
-        .filter(|c| c.installed && c.headless)
+        .filter(|c| c.installed && c.headless && c.disabled.is_none())
         .filter(|c| needs.iter().all(|t| c.tools.iter().any(|x| x == t)))
         .collect();
     if fit.is_empty() {
@@ -426,6 +426,36 @@ mod tests {
             assign(&mission("x", "implementer"), &only_claude, &[], true, 0),
             Defer { .. }
         ));
+    }
+
+    #[test]
+    fn a_disabled_agent_is_never_assigned() {
+        let mut claude = card("claude-code", "claude-subscription", Some(10.0));
+        claude.disabled = Some("its organization disabled Claude Code access".into());
+        assert!(
+            matches!(
+                assign(
+                    &mission("x", "implementer"),
+                    &[claude.clone()],
+                    &[],
+                    true,
+                    0
+                ),
+                Refuse(_)
+            ),
+            "a cut-off agent cannot take the mission"
+        );
+        let with_agy = vec![claude, card("antigravity", "antigravity", None)];
+        assert_eq!(
+            agent_of(&assign(
+                &mission("x", "implementer"),
+                &with_agy,
+                &[],
+                false,
+                0
+            )),
+            "antigravity"
+        );
     }
 
     #[test]

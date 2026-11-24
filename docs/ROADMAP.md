@@ -3,6 +3,23 @@
 Phases are ordered by dependency, not by excitement. Each one lists what it needs from the
 phase before it, so nothing is scheduled that cannot be built yet.
 
+## 2.6.6: any working provider carries the fleet (ready)
+
+- **One legality check for every chooser.** `agent_limits::usable` is installed and neither
+  limited nor disabled. Council seats, asks, mission start, assignment, automation reassignment,
+  stuck handoffs, the bus watcher and automatic review all use it instead of "installed". A
+  revoked subscription is recorded in `agent.disabled.<agent>` with its reason (7 days), an auth
+  failure for 1 hour, and the agent card says `unavailable`.
+- **Reviews fall through to a usable agent.** `review_agent::run_auto` walks
+  `reviewer_candidates` (other provider first); a revoked or rate-limited reviewer is put aside
+  and the next agent judges the same round. Only real failures count, two block the mission, and
+  `suggest_reviewer` picks the reviewer for the board button. The owner's Approve and Reject now
+  record `owner` instead of borrowing an agent name.
+- **Disabled workers are never started.** The bus watcher starts only usable agents, a logged
+  revocation or plan limit hands the task over at once, and a successful turn or reading the
+  cards again in Setup clears the mark. A retry after work finished without a pull request
+  blocks with the reason when no usable agent is left, instead of forcing Hermes.
+
 ## 2.6.5: retry loops stopped (ready)
 
 - **Review failures counted through the start.** `review_agent::auto_in_background` and `run_auto`

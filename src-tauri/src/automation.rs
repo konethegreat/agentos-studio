@@ -46,16 +46,20 @@ pub fn reassign_due(
 /// With no headless agent installed the mission is blocked, never left running with no worker.
 fn reassign(v: &Vault, m: &Mission, task: &str) -> anyhow::Result<String> {
     let from = m.agent.trim().to_lowercase();
-    let Some(to) = crate::bus::best_headless(&from, crate::bus::headless_available) else {
+    let Some(to) = crate::bus::best_headless(&from, crate::agent_limits::usable) else {
         missions::block(
             &m.id,
-            &format!("{from} did not pick this up and no headless agent is installed"),
+            &format!("{from} could not take this and no other headless agent is free"),
             false,
         )?;
         anyhow::bail!("{}: no headless agent to take over", m.id);
     };
+    let why = match crate::agent_limits::blocked_reason_for(&from) {
+        Some(r) => format!("{from} {r}"),
+        None => format!("{from} is IDE only"),
+    };
     let reason = format!(
-        "{from} is IDE only and did not pick this up within {} minutes; reassigned to {to}",
+        "{why}; after {} minutes without progress this was reassigned to {to}",
         ide_wait_minutes()
     );
     v.claim_task(task, to)?;
@@ -99,7 +103,19 @@ fn no_pr_retry(m: &Mission) -> anyhow::Result<String> {
             m.id
         ));
     }
-    let to = crate::bus::best_headless(&from, crate::agent_limits::usable).unwrap_or("hermes");
+    let Some(to) = crate::bus::best_headless(&from, crate::agent_limits::usable) else {
+        missions::block(
+            &m.id,
+            &format!(
+                "{from} finished without a pull request and no other usable headless agent can retry this"
+            ),
+            false,
+        )?;
+        return Ok(format!(
+            "{}: finished without a pull request; no other usable headless agent",
+            m.id
+        ));
+    };
     missions::block(
         &m.id,
         &format!("{from} finished without a pull request"),
@@ -521,7 +537,7 @@ pub fn tick(v: &Vault) -> TickReport {
         if reassign_due(
             m,
             state == Some(State::Pending),
-            crate::bus::headless_available(&agent),
+            crate::agent_limits::usable(&agent),
             chrono::Utc::now().timestamp(),
             ide_wait_minutes() * 60,
         ) {
@@ -1077,7 +1093,7 @@ mod tests {
 
         let report = tick(&v);
         let after = missions::get(&mission.id).unwrap().unwrap();
-        match crate::bus::best_headless("qoder", crate::bus::headless_available) {
+        match crate::bus::best_headless("qoder", crate::agent_limits::usable) {
             Some(to) => {
                 assert_eq!(report.reassigned, vec![format!("{} -> {to}", mission.id)]);
                 assert_eq!(after.agent, to);
@@ -1166,6 +1182,41 @@ mod tests {
         assert_eq!(no_pr_step(1), "block");
         assert_eq!(no_pr_step(5), "block");
         assert_eq!(no_pr_key("M-7"), "mission.nopr.M-7");
+    }
+
+    #[test]
+    fn a_retry_with_no_usable_agent_blocks_instead_of_forcing_hermes() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = crate::store::test_env_lock();
+        crate::store::set_test_db(Some(d.path().join("studio.db")));
+        let m = missions::create(
+            "repo",
+            "goal",
+            "acc",
+            "implementer",
+            "claude-code",
+            "",
+            "",
+            0.0,
+        )
+        .unwrap();
+        crate::agent_limits::mark_disabled("antigravity", 3600, "access revoked");
+        crate::agent_limits::mark_disabled("hermes", 3600, "access revoked");
+        let out = no_pr_retry(&m).unwrap();
+        let after = missions::get(&m.id).unwrap().unwrap();
+        assert_eq!(after.status, "blocked", "{out}");
+        assert_eq!(after.agent, "claude-code", "no forced fallback agent");
+        assert!(
+            after
+                .review_note
+                .as_deref()
+                .is_some_and(|n| n.contains("no other usable headless agent")),
+            "{:?}",
+            after.review_note
+        );
+        crate::agent_limits::clear_disabled("antigravity");
+        crate::agent_limits::clear_disabled("hermes");
+        crate::store::set_test_db(None);
     }
 
     #[test]
@@ -1442,7 +1493,24 @@ mod tests {
         let report = tick(&v);
         assert!(report.moved_to_review.is_empty(), "nothing to review");
         let after = missions::get(&mission.id).unwrap().unwrap();
-        assert_eq!(after.status, "queued", "queued again for another agent");
+        // A bare machine has no second headless agent: blocking with the reason is the honest end.
+        match crate::bus::best_headless("hermes", crate::agent_limits::usable) {
+            Some(to) => {
+                assert_eq!(after.status, "queued", "queued again for another agent");
+                assert_eq!(after.agent, to);
+            }
+            None => {
+                assert_eq!(after.status, "blocked", "no usable agent to retry with");
+                assert!(
+                    after
+                        .review_note
+                        .as_deref()
+                        .is_some_and(|n| n.contains("no other usable headless agent")),
+                    "{:?}",
+                    after.review_note
+                );
+            }
+        }
         assert_eq!(kv(&no_pr_key(&mission.id)).as_deref(), Some("1"));
         missions::delete(&mission.id).unwrap();
         assert!(

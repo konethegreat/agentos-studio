@@ -260,9 +260,9 @@ export function Missions({ repos, target = null }: { repos: string[]; target?: R
   }
 
   async function agentReview(m: Mission) {
-    const reviewer = m.agent === "hermes" ? "claude-code" : "hermes";
     setBusy(true);
     try {
+      const reviewer = await api.suggestReviewer(m.id);
       const r = await api.reviewWithAgent(m.id, reviewer);
       toast("ok", `${reviewer} judged ${r.id}: ${r.review_verdict}`);
       await load();
@@ -287,7 +287,7 @@ export function Missions({ repos, target = null }: { repos: string[]; target?: R
   }
 
   async function judge(m: Mission, verdict: "approve" | "reject") {
-    const reviewer = m.agent === "hermes" ? "claude-code" : "hermes";
+    const reviewer = "owner";
     const note = window.prompt(
       verdict === "approve" ? "Why is this good enough to merge?" : "What must change?",
       verdict === "approve" ? "Acceptance criteria met, tests pass" : "",
@@ -741,7 +741,7 @@ export function Missions({ repos, target = null }: { repos: string[]; target?: R
                     <button
                       onClick={() => void agentReview(m)}
                       disabled={busy}
-                      title={`Ask ${m.agent === "hermes" ? "Claude Code" : "Hermes"} to judge the diff`}
+                      title="Ask another agent that can take work right now to judge the diff"
                       className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-violet-300 ring-1 ring-violet-500/25 hover:bg-violet-500/10 disabled:opacity-50"
                     >
                       <Sparkles className="size-3" /> Agent review

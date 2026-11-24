@@ -260,7 +260,7 @@ pub fn start(v: &Vault, m: &Mission) -> Result<Mission> {
     // Fail before the mission moves if no council can sit.
     seat(
         &crate::agents::hermes_provider(),
-        crate::bus::headless_available,
+        crate::agent_limits::usable,
     )?;
     crate::worktree::create(&dir, m)?;
     set_state(&m.id, &format!("running:{}", store::now()));
@@ -284,7 +284,7 @@ pub fn run(v: &Vault, id: &str) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("{id} has no worktree"))?;
     let (members, synth) = seat(
         &crate::agents::hermes_provider(),
-        crate::bus::headless_available,
+        crate::agent_limits::usable,
     )?;
     let brief = v.project_brief(&m.repo).unwrap_or_default();
     let prompt = position_prompt(&m, &brief);

@@ -148,6 +148,8 @@ pub fn classify(summary: &str) -> (&'static str, Option<String>) {
         || s.contains("expired")
         || s.contains("invalid_grant")
         || s.contains("authentication")
+        || (s.contains("disabled") && s.contains("subscription access"))
+        || (s.contains("organization") && s.contains("disabled") && s.contains("access"))
     {
         "auth"
     } else if s.contains("timed out") || s.contains("timeout") {
@@ -845,6 +847,11 @@ mod tests {
         assert_eq!(f[1].provider, "antigravity-oauth");
         assert_eq!(f[1].kind, "timeout");
         assert_eq!(classify("HTTP 401 Unauthorized: token expired").0, "auth");
+        assert_eq!(
+            classify("Your organization has disabled Claude subscription access for Claude Code").0,
+            "auth",
+            "a revoked subscription needs the owner, not a retry"
+        );
         assert_eq!(classify("[Errno 32] Broken pipe").0, "broken_pipe");
         assert_eq!(classify("HTTP 503 Service Unavailable").0, "server_error");
         assert_eq!(classify("boom").0, "other");
