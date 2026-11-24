@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{ensure, Context, Result};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
-pub(crate) const SCHEMA_VERSION: i64 = 13;
+pub(crate) const SCHEMA_VERSION: i64 = 14;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -307,6 +307,13 @@ CREATE INDEX IF NOT EXISTS reports_at ON reports(at DESC);
 CREATE INDEX IF NOT EXISTS reports_repo ON reports(repo, at DESC);
 ";
 
+/// Retention sweeps compare `at` against a cutoff on every orchestrator pass, so the two tables
+/// without an `at` index get one.
+const MIGRATION_14: &str = "
+CREATE INDEX IF NOT EXISTS idx_audit_at ON audit(at);
+CREATE INDEX IF NOT EXISTS idx_memory_ledger_at ON memory_ledger(at);
+";
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
@@ -419,6 +426,9 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     if v < 13 {
         c.execute_batch(MIGRATION_13)?;
+    }
+    if v < 14 {
+        c.execute_batch(MIGRATION_14)?;
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;

@@ -367,7 +367,12 @@ function Studio() {
         setLines((prev) => {
           const list = prev[ev.task_id] ?? [];
           const next = list.length > 2000 ? list.slice(-1500) : list;
-          return { ...prev, [ev.task_id]: [...next, ev] };
+          const merged = { ...prev, [ev.task_id]: [...next, ev] };
+          const keys = Object.keys(merged);
+          if (keys.length > 64) {
+            for (const key of keys.slice(0, keys.length - 64)) delete merged[key];
+          }
+          return merged;
         });
         if (ev.stream === "exit" || ev.stream === "system") void loadBoard();
         if (ev.stream === "exit") toast("info", `${ev.task_id}: ${ev.line}`);

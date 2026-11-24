@@ -489,8 +489,10 @@ pub fn list_board(state: State<'_, AppState>) -> Board {
 pub fn read_task(state: State<'_, AppState>, task_id: String) -> CmdResult<Value> {
     let v = current_vault(&state);
     let (task, raw) = v.get_task(&task_id).map_err(err)?;
-    let log = std::fs::read_to_string(v.worker_logs().join(format!("{}.log", task.id)))
-        .unwrap_or_default();
+    let log = crate::bus::read_log_tail(
+        &v.worker_logs().join(format!("{}.log", task.id)),
+        crate::bus::LOG_TAIL_BYTES,
+    );
     Ok(json!({"task": task, "markdown": raw, "log": log}))
 }
 

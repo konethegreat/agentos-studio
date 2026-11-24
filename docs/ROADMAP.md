@@ -15,6 +15,15 @@ phase before it, so nothing is scheduled that cannot be built yet.
   even if `gh pr create` fails, because Studio opens the pull request from the branch.
 - **Read-only `gh` and search additions.** `routing::BASE_TOOLS` gains `rg`, `gh search` and
   `gh api repos/*/readme`, mirrored for Antigravity as command regexes.
+- **Bounded worker context.** `bus::clip_spec` keeps the head and tail of a long task body
+  (`SPEC_MAX_CHARS` 12,000) with a trim marker, because the activity log appended per event used
+  to reach the worker whole.
+- **Worker log rotation.** `bus::rotate_log` moves a log past 5 MB to `<task>.log.1` before the
+  next run, and `bus::read_log_tail` returns the last 256 KB to the drawer instead of the file.
+- **Store retention.** `retention::prune` runs after `reports::prune` on every orchestrator pass:
+  audit and answered escalations after 30 days, agent events, context events and memory ledger
+  after 90, open escalations never. Schema 14 adds the `at` indexes.
+- **Bounded drawer state.** `App.tsx` keeps live worker lines for at most 64 task ids.
 
 ## 2.6.3: scheduler dead ends closed (shipped)
 

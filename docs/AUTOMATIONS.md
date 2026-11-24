@@ -126,6 +126,8 @@ deliberately boring.
   branch with uncommitted edits or no changes at all leaves the task open for the stuck retry, with
   the denied command from the output tail in the note. Read-only introspection stays allowed
   (`rg`, `gh search`, `gh api repos/*/readme`), because one denied command ends a headless run.
+  The worker prompt carries the head and tail of a long task body (12,000 characters) rather than
+  its whole activity history, and a log past 5 MB rotates to `<task>.log.1` before the next run.
 - **Workers inherit nothing.** Every headless worker starts with a cleared environment rebuilt
   from the allowlist on the Safety card (PATH as Studio's own search path, temp and profile
   folders, Windows basics), plus `AGENTOS_VAULT`, `AGENTOS_REPO` (the task's project, which scopes
@@ -181,7 +183,9 @@ deliberately boring.
   orchestrator answers the safe answer stands. Only a `destructive` escalation whose question
   matches an owner pattern (production, credentials, an API key, a secret, payments, billing, an
   invoice) is left for the owner. Every step writes a report row, which is what the Reports view
-  reads.
+  reads. The same pass prunes the store: reports past 2,000 rows, then `retention::prune` drops
+  audit rows and answered escalations older than 30 days and agent, context and memory-ledger rows
+  older than 90, so the store stays flat as the fleet runs.
 - **Budgets** count only metered providers: the spend is read from Hermes usage data in `state.db`
   (worker sessions and Hermes reviewer sessions); subscriptions count zero. A Hermes mission whose
   metered spend passes its budget is blocked.

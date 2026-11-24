@@ -294,6 +294,7 @@ pub fn pass() -> PassReport {
     }
     if let Ok(c) = store::open() {
         let _ = reports::prune(&c, reports::KEEP);
+        let _ = crate::retention::prune(&c, now);
     }
     out
 }

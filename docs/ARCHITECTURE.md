@@ -144,6 +144,7 @@ the first paint is never competing with a full probe.
 | `pause.rs` | The fleet pause switch: kv `fleet.paused` gates starting, merging and applying answers, and drives `hermes pause` and `hermes resume`. |
 | `orchestrator.rs` | One pass after every scheduler tick: answers routine escalations (`by = orchestrator`), routes queued missions to an agent and unsticks running missions that never got a task id (retry once, then block with the reason). `Status` returns enabled and paused state, running, queued and blocked counts, auto-answers today and the short `needs_you` list. Only escalations marked destructive or matching an owner pattern are passed through. Toggle in kv `orchestrator.enabled` (default on). |
 | `reports.rs` | The fleet record (schema 13): `record`/`record_here` write one row per step (mission started, routed, reviewed, merged, blocked and unstuck, escalation answered, autonomy pass, digest, fleet report, update applied) with kind, repo, title, body and an optional reference. `list`, `summary`, `count_kind_since`, `unread` and `mark_read` (cursor `reports.read_until`, forward only) back the Reports view and its badge; rows prune past 2000. |
+| `retention.rs` | Time window for the store tables that only grow: audit and answered escalations 30 days, agent events, context events and the memory ledger 90 days. Runs after `reports::prune` on every orchestrator pass; open escalations are never touched. Schema 14 adds the `at` indexes its deletes use. |
 
 ### Approval flow
 
