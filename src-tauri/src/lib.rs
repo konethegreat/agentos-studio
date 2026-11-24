@@ -85,6 +85,7 @@ pub mod provider_health;
 pub mod pty;
 pub mod quota_grid;
 pub mod receipts;
+pub mod reopen;
 pub mod reports;
 pub mod retention;
 pub mod review_agent;
@@ -548,6 +549,8 @@ pub fn run_gui() {
             commands::set_repo_autonomy,
             commands::goal_plan,
             commands::goal_approve_plan,
+            commands::goal_reopen,
+            commands::goal_resume,
             commands::escalations_list,
             commands::escalation_answer,
             commands::escalation_settings,

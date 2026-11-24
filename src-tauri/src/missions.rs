@@ -450,6 +450,38 @@ pub fn dispatch(id: &str, task_id: &str) -> Result<Mission> {
     get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
 }
 
+/// Put a failed mission back in the queue for a new attempt. The previous attempt's pull request,
+/// task and review state are dropped so the new round is judged on its own work; the note should
+/// name the old pull request when there was one. Spend and budget stay: the money was spent.
+pub fn reopen(id: &str, note: &str) -> Result<Mission> {
+    let c = store::open()?;
+    set_status(&c, id, &["failed"], "queued")?;
+    c.execute(
+        "UPDATE missions SET review_note = ?1, updated_at = ?2, task_id = NULL, reviewer = NULL,
+                review_verdict = NULL, pr_url = NULL, verify_json = NULL
+         WHERE id = ?3",
+        params![note.trim(), now(), id],
+    )?;
+    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+}
+
+/// Stop a mission where it is: paused, not failed. A stop is the owner's decision about one
+/// mission, while its goal keeps its other work; Resume puts it back in the queue.
+pub fn stop(id: &str, reason: &str) -> Result<Mission> {
+    let c = store::open()?;
+    set_status(
+        &c,
+        id,
+        &["queued", "running", "blocked", "review"],
+        "paused",
+    )?;
+    c.execute(
+        "UPDATE missions SET review_note = ?1, updated_at = ?2 WHERE id = ?3",
+        params![reason.trim(), now(), id],
+    )?;
+    get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))
+}
+
 /// Hand a running mission to another agent (an IDE agent that never picked it up). The reason
 /// is kept in kv `mission.note.<id>` so the board can show why the agent changed.
 pub fn reassign(id: &str, agent: &str, reason: &str) -> Result<Mission> {
@@ -829,6 +861,90 @@ mod tests {
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].id, m.id);
             assert_eq!(rows[0].status, "running");
+        });
+    }
+
+    #[test]
+    fn stop_pauses_a_mission_and_resume_queues_it_again() {
+        with_db(|| {
+            let m = create(
+                "r",
+                "goal",
+                "tests pass",
+                "implementer",
+                "hermes",
+                "anthropic",
+                "claude",
+                0.0,
+            )
+            .unwrap();
+            let stopped = stop(&m.id, "Stopped by the owner").unwrap();
+            assert_eq!(stopped.status, "paused");
+            assert_eq!(stopped.review_note.as_deref(), Some("Stopped by the owner"));
+            let back = resume(&m.id, "queued").unwrap();
+            assert_eq!(back.status, "queued");
+            assert!(back.review_note.is_none());
+        });
+    }
+
+    #[test]
+    fn reopen_requeues_a_failed_mission_without_its_previous_round() {
+        with_db(|| {
+            let m = create(
+                "r",
+                "goal",
+                "tests pass",
+                "implementer",
+                "hermes",
+                "anthropic",
+                "claude",
+                0.0,
+            )
+            .unwrap();
+            let c = store::open().unwrap();
+            c.execute(
+                "UPDATE missions SET status = 'failed', task_id = 'kanban:t_1',
+                        reviewer = 'antigravity', review_verdict = 'approve',
+                        pr_url = 'https://github.com/x/y/pull/1', verify_json = '{}',
+                        spent_usd = 1.5
+                 WHERE id = ?1",
+                params![m.id],
+            )
+            .unwrap();
+            let r = reopen(&m.id, "Reopened for a new attempt; the previous pull request was https://github.com/x/y/pull/1.").unwrap();
+            assert_eq!(r.status, "queued");
+            assert!(r.task_id.is_none(), "a new attempt gets its own task");
+            assert!(r.reviewer.is_none());
+            assert!(r.review_verdict.is_none());
+            assert!(r.pr_url.is_none(), "the old pull request is not reused");
+            assert!(r.verify.is_none(), "the old verify output is not reused");
+            assert_eq!(r.spent_usd, 1.5, "money spent is still spent");
+            assert!(r
+                .review_note
+                .as_deref()
+                .is_some_and(|n| n.contains("previous pull request")));
+        });
+    }
+
+    #[test]
+    fn only_a_failed_mission_reopens_and_only_an_unfinished_one_stops() {
+        with_db(|| {
+            let m = create(
+                "r",
+                "goal",
+                "tests pass",
+                "implementer",
+                "hermes",
+                "",
+                "",
+                0.0,
+            )
+            .unwrap();
+            assert!(reopen(&m.id, "x").is_err(), "queued work is not reopened");
+            let done = block(&m.id, "no", true).unwrap();
+            assert_eq!(done.status, "failed");
+            assert!(stop(&m.id, "x").is_err(), "failed work is not stopped");
+            assert_eq!(reopen(&m.id, "x").unwrap().status, "queued");
         });
     }
 

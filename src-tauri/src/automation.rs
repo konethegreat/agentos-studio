@@ -452,6 +452,8 @@ pub struct TickReport {
     pub escalated: Vec<String>,
     /// Goals whose done checks all passed this pass.
     pub goals_done: Vec<String>,
+    /// Failed goals reopened this pass, by the controlled automatic round.
+    pub reopened: Vec<String>,
     /// Fix missions created for failing done checks.
     pub fix_missions: Vec<String>,
     /// The fleet pause switch is on: nothing new starts or merges this pass.
@@ -625,6 +627,15 @@ pub fn tick(v: &Vault) -> TickReport {
     report.goals_done = co.done;
     report.fix_missions = co.fix_missions;
     report.escalated.extend(co.escalated);
+    if !report.paused {
+        // 1e. Controlled reopening: one failed goal goes back into the queue when nothing is
+        // queued, so a reopened batch is always drained before the next one opens.
+        let ro = crate::reopen::step(v);
+        report.reopened = ro.reopened;
+        if let Some(e) = ro.error {
+            report.error.get_or_insert(e);
+        }
+    }
     if let Some(e) = gp.errors.first() {
         report.error.get_or_insert_with(|| e.clone());
     }

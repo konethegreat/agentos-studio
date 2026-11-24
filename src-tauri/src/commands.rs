@@ -2238,6 +2238,38 @@ pub async fn goal_approve_plan(
     .await
 }
 
+/// Reopen a failed goal: every failed mission is queued for a new attempt under the same goal.
+#[tauri::command]
+pub async fn goal_reopen(state: State<'_, AppState>, id: String) -> CmdResult<GoalDetail> {
+    let v = current_vault(&state);
+    blocking(move || {
+        crate::reopen::reopen_goal(&v, &id, "you")?;
+        // A hand reopen is the goal's round: the automatic pass leaves it alone from here.
+        crate::reopen::mark_round_taken(&id);
+        let _ = crate::automation::tick(&v);
+        goal_detail_of(&id)
+    })
+    .await
+}
+
+/// Resume a goal a stop paused. Missions stopped with it stay paused until they are restarted.
+#[tauri::command]
+pub async fn goal_resume(state: State<'_, AppState>, id: String) -> CmdResult<crate::goals::Goal> {
+    let v = current_vault(&state);
+    blocking(move || {
+        let g = crate::goals::set_status(
+            &id,
+            &["paused"],
+            "running",
+            "Resumed by you. Missions stopped with the goal stay paused until restarted.",
+        )?;
+        let _ = crate::goals::write_note(&v, &id);
+        let _ = crate::automation::tick(&v);
+        Ok(g)
+    })
+    .await
+}
+
 /// Open escalations first: the questions waiting on the owner.
 #[tauri::command]
 pub async fn escalations_list(

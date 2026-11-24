@@ -1459,6 +1459,8 @@ export const api = {
   deleteGoal: (id: string) => invoke<void>("goal_delete", { id }),
   planGoal: (id: string) => invoke<Goal>("goal_plan", { id }),
   approveGoalPlan: (id: string) => invoke<Goal>("goal_approve_plan", { id }),
+  reopenGoal: (id: string) => invoke<GoalDetail>("goal_reopen", { id }),
+  resumeGoal: (id: string) => invoke<Goal>("goal_resume", { id }),
   escalations: (limit = 100) => invoke<Escalation[]>("escalations_list", { limit }),
   answerEscalation: (id: string, answer: string) => invoke<Escalation>("escalation_answer", { id, answer }),
   escalationSettings: () => invoke<{ timeout_minutes: number; notify_target: string | null }>("escalation_settings"),

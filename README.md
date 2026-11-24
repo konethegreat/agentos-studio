@@ -35,6 +35,20 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.6.7
+
+Stopped and failed work is no longer a dead end.
+
+- **A stop pauses instead of failing the goal.** A `stop` answer pauses the mission and its goal,
+  so the queued siblings that used to be cancelled with it keep their state. Resume goal returns
+  the goal to running, and each paused mission resumes on its own. Only budget, planner and
+  done-check stops still fail the goal.
+- **Failed goals reopen in capped rounds.** When nothing else is queued, the scheduler reopens one
+  failed goal per pass, oldest first and one per repository, with the previous round cleared and
+  the spend kept. Each goal gets one automatic round; the Reopen button on a failed goal queues
+  every failed mission at once. `AGENTOS_REOPEN_BUDGET` (`<goals>/<missions>`, default `1/6`) caps
+  an automatic pass. [docs/GOALS.md](docs/GOALS.md) has the full rules.
+
 ## What is new in 2.6.6
 
 One subscription going dark no longer stops the fleet.
