@@ -308,6 +308,13 @@ pub fn goal_from_body(body: &str) -> Option<String> {
     re.captures(body).map(|c| c[1].to_uppercase())
 }
 
+/// The mission a bus task belongs to, from the `Mission: M-141.` line every mission task carries.
+/// A task without it is ordinary bus work and keeps the old exit rule. Pure.
+pub fn mission_from_body(body: &str) -> Option<String> {
+    let re = Regex::new(r"(?i)\bMission:\s*(M-\d+)").expect("static regex");
+    re.captures(body).map(|c| c[1].to_uppercase())
+}
+
 /// The repository policy's tool rules plus the runners this task needs: the goal's own command
 /// checks and the build families its checkout uses. A worker told to keep checks green must be
 /// able to run them; one denied command ends an Antigravity run before it can commit or open the
@@ -897,9 +904,24 @@ pub fn spawn_worker(
             .get_task(&tid)
             .map(|(t, _)| t.state == State::InProgress)
             .unwrap_or(false);
-        let note = match code {
-            Some(0) if still_open => {
-                let tail_text = tail.lock().map(|t| t.join("\n")).unwrap_or_default();
+        let tail_text = tail.lock().map(|t| t.join("\n")).unwrap_or_default();
+        let mission_note = if still_open {
+            let (v, t, a, text) = (
+                vault.clone(),
+                tid.clone(),
+                agent_s.clone(),
+                tail_text.clone(),
+            );
+            tauri::async_runtime::spawn_blocking(move || close_after_worker_exit(&v, &t, &a, &text))
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        let note = match (mission_note, code) {
+            (Some(note), _) => note,
+            (None, Some(0)) if still_open => {
                 let summary = format!(
                     "{agent_s} worker exited cleanly but did not call complete_task, so AgentOS Studio closed it.\n\nOutput tail:\n\n```text\n{tail_text}\n```"
                 );
@@ -908,8 +930,8 @@ pub fn spawn_worker(
                     Err(e) => format!("clean exit; could not complete task: {e:#}"),
                 }
             }
-            Some(0) => "clean exit; the agent closed the task itself".to_string(),
-            other => {
+            (None, Some(0)) => "clean exit; the agent closed the task itself".to_string(),
+            (None, other) => {
                 let _ = vault.log_activity(&tid, &format!("{agent_s} worker exited with {other:?}; see 04_Agent_Engine/worker_logs/{tid}.log"));
                 format!("worker exited with {other:?}; task left in progress")
             }
@@ -917,6 +939,92 @@ pub fn spawn_worker(
         let _ = app.emit(EV_WORKER, json!({"task_id": tid, "stream": "exit", "line": note, "code": code, "at": crate::vault::now()}));
     });
     Ok(info)
+}
+
+/// Close a mission task whose worker exited without calling complete_task. Only what the branch
+/// holds decides: commits are pushed and opened as a pull request, and only then is the task
+/// completed. An attempt that changed nothing stays open for the stuck check, because a denied
+/// command must never reach the mission as finished work with no pull request to review. Returns
+/// None for ordinary bus work, which keeps the clean-exit rule it has always had.
+fn close_after_worker_exit(vault: &Vault, tid: &str, agent: &str, tail: &str) -> Option<String> {
+    let body = vault.get_task(tid).ok()?.0.body;
+    let mission_id = mission_from_body(&body)?;
+    let worktree = worktree_from_body(&body)?;
+    let branch = line_value(&body, "Branch").unwrap_or_default();
+    match crate::pr_recovery::classify(
+        crate::pr_recovery::ahead(&worktree),
+        crate::pr_recovery::dirty(&worktree),
+    ) {
+        crate::pr_recovery::Output::Commits(n) => {
+            let (title, pr_body) = match crate::missions::get(&mission_id).ok().flatten() {
+                Some(m) => (
+                    first_line(&m.goal, 72),
+                    format!(
+                        "{}\n\nAcceptance criteria:\n{}\n\nOpened by AgentOS Studio: {agent} left {n} commit(s) on `{branch}` without a pull request.",
+                        m.goal.trim(),
+                        m.acceptance.trim()
+                    ),
+                ),
+                None => (
+                    format!("{mission_id}: work finished by {agent}"),
+                    format!("Opened by AgentOS Studio from task {tid}."),
+                ),
+            };
+            match crate::pr_recovery::deliver(&worktree, &branch, &title, &pr_body) {
+                Ok(url) => {
+                    let summary = format!(
+                        "{agent} worker exited without calling complete_task. Its branch {branch} carried {n} commit(s) and no pull request, so AgentOS Studio pushed it and opened {url}."
+                    );
+                    match vault.complete_task(tid, agent, &summary) {
+                        Ok(_) => {
+                            let _ = vault.log_activity(
+                                tid,
+                                &format!("AgentOS Studio opened {url} from branch {branch}"),
+                            );
+                            Some(format!(
+                                "{n} commit(s) on {branch} without a pull request; opened {url}"
+                            ))
+                        }
+                        Err(e) => Some(format!("opened {url}; could not complete the task: {e:#}")),
+                    }
+                }
+                Err(e) => {
+                    let note = format!(
+                        "{n} commit(s) on {branch} but no pull request; opening it failed: {e:#}. The task stays open for a retry."
+                    );
+                    let _ = vault.log_activity(tid, &note);
+                    Some(note)
+                }
+            }
+        }
+        crate::pr_recovery::Output::Uncommitted => {
+            let note = format!(
+                "{agent} left uncommitted changes on {branch} and no pull request{}; the task stays open for a retry",
+                crate::pr_recovery::denied_hint(tail)
+            );
+            let _ = vault.log_activity(tid, &note);
+            Some(note)
+        }
+        crate::pr_recovery::Output::Empty => {
+            let note = format!(
+                "{agent} exited without changing the repository: no commits or edits on {branch}{}; the task stays open for a retry",
+                crate::pr_recovery::denied_hint(tail)
+            );
+            let _ = vault.log_activity(tid, &note);
+            Some(note)
+        }
+    }
+}
+
+/// The first line of a goal, cut to a pull request title length. Pure.
+fn first_line(text: &str, max: usize) -> String {
+    text.lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .chars()
+        .take(max)
+        .collect()
 }
 
 pub fn stop_worker(
@@ -1313,6 +1421,72 @@ mod tests {
         assert_eq!(repo_from_body(&body).unwrap(), d.path());
         assert!(repo_from_body("Repository: Z:/does/not/exist").is_none());
         assert!(repo_from_body("no repository line").is_none());
+    }
+
+    #[test]
+    fn a_mission_task_names_its_mission() {
+        let body = "Build it.\n\nMission: M-158. Role: implementer. Provider: default.\n";
+        assert_eq!(mission_from_body(body).as_deref(), Some("M-158"));
+        assert_eq!(mission_from_body("Mission: m-006"), Some("M-006".into()));
+        assert!(mission_from_body("Part of goal G-003: build it").is_none());
+        assert!(mission_from_body("ordinary bus work").is_none());
+    }
+
+    #[test]
+    fn a_worker_that_changed_nothing_leaves_its_mission_task_open() {
+        let d = tempfile::tempdir().unwrap();
+        let v = Vault::new(d.path().join("vault"));
+        v.scaffold().unwrap();
+        let repo = d.path().join("repo");
+        let wt = repo.join(".worktrees").join("m-001-1");
+        fs::create_dir_all(&wt).unwrap();
+        let id = v
+            .delegate_task(DelegateArgs {
+                title: "no-op".into(),
+                assigned_to: "antigravity".into(),
+                creator: "test".into(),
+                project: "repo".into(),
+                context_files: Vec::new(),
+                instructions: format!(
+                    "Do it.\n\nMission: M-001. Role: implementer. Provider: default.\n\nRepository: {}\nWorktree: {}\nBranch: agentos/m-001-1",
+                    repo.display(),
+                    wt.display()
+                ),
+                priority: "high".into(),
+            })
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        v.claim_task(&id, "antigravity").unwrap();
+        let note = close_after_worker_exit(&v, &id, "antigravity", "denied: [\"gh api\"]")
+            .expect("a mission task is judged by its branch");
+        assert!(note.contains("stays open for a retry"), "{note}");
+        assert!(note.contains("gh api"), "the denial is named: {note}");
+        assert_eq!(v.get_task(&id).unwrap().0.state, State::InProgress);
+    }
+
+    #[test]
+    fn ordinary_bus_work_keeps_its_clean_exit_rule() {
+        let d = tempfile::tempdir().unwrap();
+        let v = Vault::new(d.path().join("vault"));
+        v.scaffold().unwrap();
+        let id = v
+            .delegate_task(DelegateArgs {
+                title: "report".into(),
+                assigned_to: "claude-code".into(),
+                creator: "test".into(),
+                project: "repo".into(),
+                context_files: Vec::new(),
+                instructions: format!("Check the logs.\n\nRepository: {}", d.path().display()),
+                priority: "low".into(),
+            })
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        v.claim_task(&id, "claude-code").unwrap();
+        assert!(close_after_worker_exit(&v, &id, "claude-code", "").is_none());
     }
 
     #[test]

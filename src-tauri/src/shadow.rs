@@ -13,8 +13,11 @@ use serde::{Deserialize, Serialize};
 use crate::escalation::{self, Escalation};
 use crate::store;
 
-/// Classes Shadow never answers: they are the owner's standing switches.
-pub const NEVER: [&str; 3] = ["budget", "destructive", "merge_allow_list"];
+/// Classes Shadow never answers: they are the owner's standing switches, or a retry cannot make
+/// them better. A worker that finished without a pull request needs a different executor or a
+/// decision about the work itself, so that one goes to the owner and to the orchestrator's bounded
+/// reroute, never to a silent retry loop.
+pub const NEVER: [&str; 4] = ["budget", "destructive", "merge_allow_list", "no_pr"];
 
 /// Every reason class, in the order the Autonomy screen lists them.
 pub const CLASSES: [&str; 12] = [
@@ -1009,8 +1012,8 @@ mod tests {
             id: "E-101".into(),
             goal_id: None,
             mission_id: Some("M-1".into()),
-            kind: "no_pr".into(),
-            question: "Agent finished without opening a pull request".into(),
+            kind: "stuck".into(),
+            question: "M-1 is blocked after its retry: something new. Retry it, or stop it?".into(),
             options: vec!["retry".into(), "stop".into()],
             safe_answer: "stop".into(),
             deadline_at: 3700,
@@ -1036,6 +1039,41 @@ mod tests {
                 .into())
             });
         assert!(blocked.is_none());
+        crate::store::set_test_db(None);
+    }
+
+    #[test]
+    fn a_missing_pull_request_is_never_answered_by_shadow() {
+        let _g = crate::store::test_env_lock();
+        let d = tempfile::tempdir().unwrap();
+        crate::store::set_test_db(Some(d.path().join("s.db")));
+        let e = Escalation {
+            id: "E-301".into(),
+            goal_id: None,
+            mission_id: Some("M-158".into()),
+            kind: "stuck".into(),
+            question: NO_PR.into(),
+            options: vec!["retry".into(), "stop".into()],
+            safe_answer: "stop".into(),
+            deadline_at: 3700,
+            status: "open".into(),
+            answer: None,
+            answered_by: None,
+            created_at: 100,
+            answered_at: None,
+        };
+        assert_eq!(reason_class(&e.kind, &e.question), "no_pr");
+        assert!(
+            decide(&e, &[], Some("retry")).is_none(),
+            "a standing retry must not turn a no-pull-request mission into a loop"
+        );
+        assert!(judge_novel(&e, &[], &|_| {
+            Ok(
+                r#"{"answer":"retry","confidence":0.99,"violates_policy":false,"reason":"x"}"#
+                    .into(),
+            )
+        })
+        .is_none());
         crate::store::set_test_db(None);
     }
 

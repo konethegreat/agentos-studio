@@ -35,6 +35,24 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.6.4
+
+Finished work reaches GitHub even when the worker does not.
+
+- **Delivery on worker exit.** When a mission worker exits without calling `complete_task`,
+  Studio reads its branch: commits ahead of the base are pushed and opened as a pull request, and
+  only then is the task completed. A branch with uncommitted edits or no changes leaves the task
+  open for the stuck retry, and the note names the denied command from the output tail. Nothing a
+  worker produces is left sitting only on a local branch.
+- **Shadow never answers a missing pull request.** `no_pr` joins `budget`, `destructive` and
+  `merge_allow_list` as a class Shadow refuses, so a completion with no pull request waits for a
+  real decision instead of being retried away.
+- **The brief demands the push.** Mission instructions now say to commit and push even when
+  `gh pr create` fails, because Studio opens the pull request from the branch.
+- **Fewer self-inflicted denials.** Headless workers may run `rg`, `gh search` and read another
+  repository's README through `gh api repos/*/readme`, read-only calls that previously ended a run
+  at the first use.
+
 ## What is new in 2.6.3
 
 The scheduler no longer leaves work in the queue for ever.

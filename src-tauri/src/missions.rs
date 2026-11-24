@@ -327,7 +327,7 @@ pub fn bus_instructions(
     conventions: &str,
 ) -> String {
     let mut b = format!(
-        "{}\n\nAcceptance criteria:\n{}\n\nMission: {}. Role: {}. Provider: {}.\n\nWork in a branch, open a pull request with gh, and put the pull request URL in your complete_task summary. Do not merge: AgentOS Studio reviews and merges.",
+        "{}\n\nAcceptance criteria:\n{}\n\nMission: {}. Role: {}. Provider: {}.\n\nWork in a branch, open a pull request with gh, and put the pull request URL in your complete_task summary. Commit and push your changes before you finish: if gh pr create fails, still commit and push, because AgentOS Studio opens the pull request from the branch. Do not merge: AgentOS Studio reviews and merges.",
         m.goal.trim(),
         m.acceptance.trim(),
         m.id,

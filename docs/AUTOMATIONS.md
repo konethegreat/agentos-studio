@@ -119,6 +119,13 @@ deliberately boring.
   to the repository's local `.git/info/exclude`, so no tracked file changes. The task carries
   `Worktree:` and `Branch:` lines, the worker runs there, and the worktree is removed when the
   mission is done or failed (the branch stays, it is the pull request).
+- **A worker cannot finish without delivery.** The task brief tells a headless worker to commit and
+  push even when `gh pr create` fails. When a mission worker exits without calling `complete_task`,
+  `bus::close_after_worker_exit` reads its branch (`pr_recovery::classify`): commits ahead of the
+  base are pushed and opened as a pull request by Studio, and only then is the task completed; a
+  branch with uncommitted edits or no changes at all leaves the task open for the stuck retry, with
+  the denied command from the output tail in the note. Read-only introspection stays allowed
+  (`rg`, `gh search`, `gh api repos/*/readme`), because one denied command ends a headless run.
 - **Workers inherit nothing.** Every headless worker starts with a cleared environment rebuilt
   from the allowlist on the Safety card (PATH as Studio's own search path, temp and profile
   folders, Windows basics), plus `AGENTOS_VAULT`, `AGENTOS_REPO` (the task's project, which scopes

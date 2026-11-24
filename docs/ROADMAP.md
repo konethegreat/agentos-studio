@@ -3,6 +3,19 @@
 Phases are ordered by dependency, not by excitement. Each one lists what it needs from the
 phase before it, so nothing is scheduled that cannot be built yet.
 
+## 2.6.4: every finished mission reaches GitHub (ready)
+
+- **Delivery on worker exit.** `bus::close_after_worker_exit` runs when a mission worker exits with
+  its task still open: `pr_recovery::classify` reads the branch, committed work is pushed and
+  opened as a pull request (`pr_recovery::deliver`) before the task is completed, uncommitted or
+  empty work leaves the task open for the stuck retry with the denied command in the note.
+- **No-PR is the owner's.** `shadow::NEVER` now includes `no_pr`, so Shadow cannot retry a
+  completion with no pull request away; the escalation waits for a human answer.
+- **Brief requires the push.** `missions::bus_instructions` tells the worker to commit and push
+  even if `gh pr create` fails, because Studio opens the pull request from the branch.
+- **Read-only `gh` and search additions.** `routing::BASE_TOOLS` gains `rg`, `gh search` and
+  `gh api repos/*/readme`, mirrored for Antigravity as command regexes.
+
 ## 2.6.3: scheduler dead ends closed (shipped)
 
 - **Oldest-first dispatch.** `automation::dispatch_order` starts queued missions oldest first;
