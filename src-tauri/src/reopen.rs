@@ -158,7 +158,12 @@ pub fn reopen_goal(v: &Vault, id: &str, by: &str) -> Result<Vec<String>> {
     }
     // Running first: the scheduler must never see missions queued under a failed goal, where it
     // would stop them as orphans before they could start.
-    goals::set_status(id, &["failed"], "running", "Reopening: queueing the failed work again.")?;
+    goals::set_status(
+        id,
+        &["failed"],
+        "running",
+        "Reopening: queueing the failed work again.",
+    )?;
     let mut reopened = Vec::new();
     for m in all {
         if m.status != "failed" {
@@ -305,9 +310,27 @@ mod tests {
 
     #[test]
     fn the_budget_is_goals_over_missions_with_a_floor_and_a_ceiling() {
-        assert_eq!(parse_budget("2/8"), Budget { goals: 2, missions: 8 });
-        assert_eq!(parse_budget("0/0"), Budget { goals: 1, missions: 1 });
-        assert_eq!(parse_budget("9/99"), Budget { goals: 5, missions: 24 });
+        assert_eq!(
+            parse_budget("2/8"),
+            Budget {
+                goals: 2,
+                missions: 8
+            }
+        );
+        assert_eq!(
+            parse_budget("0/0"),
+            Budget {
+                goals: 1,
+                missions: 1
+            }
+        );
+        assert_eq!(
+            parse_budget("9/99"),
+            Budget {
+                goals: 5,
+                missions: 24
+            }
+        );
         assert_eq!(parse_budget("junk"), DEFAULT_BUDGET);
         assert_eq!(parse_budget("2/8/1"), DEFAULT_BUDGET);
     }
@@ -322,8 +345,14 @@ mod tests {
             b
         )
         .is_none());
-        let why = hold_reason(&[mission("M-1", "r", "failed"), mission("M-2", "r", "running")], b)
-            .unwrap();
+        let why = hold_reason(
+            &[
+                mission("M-1", "r", "failed"),
+                mission("M-2", "r", "running"),
+            ],
+            b,
+        )
+        .unwrap();
         assert!(why.contains("M-2 is running"), "{why}");
         assert!(hold_reason(&[mission("M-1", "r", "blocked")], b).is_some());
         let seven: Vec<Mission> = (1..=7)
@@ -358,11 +387,23 @@ mod tests {
             ),
         ];
         assert_eq!(
-            select(&batch, Budget { goals: 2, missions: 6 }),
+            select(
+                &batch,
+                Budget {
+                    goals: 2,
+                    missions: 6
+                }
+            ),
             vec!["G-001".to_string(), "G-003".to_string()]
         );
         assert_eq!(
-            select(&batch, Budget { goals: 1, missions: 6 }),
+            select(
+                &batch,
+                Budget {
+                    goals: 1,
+                    missions: 6
+                }
+            ),
             vec!["G-001".to_string()]
         );
     }
@@ -397,8 +438,17 @@ mod tests {
     }
 
     fn mission_in(g: &Goal, repo: &str) -> Mission {
-        let m = missions::create(repo, &g.id, "accept", "implementer", "claude-code", "", "", 0.0)
-            .unwrap();
+        let m = missions::create(
+            repo,
+            &g.id,
+            "accept",
+            "implementer",
+            "claude-code",
+            "",
+            "",
+            0.0,
+        )
+        .unwrap();
         goals::attach(&g.id, &m.id).unwrap();
         m
     }
@@ -444,16 +494,19 @@ mod tests {
             assert!(after.review_verdict.is_none() && after.task_id.is_none());
             assert_eq!(after.spent_usd, 1.5, "the money was spent");
             assert!(after.review_note.as_deref().unwrap().contains("pull/9"));
-            assert!(crate::escalation::get(&e.id).unwrap().is_none(), "its questions are gone");
+            assert!(
+                crate::escalation::get(&e.id).unwrap().is_none(),
+                "its questions are gone"
+            );
             assert!(crate::goal_loop::merge_outcome(&m.id).is_none());
             assert_eq!(crate::goal_loop::rejects(&m.id), 0);
             assert!(!crate::goal_loop::held(&m.id));
-            assert_eq!(
-                goals::get(&g.id).unwrap().unwrap().status,
-                "running"
-            );
+            assert_eq!(goals::get(&g.id).unwrap().unwrap().status, "running");
             let note = goals::get(&g.id).unwrap().unwrap().note;
-            assert!(note.contains("Reopened by you") && note.contains(&m.id), "{note}");
+            assert!(
+                note.contains("Reopened by you") && note.contains(&m.id),
+                "{note}"
+            );
             assert_eq!(
                 missions::get(&done.id).unwrap().unwrap().status,
                 "blocked",

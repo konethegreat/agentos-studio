@@ -469,7 +469,12 @@ pub fn reopen(id: &str, note: &str) -> Result<Mission> {
 /// mission, while its goal keeps its other work; Resume puts it back in the queue.
 pub fn stop(id: &str, reason: &str) -> Result<Mission> {
     let c = store::open()?;
-    set_status(&c, id, &["queued", "running", "blocked", "review"], "paused")?;
+    set_status(
+        &c,
+        id,
+        &["queued", "running", "blocked", "review"],
+        "paused",
+    )?;
     c.execute(
         "UPDATE missions SET review_note = ?1, updated_at = ?2 WHERE id = ?3",
         params![reason.trim(), now(), id],

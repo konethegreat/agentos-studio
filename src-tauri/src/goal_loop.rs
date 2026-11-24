@@ -1173,11 +1173,7 @@ mod tests {
         apply(&v, &answered).expect("a stop answer must always take effect");
         let stopped = missions::get(&m.id).unwrap().unwrap();
         assert_eq!(stopped.status, "paused", "the stopped mission is resumable");
-        assert!(stopped
-            .review_note
-            .as_deref()
-            .unwrap()
-            .contains("E-1 stop"));
+        assert!(stopped.review_note.as_deref().unwrap().contains("E-1 stop"));
         assert_eq!(goals::get(&g.id).unwrap().unwrap().status, "paused");
         assert_eq!(
             missions::get(&sibling.id).unwrap().unwrap().status,

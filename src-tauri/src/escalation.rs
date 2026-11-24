@@ -582,11 +582,22 @@ mod tests {
             let c = store::open().unwrap();
             store::kv_set(&c, &applied_key(&stuck.id), "1").unwrap();
 
-            assert_eq!(delete_for_mission("M-001", &["stuck", "destructive"]).unwrap(), 1);
+            assert_eq!(
+                delete_for_mission("M-001", &["stuck", "destructive"]).unwrap(),
+                1
+            );
             assert!(get(&stuck.id).unwrap().is_none());
-            assert!(store::kv_get(&c, &applied_key(&stuck.id)).unwrap().is_none());
-            assert!(get(&budget.id).unwrap().is_some(), "a budget question still matters");
-            assert!(get(&other.id).unwrap().is_some(), "another mission is untouched");
+            assert!(store::kv_get(&c, &applied_key(&stuck.id))
+                .unwrap()
+                .is_none());
+            assert!(
+                get(&budget.id).unwrap().is_some(),
+                "a budget question still matters"
+            );
+            assert!(
+                get(&other.id).unwrap().is_some(),
+                "another mission is untouched"
+            );
             assert_eq!(delete_for_mission("M-001", &["stuck"]).unwrap(), 0);
         })
     }
