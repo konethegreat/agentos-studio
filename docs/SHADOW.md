@@ -14,9 +14,11 @@ overrule it.
 
 ## What Shadow will not do
 
-- **Never answer a budget, destructive or merge-allow-list question.** Those are the owner's
-  standing switches (the budget, Hermes approvals, the allow list). A repository he keeps merging
-  by hand belongs on the allow list, which he sets himself.
+- **Never answer a budget, destructive, merge-allow-list or no-PR question.** Those are the
+  owner's standing switches (the budget, Hermes approvals, the allow list). A repository he keeps
+  merging by hand belongs on the allow list, which he sets himself. A completion with no pull
+  request must never be answered away: the work either becomes a real pull request or the mission
+  waits for a human, so Shadow leaves `no_pr` for the owner.
 - **Never invent a policy.** A rule exists only because the owner answered the same way three
   times in a row, or because he set a standing answer himself.
 - **Never act without a window.** Every answer is announced first, on Today and on the phone, and
@@ -29,7 +31,8 @@ overrule it.
 1. **Reason class.** Each escalation gets a class from its kind and question text, by a pure
    function: `provider` (a model or runtime failure), `no_pr` (finished without a pull request),
    `no_heartbeat`, `conflict`, `ci_after_fix`, `second_reject`, `done_check`, `plan_failed`,
-   `other`, plus the three Shadow never touches: `budget`, `destructive`, `merge_allow_list`.
+   `other`, plus the four Shadow never touches: `budget`, `destructive`, `merge_allow_list`,
+   `no_pr`.
 2. **Precedents.** Every escalation the owner decided himself (answered from Studio, the phone or
    Notion) is a precedent for its class. Expired questions and Shadow's own answers are not.
 3. **Standing answers.** On the Autonomy screen the owner can set an answer for a class up front
