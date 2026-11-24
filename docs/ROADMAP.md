@@ -17,7 +17,8 @@ phase before it, so nothing is scheduled that cannot be built yet.
   record `owner` instead of borrowing an agent name.
 - **Disabled workers are never started.** The bus watcher starts only usable agents, a logged
   revocation or plan limit hands the task over at once, and a successful turn or reading the
-  cards again in Setup clears the mark.
+  cards again in Setup clears the mark. A retry after work finished without a pull request
+  blocks with the reason when no usable agent is left, instead of forcing Hermes.
 
 ## 2.6.5: retry loops stopped (ready)
 
