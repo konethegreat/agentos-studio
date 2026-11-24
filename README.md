@@ -52,6 +52,10 @@ Finished work reaches GitHub even when the worker does not.
 - **Fewer self-inflicted denials.** Headless workers may run `rg`, `gh search` and read another
   repository's README through `gh api repos/*/readme`, read-only calls that previously ended a run
   at the first use.
+- **Nothing grows without a bound.** A long-lived task reaches its worker as its head and tail
+  (12,000 characters) with a trim marker, worker logs rotate at 5 MB and the drawer reads the last
+  256 KB, and the store prunes audit rows and answered escalations after 30 days and agent events,
+  context events and the memory ledger after 90 days. Open questions are never pruned.
 
 ## What is new in 2.6.3
 
