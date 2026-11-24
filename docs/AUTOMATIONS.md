@@ -125,7 +125,7 @@ deliberately boring.
   base are pushed and opened as a pull request by Studio, and only then is the task completed; a
   branch with uncommitted edits or no changes at all leaves the task open for the stuck retry, with
   the denied command from the output tail in the note. Read-only introspection stays allowed
-  (`gh search`, `gh api repos/*/readme`), because one denied command ends a headless run.
+  (`rg`, `gh search`, `gh api repos/*/readme`), because one denied command ends a headless run.
 - **Workers inherit nothing.** Every headless worker starts with a cleared environment rebuilt
   from the allowlist on the Safety card (PATH as Studio's own search path, temp and profile
   folders, Windows basics), plus `AGENTOS_VAULT`, `AGENTOS_REPO` (the task's project, which scopes

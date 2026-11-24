@@ -13,7 +13,7 @@ phase before it, so nothing is scheduled that cannot be built yet.
   completion with no pull request away; the escalation waits for a human answer.
 - **Brief requires the push.** `missions::bus_instructions` tells the worker to commit and push
   even if `gh pr create` fails, because Studio opens the pull request from the branch.
-- **Read-only `gh` additions.** `routing::BASE_TOOLS` gains `gh search` and
+- **Read-only `gh` and search additions.** `routing::BASE_TOOLS` gains `rg`, `gh search` and
   `gh api repos/*/readme`, mirrored for Antigravity as command regexes.
 
 ## 2.6.3: scheduler dead ends closed (shipped)

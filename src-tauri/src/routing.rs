@@ -48,9 +48,10 @@ pub struct Policy {
 /// The read-only `gh` queries are here because work that must state facts (a portfolio, a
 /// changelog, a plan from open issues) needs them, and a headless worker that is denied them
 /// gives up without a pull request.
-pub const BASE_TOOLS: [&str; 13] = [
+pub const BASE_TOOLS: [&str; 14] = [
     "mcp__agentos-hub",
     "Bash(git *)",
+    "Bash(rg *)",
     "Bash(gh pr *)",
     "Bash(gh repo view*)",
     "Bash(gh repo list*)",
@@ -410,6 +411,7 @@ mod tests {
             vec![
                 "mcp(agentos-hub/*)",
                 "command(regex:git .*)",
+                "command(regex:rg .*)",
                 "command(regex:gh pr .*)",
                 "command(regex:gh repo view.*)",
                 "command(regex:gh repo list.*)",

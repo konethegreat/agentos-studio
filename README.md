@@ -49,9 +49,9 @@ Finished work reaches GitHub even when the worker does not.
   real decision instead of being retried away.
 - **The brief demands the push.** Mission instructions now say to commit and push even when
   `gh pr create` fails, because Studio opens the pull request from the branch.
-- **Fewer self-inflicted denials.** Headless workers may run `gh search` and read another
-  repository's README through `gh api repos/*/readme`, two read-only calls that previously ended
-  a run at the first use.
+- **Fewer self-inflicted denials.** Headless workers may run `rg`, `gh search` and read another
+  repository's README through `gh api repos/*/readme`, read-only calls that previously ended a run
+  at the first use.
 
 ## What is new in 2.6.3
 
