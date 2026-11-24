@@ -731,7 +731,8 @@ fn review_limit_secs(reason: &str) -> Option<i64> {
 }
 
 /// One line of an error, for a note or a blocked state.
-fn flat(e: &anyhow::Error) -> String {    format!("{e:#}")
+fn flat(e: &anyhow::Error) -> String {
+    format!("{e:#}")
         .replace(['\n', '\r'], " ")
         .chars()
         .take(300)
@@ -744,9 +745,7 @@ fn no_reviewer_reason(implementer: &str) -> String {
     let notes: Vec<String> = ["antigravity", "claude-code", "hermes"]
         .into_iter()
         .filter(|a| *a != imp)
-        .filter_map(|a| {
-            crate::agent_limits::blocked_reason_for(a).map(|r| format!("{a} {r}"))
-        })
+        .filter_map(|a| crate::agent_limits::blocked_reason_for(a).map(|r| format!("{a} {r}")))
         .collect();
     format!(
         "no other agent can review this work ({})",
@@ -1052,7 +1051,9 @@ mod tests {
     #[test]
     fn a_reviewer_its_provider_cut_off_is_put_aside_not_counted_against_the_mission() {
         assert_eq!(
-            owner_fixable("Your organization has disabled Claude subscription access for Claude Code"),
+            owner_fixable(
+                "Your organization has disabled Claude subscription access for Claude Code"
+            ),
             Some(crate::agent_limits::DISABLED_REVOKED_SECS),
             "a revoked subscription waits for the owner, not for another retry"
         );
@@ -1060,10 +1061,7 @@ mod tests {
             owner_fixable("HTTP 401 Unauthorized: token expired"),
             Some(crate::agent_limits::DISABLED_AUTH_SECS)
         );
-        assert_eq!(
-            owner_fixable("the reviewer did not return a verdict"),
-            None
-        );
+        assert_eq!(owner_fixable("the reviewer did not return a verdict"), None);
     }
 
     #[test]
@@ -1076,7 +1074,10 @@ mod tests {
             review_limit_secs("RESOURCE_EXHAUSTED: quota exceeded for model. Resets in 45m."),
             Some(45 * 60)
         );
-        assert_eq!(review_limit_secs("the reviewer did not return a verdict"), None);
+        assert_eq!(
+            review_limit_secs("the reviewer did not return a verdict"),
+            None
+        );
     }
 
     #[test]

@@ -848,8 +848,7 @@ mod tests {
         assert_eq!(f[1].kind, "timeout");
         assert_eq!(classify("HTTP 401 Unauthorized: token expired").0, "auth");
         assert_eq!(
-            classify("Your organization has disabled Claude subscription access for Claude Code")
-                .0,
+            classify("Your organization has disabled Claude subscription access for Claude Code").0,
             "auth",
             "a revoked subscription needs the owner, not a retry"
         );
