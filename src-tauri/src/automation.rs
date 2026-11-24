@@ -1493,7 +1493,24 @@ mod tests {
         let report = tick(&v);
         assert!(report.moved_to_review.is_empty(), "nothing to review");
         let after = missions::get(&mission.id).unwrap().unwrap();
-        assert_eq!(after.status, "queued", "queued again for another agent");
+        // A bare machine has no second headless agent: blocking with the reason is the honest end.
+        match crate::bus::best_headless("hermes", crate::agent_limits::usable) {
+            Some(to) => {
+                assert_eq!(after.status, "queued", "queued again for another agent");
+                assert_eq!(after.agent, to);
+            }
+            None => {
+                assert_eq!(after.status, "blocked", "no usable agent to retry with");
+                assert!(
+                    after
+                        .review_note
+                        .as_deref()
+                        .is_some_and(|n| n.contains("no other usable headless agent")),
+                    "{:?}",
+                    after.review_note
+                );
+            }
+        }
         assert_eq!(kv(&no_pr_key(&mission.id)).as_deref(), Some("1"));
         missions::delete(&mission.id).unwrap();
         assert!(
