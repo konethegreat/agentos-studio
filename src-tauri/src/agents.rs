@@ -78,7 +78,10 @@ pub struct AgentCard {
     pub quota: Quota,
     pub measured: Measured,
     pub hub_identity: bool,
-    /// `ready`, `ide only`, `low quota`, `read-only on the hub` or `not installed`.
+    /// Why the agent cannot take work right now (its provider revoked access, its sign-in failed),
+    /// or `None` when it can.
+    pub disabled: Option<String>,
+    /// `ready`, `ide only`, `low quota`, `read-only on the hub`, `unavailable` or `not installed`.
     pub health: String,
     pub health_detail: String,
 }
@@ -92,6 +95,7 @@ pub struct Inputs {
     pub measured: Measured,
     pub strengths: Option<Vec<String>>,
     pub hub_identity: bool,
+    pub disabled: Option<String>,
 }
 
 pub fn label(agent: &str) -> &'static str {
@@ -269,6 +273,13 @@ pub fn build(agent: &str, i: &Inputs) -> AgentCard {
             "not installed",
             format!("{} is not installed on this machine", label(agent)),
         )
+    } else if let Some(reason) = i.disabled.as_ref().filter(|r| !r.trim().is_empty()) {
+        (
+            "unavailable",
+            format!(
+                "Cannot take work right now: {reason}. Fix it in Setup, Connections, then read the cards again"
+            ),
+        )
     } else if !headless {
         (
             "ide only",
@@ -306,6 +317,7 @@ pub fn build(agent: &str, i: &Inputs) -> AgentCard {
         quota: i.quota.clone(),
         measured: i.measured.clone(),
         hub_identity: i.hub_identity,
+        disabled: i.disabled.clone(),
         health: health.into(),
         health_detail: detail,
     }
@@ -501,6 +513,7 @@ pub fn cards(refresh: bool) -> Vec<AgentCard> {
                     measured: measured.get(*a).cloned().unwrap_or_default(),
                     strengths: configured_strengths(a),
                     hub_identity: has_identity(a),
+                    disabled: crate::agent_limits::disabled_reason(a),
                 },
             )
         })
@@ -522,6 +535,21 @@ pub fn reset_label(rfc3339: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_disabled_agent_card_says_why_it_cannot_work() {
+        let c = build(
+            "claude-code",
+            &Inputs {
+                installed: true,
+                disabled: Some("its organization disabled Claude Code access".into()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(c.health, "unavailable");
+        assert!(c.health_detail.contains("disabled Claude Code access"));
+        assert_eq!(c.disabled.as_deref(), Some("its organization disabled Claude Code access"));
+    }
 
     #[test]
     fn reset_times_read_as_local_short_dates() {

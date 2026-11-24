@@ -167,7 +167,7 @@ fn bus_pass(v: &Vault) {
     if let Ok(tasks) = v.fetch_pending_tasks("all") {
         let failed = BUS_FAILED.lock().map(|f| f.clone()).unwrap_or_default();
         // Nobody watches a worker the watcher starts, so only work with its own worktree starts.
-        for (id, agent) in auto_start_candidates(&tasks, headless_available, |b| {
+        for (id, agent) in auto_start_candidates(&tasks, crate::agent_limits::usable, |b| {
             worktree_from_body(b).is_some()
         }) {
             if worker_running(&id) || failed.contains(&id) {

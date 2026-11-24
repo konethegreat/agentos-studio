@@ -597,26 +597,43 @@ fn family(agent: &str) -> String {
     crate::council::family(agent, &crate::agents::hermes_provider())
 }
 
-/// The automatic reviewer for work done by `implementer`: the first available headless agent on a
-/// different provider family (Antigravity, then Claude Code, then Hermes), else any other
-/// available agent. The bool says whether the provider differs. Never the implementer. Pure over
-/// `family_of` and `available`.
-pub fn pick_reviewer(
+/// Every reviewer worth trying for work done by `implementer`, in order: available agents on a
+/// different provider family first, then the same family as a last resort, and never the
+/// implementer. The bool says whether the provider differs. Pure over `family_of` and `available`.
+pub fn reviewer_candidates(
     implementer: &str,
     family_of: impl Fn(&str) -> String,
     available: impl Fn(&str) -> bool,
-) -> Option<(String, bool)> {
+) -> Vec<(String, bool)> {
     let imp = implementer.trim().to_lowercase();
     let mine = family_of(&imp);
     let candidates: Vec<&str> = ["antigravity", "claude-code", "hermes"]
         .into_iter()
         .filter(|a| *a != imp && available(a))
         .collect();
-    candidates
+    let mut out: Vec<(String, bool)> = candidates
         .iter()
-        .find(|a| family_of(a) != mine)
+        .filter(|a| family_of(a) != mine)
         .map(|a| (a.to_string(), true))
-        .or_else(|| candidates.first().map(|a| (a.to_string(), false)))
+        .collect();
+    out.extend(
+        candidates
+            .iter()
+            .filter(|a| family_of(a) == mine)
+            .map(|a| (a.to_string(), false)),
+    );
+    out
+}
+
+/// The first reviewer worth trying, and whether it is on another provider. Pure.
+pub fn pick_reviewer(
+    implementer: &str,
+    family_of: impl Fn(&str) -> String,
+    available: impl Fn(&str) -> bool,
+) -> Option<(String, bool)> {
+    reviewer_candidates(implementer, family_of, available)
+        .into_iter()
+        .next()
 }
 
 /// kv key for the automatic review of the mission's current round.
@@ -691,80 +708,182 @@ pub fn auto_state(id: &str) -> Option<String> {
     kv_get(&auto_key(id))
 }
 
-/// Run one automatic review: pick the reviewer, judge, record the outcome in kv. After the second
-/// failure in a round the mission is blocked with the reason, which is an escalation for a goal.
+/// How long a reviewer that failed for a reason only its owner can fix stays out of rotation, and
+/// why it is out. `None` means the failure is worth a retry by the same kind of agent. Pure.
+pub fn owner_fixable(reason: &str) -> Option<i64> {
+    if crate::agent_limits::access_revoked_in_log(reason) {
+        Some(crate::agent_limits::DISABLED_REVOKED_SECS)
+    } else if crate::provider_health::classify(reason).0 == "auth" {
+        Some(crate::agent_limits::DISABLED_AUTH_SECS)
+    } else {
+        None
+    }
+}
+
+/// Seconds a rate-limited reviewer should sit out, read from its own error. `None` when the error
+/// is not a plan limit. Pure.
+fn review_limit_secs(reason: &str) -> Option<i64> {
+    let limited = crate::provider_health::classify(reason).0 == "rate_limit"
+        || crate::agent_limits::limit_in_log(reason);
+    limited.then(|| {
+        crate::agent_limits::reset_secs(reason).unwrap_or(crate::agent_limits::DEFAULT_LIMIT_SECS)
+    })
+}
+
+/// One line of an error, for a note or a blocked state.
+fn flat(e: &anyhow::Error) -> String {    format!("{e:#}")
+        .replace(['\n', '\r'], " ")
+        .chars()
+        .take(300)
+        .collect()
+}
+
+/// Why no automatic reviewer can sit right now, naming each other agent and what blocks it.
+fn no_reviewer_reason(implementer: &str) -> String {
+    let imp = implementer.trim().to_lowercase();
+    let notes: Vec<String> = ["antigravity", "claude-code", "hermes"]
+        .into_iter()
+        .filter(|a| *a != imp)
+        .filter_map(|a| {
+            crate::agent_limits::blocked_reason_for(a).map(|r| format!("{a} {r}"))
+        })
+        .collect();
+    format!(
+        "no other agent can review this work ({})",
+        if notes.is_empty() {
+            "none installed".to_string()
+        } else {
+            notes.join("; ")
+        }
+    )
+}
+
+/// The reviewer Studio would pick for the mission right now, under the same availability rules as
+/// the automatic review. Used by the board's manual review buttons.
+pub fn suggest_reviewer(id: &str) -> Result<String> {
+    let m = missions::get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
+    pick_reviewer(&m.agent, family, crate::agent_limits::usable)
+        .map(|(a, _)| a)
+        .ok_or_else(|| anyhow::anyhow!("{}", no_reviewer_reason(&m.agent)))
+}
+
+/// Run one automatic review: pick the reviewer, judge, record the outcome in kv. A reviewer whose
+/// provider cut it off is put aside and the next usable agent is tried in the same round, so one
+/// dead subscription never fails the mission. After the second real failure in a round the mission
+/// is blocked with the reason, which is an escalation for a goal.
 pub fn run_auto(v: &Vault, id: &str) -> Result<Mission> {
     let m = missions::get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?;
     let tries = auto_failures(auto_state(id).as_deref());
-    let picked = pick_reviewer(&m.agent, family, crate::bus::headless_available);
-    let Some((reviewer, other_provider)) = picked else {
-        let reason = "no other agent is installed to review this work";
+    let candidates = reviewer_candidates(&m.agent, family, crate::agent_limits::usable);
+    if candidates.is_empty() {
+        let reason = no_reviewer_reason(&m.agent);
         kv_set(
             &auto_key(id),
             &format!("failed:{}:{AUTO_TRIES}:{reason}", crate::store::now()),
         );
         return missions::block(id, &format!("Automatic review: {reason}"), false);
-    };
+    }
     kv_set(
         &auto_key(id),
         &format!("running:{}:{tries}", crate::store::now()),
     );
-    let started = std::time::Instant::now();
-    let summary = format!(
-        "automatic review by {reviewer}{}",
-        if other_provider {
-            " (another provider)"
-        } else {
-            " (same provider family; no other was available)"
-        }
-    );
-    let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
-        mission_id: Some(id),
-        kind: "note",
-        from_agent: "agentos-studio",
-        to_agent: &reviewer,
-        summary: &summary,
-        ..Default::default()
-    });
-    match review(v, id, &reviewer) {
-        Ok(judged) => {
-            kv_set(&auto_key(id), "done");
-            let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
-                mission_id: Some(id),
-                kind: "note",
-                from_agent: &reviewer,
-                to_agent: "agentos-studio",
-                summary: &format!(
-                    "{reviewer} {}d: {}",
-                    judged.review_verdict.as_deref().unwrap_or("judge"),
-                    judged.review_note.as_deref().unwrap_or("")
-                ),
-                duration_ms: Some(started.elapsed().as_millis() as i64),
-                ..Default::default()
-            });
-            Ok(judged)
-        }
-        Err(e) => {
-            let n = tries + 1;
-            let reason: String = format!("{e:#}")
-                .replace(['\n', '\r'], " ")
-                .chars()
-                .take(300)
-                .collect();
-            kv_set(
-                &auto_key(id),
-                &format!("failed:{}:{n}:{reason}", crate::store::now()),
-            );
-            if n >= AUTO_TRIES {
-                let _ = missions::block(
-                    id,
-                    &format!("Automatic review failed {n} times: {reason}"),
-                    false,
-                );
+    let mut last: Option<anyhow::Error> = None;
+    for (reviewer, other_provider) in candidates {
+        let started = std::time::Instant::now();
+        let summary = format!(
+            "automatic review by {reviewer}{}",
+            if other_provider {
+                " (another provider)"
+            } else {
+                " (same provider family; no other was available)"
             }
-            Err(e)
+        );
+        let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+            mission_id: Some(id),
+            kind: "note",
+            from_agent: "agentos-studio",
+            to_agent: &reviewer,
+            summary: &summary,
+            ..Default::default()
+        });
+        match review(v, id, &reviewer) {
+            Ok(judged) => {
+                kv_set(&auto_key(id), "done");
+                let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+                    mission_id: Some(id),
+                    kind: "note",
+                    from_agent: &reviewer,
+                    to_agent: "agentos-studio",
+                    summary: &format!(
+                        "{reviewer} {}d: {}",
+                        judged.review_verdict.as_deref().unwrap_or("judge"),
+                        judged.review_note.as_deref().unwrap_or("")
+                    ),
+                    duration_ms: Some(started.elapsed().as_millis() as i64),
+                    ..Default::default()
+                });
+                return Ok(judged);
+            }
+            Err(e) => {
+                let reason = flat(&e);
+                if let Some(secs) = owner_fixable(&reason) {
+                    crate::agent_limits::mark_disabled(&reviewer, secs, &reason);
+                    let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+                        mission_id: Some(id),
+                        kind: "note",
+                        from_agent: "agentos-studio",
+                        to_agent: &reviewer,
+                        summary: &format!(
+                            "{reviewer} cannot review until its owner acts ({reason}); trying the next agent"
+                        ),
+                        duration_ms: Some(started.elapsed().as_millis() as i64),
+                        ..Default::default()
+                    });
+                    last = Some(e);
+                    continue;
+                }
+                if let Some(secs) = review_limit_secs(&reason) {
+                    crate::agent_limits::mark(&reviewer, crate::store::now() + secs);
+                    let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+                        mission_id: Some(id),
+                        kind: "note",
+                        from_agent: "agentos-studio",
+                        to_agent: &reviewer,
+                        summary: &format!(
+                            "{reviewer} is out of its plan until its reset ({reason}); trying the next agent"
+                        ),
+                        duration_ms: Some(started.elapsed().as_millis() as i64),
+                        ..Default::default()
+                    });
+                    last = Some(e);
+                    continue;
+                }
+                let n = tries + 1;
+                kv_set(
+                    &auto_key(id),
+                    &format!("failed:{}:{n}:{reason}", crate::store::now()),
+                );
+                if n >= AUTO_TRIES {
+                    let _ = missions::block(
+                        id,
+                        &format!("Automatic review failed {n} times: {reason}"),
+                        false,
+                    );
+                }
+                return Err(e);
+            }
         }
     }
+    let reason = format!(
+        "{}; {}",
+        last.as_ref().map(flat).unwrap_or_default(),
+        no_reviewer_reason(&m.agent)
+    );
+    kv_set(
+        &auto_key(id),
+        &format!("failed:{}:{tries}:{reason}", crate::store::now()),
+    );
+    missions::block(id, &format!("Automatic review: {reason}"), false)
 }
 
 /// Start an automatic review on its own thread (a review takes minutes). Skipped under unit
@@ -906,6 +1025,58 @@ mod tests {
             "same family only as a last resort, and said so"
         );
         assert_eq!(pick_reviewer("hermes", fam, |a: &str| a == "hermes"), None);
+    }
+
+    #[test]
+    fn a_review_can_fall_through_to_every_usable_reviewer() {
+        let all = |_: &str| true;
+        let ordered: Vec<String> = reviewer_candidates("hermes", fam, all)
+            .into_iter()
+            .map(|(a, _)| a)
+            .collect();
+        assert_eq!(ordered, ["antigravity", "claude-code"]);
+        // A reviewer its provider cut off is not offered at all.
+        let no_claude = |a: &str| a != "claude-code";
+        assert_eq!(
+            reviewer_candidates("hermes", fam, no_claude),
+            vec![("antigravity".to_string(), true)]
+        );
+        assert_eq!(
+            reviewer_candidates("claude-code", fam, |a| a != "antigravity"),
+            vec![("hermes".to_string(), false)],
+            "same family only when nothing else is usable"
+        );
+        assert!(reviewer_candidates("antigravity", fam, |a| a == "antigravity").is_empty());
+    }
+
+    #[test]
+    fn a_reviewer_its_provider_cut_off_is_put_aside_not_counted_against_the_mission() {
+        assert_eq!(
+            owner_fixable("Your organization has disabled Claude subscription access for Claude Code"),
+            Some(crate::agent_limits::DISABLED_REVOKED_SECS),
+            "a revoked subscription waits for the owner, not for another retry"
+        );
+        assert_eq!(
+            owner_fixable("HTTP 401 Unauthorized: token expired"),
+            Some(crate::agent_limits::DISABLED_AUTH_SECS)
+        );
+        assert_eq!(
+            owner_fixable("the reviewer did not return a verdict"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_rate_limited_reviewer_is_out_until_its_reset() {
+        assert_eq!(
+            review_limit_secs("HTTP 429: usage_limit_reached"),
+            Some(crate::agent_limits::DEFAULT_LIMIT_SECS)
+        );
+        assert_eq!(
+            review_limit_secs("RESOURCE_EXHAUSTED: quota exceeded for model. Resets in 45m."),
+            Some(45 * 60)
+        );
+        assert_eq!(review_limit_secs("the reviewer did not return a verdict"), None);
     }
 
     #[test]

@@ -204,16 +204,38 @@ pub fn check_bus(v: &Vault, m: &Mission, task: &str, now: i64) -> Option<String>
         kv_put(&format!("{KV_BEAT}{}", m.id), &now.to_string());
         return None;
     }
-    // The worker stopped because its plan's limit was reached: hand the work to another agent at
-    // once, without spending the retry or asking the owner.
+    // The worker stopped because its plan's limit was reached or its provider cut it off: hand
+    // the work to another agent at once, without spending the retry or asking the owner.
     if headless && !alive {
         let log = crate::agent_limits::tail(&v.worker_logs().join(format!("{task}.log")));
-        if crate::agent_limits::limit_in_log(crate::agent_limits::latest_run(&log)) {
-            let run = crate::agent_limits::latest_run(&log);
+        let run = crate::agent_limits::latest_run(&log);
+        if crate::agent_limits::access_revoked_in_log(run) {
+            crate::agent_limits::mark_disabled(
+                &agent,
+                crate::agent_limits::DISABLED_REVOKED_SECS,
+                "its provider disabled access for it",
+            );
+            return Some(handoff(
+                v,
+                m,
+                task,
+                &agent,
+                "had its access revoked by its provider",
+                now,
+            ));
+        }
+        if crate::agent_limits::limit_in_log(run) {
             let secs = crate::agent_limits::reset_secs(run)
                 .unwrap_or(crate::agent_limits::DEFAULT_LIMIT_SECS);
             crate::agent_limits::mark(&agent, now + secs);
-            return Some(limit_handoff(v, m, task, &agent, now));
+            return Some(handoff(
+                v,
+                m,
+                task,
+                &agent,
+                "hit its usage limit",
+                now,
+            ));
         }
     }
     let last = bus_last(v, m, task);
@@ -245,7 +267,7 @@ pub fn check_bus(v: &Vault, m: &Mission, task: &str, now: i64) -> Option<String>
                 Some(format!("{}: {note}", m.id))
             } else {
                 // The IDE went quiet on a claimed task: hand it to a headless agent instead.
-                let to = crate::bus::best_headless(&agent, crate::bus::headless_available)?;
+                let to = crate::bus::best_headless(&agent, crate::agent_limits::usable)?;
                 let note = format!(
                     "{agent} claimed this but nothing changed for {quiet} min; reassigned to {to}"
                 );
@@ -274,17 +296,18 @@ pub fn check_bus(v: &Vault, m: &Mission, task: &str, now: i64) -> Option<String>
     }
 }
 
-/// Move a mission whose agent hit its usage limit to another usable agent. When none is usable,
-/// the mission waits (its heartbeat is refreshed) instead of being retried into the same limit.
-fn limit_handoff(v: &Vault, m: &Mission, task: &str, agent: &str, now: i64) -> String {
+/// Move a mission whose agent cannot continue (`why`) to another usable agent. When none is
+/// usable, the mission waits (its heartbeat is refreshed) instead of being retried into the same
+/// wall.
+fn handoff(v: &Vault, m: &Mission, task: &str, agent: &str, why: &str, now: i64) -> String {
     crate::bus::stop_task_worker(task);
     let Some(to) = crate::bus::best_headless(agent, crate::agent_limits::usable) else {
         kv_put(&format!("{KV_BEAT}{}", m.id), &now.to_string());
-        let note = format!("{agent} hit its usage limit and no other agent is free; waiting");
+        let note = format!("{agent} {why} and no other agent is free; waiting");
         let _ = v.log_activity(task, &note);
         return format!("{}: {note}", m.id);
     };
-    let note = format!("{agent} hit its usage limit; handed to {to}");
+    let note = format!("{agent} {why}; handed to {to}");
     let _ = v.move_task(task, State::Pending, "agentos-studio");
     if v.claim_task(task, to).is_ok() {
         let _ = v.log_activity(task, &note);

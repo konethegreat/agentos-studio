@@ -70,9 +70,11 @@ all missions done -> definition-of-done checks -> report
    reviewer runs, the constitution gate judges the lines the pull request adds (dashes,
    placeholder tags, hidden Unicode, credentials, docs changed with code under `src/`); any
    finding sends the mission back to its implementer as a reject from `constitution-gate`.
-   One review per round, one retry after a failed review, then the mission is blocked with the
-   reason. The failure count is kept in the review state across the retry, so a reviewer that
-   cannot run at all blocks the mission instead of being started again every 10 minutes.
+   Only agents that can take work right now are candidates (`agent_limits::usable`). A reviewer
+   whose provider revoked its access, or whose plan is spent, is put aside with the reason and the
+   next usable agent judges the same round; those do not count as failed reviews. Two real
+   failures in a round block the mission with the reason, and the count is kept in the review
+   state so a reviewer that cannot run at all is never started again every 10 minutes.
 4. **Automatic merge.** When `merge_blockers` is empty, the constitution gate passes on the diff
    as it is at merge time, and the level allows it, Studio squash merges and deletes the branch,
    with the provenance trailers from Phase E. A merge that fails is recorded per mission and
