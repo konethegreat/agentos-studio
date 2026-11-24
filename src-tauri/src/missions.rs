@@ -254,8 +254,18 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         );
         return Ok(started);
     }
+    // Agent work happens in a known project folder, never in the home folder.
+    let dir = crate::review_agent::project_dir(&m.repo)
+        .filter(|d| d.is_dir())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{id}: repository '{}' is not a known project with a folder. Add it in Projects first.",
+                m.repo
+            )
+        })?;
     // An agent its provider cut off, or one out of its plan, cannot start this attempt: hand the
-    // mission to an agent that can, instead of opening a worker that is certain to fail.
+    // mission to an agent that can, instead of opening a worker that is certain to fail. A bad
+    // repository is reported first because no agent choice can fix it.
     let mut m = m;
     let picked = m.agent.trim().to_lowercase();
     if crate::bus::is_headless(&picked) {
@@ -275,15 +285,6 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
             m.agent = to.to_string();
         }
     }
-    // Agent work happens in a known project folder, never in the home folder.
-    let dir = crate::review_agent::project_dir(&m.repo)
-        .filter(|d| d.is_dir())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "{id}: repository '{}' is not a known project with a folder. Add it in Projects first.",
-                m.repo
-            )
-        })?;
     // Every attempt gets its own worktree and branch, so a mission never shares a checkout.
     let wt = crate::worktree::create(&dir, &m)?;
     // The worker's pinned context, local to the worktree and never committed.
