@@ -254,6 +254,27 @@ pub fn start(v: &crate::vault::Vault, id: &str) -> Result<Mission> {
         );
         return Ok(started);
     }
+    // An agent its provider cut off, or one out of its plan, cannot start this attempt: hand the
+    // mission to an agent that can, instead of opening a worker that is certain to fail.
+    let mut m = m;
+    let picked = m.agent.trim().to_lowercase();
+    if crate::bus::is_headless(&picked) {
+        if let Some(reason) = crate::agent_limits::blocked_reason_for(&picked) {
+            let Some(to) = crate::bus::best_headless(&picked, crate::agent_limits::usable) else {
+                bail!("{id}: {picked} {reason}, and no other headless agent is free");
+            };
+            crate::missions::set_agent(id, to)?;
+            let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+                mission_id: Some(id),
+                kind: "assign",
+                from_agent: "agentos-studio",
+                to_agent: to,
+                summary: &format!("{picked} {reason}; reassigned to {to}"),
+                ..Default::default()
+            });
+            m.agent = to.to_string();
+        }
+    }
     // Agent work happens in a known project folder, never in the home folder.
     let dir = crate::review_agent::project_dir(&m.repo)
         .filter(|d| d.is_dir())

@@ -189,7 +189,7 @@ pub fn run_turn(
     let qdir = store::studio_dir().join("asks");
     std::fs::create_dir_all(&qdir)?;
     let stamp = uuid::Uuid::new_v4().simple().to_string();
-    match agent {
+    let r = match agent {
         "hermes" => {
             let qf = qdir.join(format!("{stamp}.md"));
             std::fs::write(&qf, prompt_text)?;
@@ -287,7 +287,12 @@ pub fn run_turn(
             Ok((text.trim().to_string(), None, 0.0))
         }
         other => bail!("{other} cannot run a headless turn"),
+    };
+    if r.is_ok() {
+        // A turn that worked proves whatever its provider had against it has cleared.
+        crate::agent_limits::clear_disabled(agent);
     }
+    r
 }
 
 /// `from` (the verified hub caller) asks `to`. Blocks until the answer or the timeout.
@@ -306,6 +311,9 @@ pub fn ask(
         bail!("{from} is answering another agent's question right now; answer it instead of asking onward");
     }
     let to = validate(from, to, crate::bus::headless_available)?;
+    if let Some(reason) = crate::agent_limits::blocked_reason_for(&to) {
+        bail!("{to} cannot answer right now: {reason}");
+    }
     let mission = match mission_id.map(str::trim).filter(|m| !m.is_empty()) {
         Some(id) => {
             Some(crate::missions::get(id)?.ok_or_else(|| anyhow::anyhow!("no mission '{id}'"))?)

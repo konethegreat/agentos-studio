@@ -46,16 +46,20 @@ pub fn reassign_due(
 /// With no headless agent installed the mission is blocked, never left running with no worker.
 fn reassign(v: &Vault, m: &Mission, task: &str) -> anyhow::Result<String> {
     let from = m.agent.trim().to_lowercase();
-    let Some(to) = crate::bus::best_headless(&from, crate::bus::headless_available) else {
+    let Some(to) = crate::bus::best_headless(&from, crate::agent_limits::usable) else {
         missions::block(
             &m.id,
-            &format!("{from} did not pick this up and no headless agent is installed"),
+            &format!("{from} could not take this and no other headless agent is free"),
             false,
         )?;
         anyhow::bail!("{}: no headless agent to take over", m.id);
     };
+    let why = match crate::agent_limits::blocked_reason_for(&from) {
+        Some(r) => format!("{from} {r}"),
+        None => format!("{from} is IDE only"),
+    };
     let reason = format!(
-        "{from} is IDE only and did not pick this up within {} minutes; reassigned to {to}",
+        "{why}; after {} minutes without progress this was reassigned to {to}",
         ide_wait_minutes()
     );
     v.claim_task(task, to)?;
@@ -521,7 +525,7 @@ pub fn tick(v: &Vault) -> TickReport {
         if reassign_due(
             m,
             state == Some(State::Pending),
-            crate::bus::headless_available(&agent),
+            crate::agent_limits::usable(&agent),
             chrono::Utc::now().timestamp(),
             ide_wait_minutes() * 60,
         ) {
@@ -1077,7 +1081,7 @@ mod tests {
 
         let report = tick(&v);
         let after = missions::get(&mission.id).unwrap().unwrap();
-        match crate::bus::best_headless("qoder", crate::bus::headless_available) {
+        match crate::bus::best_headless("qoder", crate::agent_limits::usable) {
             Some(to) => {
                 assert_eq!(report.reassigned, vec![format!("{} -> {to}", mission.id)]);
                 assert_eq!(after.agent, to);

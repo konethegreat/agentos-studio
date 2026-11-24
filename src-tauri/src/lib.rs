@@ -564,6 +564,7 @@ pub fn run_gui() {
             commands::review_mission,
             commands::mission_merge_blockers,
             commands::review_with_agent,
+            commands::suggest_reviewer,
             commands::merge_mission,
             commands::model_catalog,
             commands::router_suggestions,

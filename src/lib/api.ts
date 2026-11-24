@@ -1651,8 +1651,9 @@ export const api = {
       budgetUsd: input.budgetUsd,
     }),
   dispatchMission: (id: string) => invoke<Mission>("dispatch_mission", { id }),
-  reviewWithAgent: (id: string, reviewer = "claude-code") =>
-    invoke<Mission>("review_with_agent", { id, reviewer }),
+  reviewWithAgent: (id: string, reviewer?: string | null) =>
+    invoke<Mission>("review_with_agent", { id, reviewer: reviewer ?? null }),
+  suggestReviewer: (id: string) => invoke<string>("suggest_reviewer", { id }),
   mergeMission: (id: string, allowlisted: boolean) =>
     invoke<string>("merge_mission", { id, allowlisted }),
   reviewMission: (id: string, reviewer: string, verdict: "approve" | "reject", note: string) =>

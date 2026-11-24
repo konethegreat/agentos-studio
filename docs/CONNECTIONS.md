@@ -39,9 +39,16 @@ Each fix opens its own window, because sign-ins and pickers need a person:
 | Plugin off | `hermes plugins enable <plugin>` |
 | Sign-in errors or timeouts | `hermes auth refresh <provider>` |
 | Usage limit, or no fallback | `hermes fallback add` (pick a second provider that is signed in) |
+| Access disabled by the provider | Fix the plan or sign-in, then read the cards again on Work, Agents |
 
 A usage limit on a flat subscription is not a fault Studio can clear: the provider resets it.
 The fallback chain is what keeps work moving until then.
+
+When a provider revokes an agent's access ("Your organization has disabled Claude subscription
+access for Claude Code"), Studio marks that agent `unavailable` with the reason and hands its
+work to another agent: under a review, assignment, start, a stuck handoff or the bus watcher.
+The mark lasts 7 days for a revoked subscription and 1 hour for an auth failure; a successful
+turn, or reading the cards again after you fix it, clears it at once.
 
 ## Antigravity's model
 

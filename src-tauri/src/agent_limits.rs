@@ -15,11 +15,29 @@ use crate::store;
 
 /// How long an agent counts as limited when its log gives no reset time Studio can read.
 pub const DEFAULT_LIMIT_SECS: i64 = 60 * 60;
+/// How long a revoked subscription keeps an agent out of rotation: only its owner can restore it.
+pub const DISABLED_REVOKED_SECS: i64 = 7 * 24 * 3600;
+/// How long a failed sign-in keeps an agent out of rotation.
+pub const DISABLED_AUTH_SECS: i64 = 3600;
 /// How much of the end of a worker log is read.
 const TAIL_BYTES: u64 = 16 * 1024;
 
 fn key(agent: &str) -> String {
     format!("agent.limited.{}", agent.trim().to_lowercase())
+}
+
+fn disabled_key(agent: &str) -> String {
+    format!("agent.disabled.{}", agent.trim().to_lowercase())
+}
+
+/// Whether a log's tail shows the provider revoked this agent's access ("Your organization has
+/// disabled Claude subscription access for Claude Code"). Retrying cannot clear it: only the owner
+/// can. Pure.
+pub fn access_revoked_in_log(text: &str) -> bool {
+    let t = text.to_lowercase();
+    (t.contains("disabled") && t.contains("subscription access"))
+        || (t.contains("access for") && t.contains("is disabled"))
+        || (t.contains("organization") && t.contains("disabled") && t.contains("claude"))
 }
 
 /// Whether a worker log's tail shows the agent's plan limit was reached. Pure.
@@ -101,9 +119,68 @@ pub fn limited(agent: &str) -> bool {
     limited_until(agent).is_some()
 }
 
-/// Installed for headless work and not out of its plan right now.
+/// Mark an agent unavailable for `secs` for a reason a retry cannot fix, such as a provider that
+/// revoked the subscription or a sign-in that stopped working.
+pub fn mark_disabled(agent: &str, secs: i64, reason: &str) {
+    if let Ok(c) = store::open() {
+        let clean: String = reason
+            .replace(['\n', '\r'], " ")
+            .trim()
+            .chars()
+            .take(200)
+            .collect();
+        let _ = store::kv_set(
+            &c,
+            &disabled_key(agent),
+            &format!("{}|{clean}", store::now() + secs),
+        );
+    }
+}
+
+/// Why the agent is marked unavailable, if the mark has not expired.
+pub fn disabled_reason(agent: &str) -> Option<String> {
+    let c = store::open().ok()?;
+    let raw = store::kv_get(&c, &disabled_key(agent)).ok().flatten()?;
+    let (until, reason) = raw.split_once('|')?;
+    let until: i64 = until.trim().parse().ok()?;
+    (until > store::now() && !reason.trim().is_empty()).then(|| reason.trim().to_string())
+}
+
+/// A turn from the agent succeeded: whatever was wrong with it has cleared.
+pub fn clear_disabled(agent: &str) {
+    if let Ok(c) = store::open() {
+        let _ = store::kv_delete(&c, &disabled_key(agent));
+    }
+}
+
+/// Why an agent cannot take work right now, in the order that matters to a reader. Pure.
+pub fn blocked_reason(installed: bool, limited: bool, disabled: Option<&str>) -> Option<String> {
+    if !installed {
+        return Some("is not installed on this machine".into());
+    }
+    if let Some(reason) = disabled {
+        return Some(reason.to_string());
+    }
+    if limited {
+        return Some(
+            "hit its usage limit and new work goes to another agent until it resets".into(),
+        );
+    }
+    None
+}
+
+/// Why this agent cannot take work right now. `None` means installed and free to run.
+pub fn blocked_reason_for(agent: &str) -> Option<String> {
+    blocked_reason(
+        crate::bus::headless_available(agent),
+        limited(agent),
+        disabled_reason(agent).as_deref(),
+    )
+}
+
+/// Installed for headless work, not out of its plan, and not cut off by its provider right now.
 pub fn usable(agent: &str) -> bool {
-    crate::bus::headless_available(agent) && !limited(agent)
+    blocked_reason_for(agent).is_none()
 }
 
 /// Is the network reachable? Probed at most once a minute; tests always see a network.
@@ -171,6 +248,61 @@ mod tests {
         assert!(limited("claude-code"));
         mark("claude-code", store::now() - 1);
         assert!(!limited("claude-code"));
+        store::set_test_db(None);
+    }
+
+    #[test]
+    fn a_revoked_subscription_is_recognised() {
+        let real = "Your organization has disabled Claude subscription access for Claude Code.";
+        assert!(access_revoked_in_log(real));
+        assert!(access_revoked_in_log(
+            "Claude subscription access is disabled for this workspace"
+        ));
+        assert!(!access_revoked_in_log(
+            "You've hit your 5-hour limit · resets 2:40am"
+        ));
+        assert!(!access_revoked_in_log("usage_limit_reached"));
+        assert!(!access_revoked_in_log("the depth_limit was 0"));
+    }
+
+    #[test]
+    fn a_blocked_reason_names_the_first_blocker() {
+        assert_eq!(
+            blocked_reason(false, false, None).as_deref(),
+            Some("is not installed on this machine")
+        );
+        assert_eq!(
+            blocked_reason(true, true, None).as_deref(),
+            Some("hit its usage limit and new work goes to another agent until it resets")
+        );
+        assert_eq!(
+            blocked_reason(true, false, Some("access revoked")).as_deref(),
+            Some("access revoked")
+        );
+        assert_eq!(blocked_reason(true, false, None), None);
+    }
+
+    #[test]
+    fn a_disabled_agent_says_why_until_a_turn_succeeds() {
+        let d = tempfile::tempdir().unwrap();
+        let _g = store::test_env_lock();
+        store::set_test_db(Some(d.path().join("studio.db")));
+        assert!(disabled_reason("claude-code").is_none());
+        mark_disabled(
+            "claude-code",
+            3600,
+            "its organization disabled Claude Code access",
+        );
+        assert!(disabled_reason("claude-code")
+            .unwrap()
+            .contains("disabled Claude Code"));
+        clear_disabled("claude-code");
+        assert!(disabled_reason("claude-code").is_none());
+        mark_disabled("claude-code", -1, "old reason");
+        assert!(
+            disabled_reason("claude-code").is_none(),
+            "an expired flag is gone"
+        );
         store::set_test_db(None);
     }
 

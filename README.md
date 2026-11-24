@@ -35,6 +35,22 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.6.6
+
+One subscription going dark no longer stops the fleet.
+
+- **Any working provider can take the work.** Every chooser (mission start, assignment, council
+  seats, asks, automation reassignment, stuck handoffs, automatic review) now asks one question:
+  can this agent take work right now? An agent whose organization disabled Claude subscription
+  access, or whose plan is spent, is skipped instead of being picked and failing.
+- **Reviews fall through instead of failing the mission.** The automatic reviewer tries the next
+  usable agent on another provider, then the same family. A reviewer that is revoked or rate
+  limited is put aside with its reason and does not count as a failed review. Only the second real
+  failure blocks the mission.
+- **The board stops naming a default reviewer.** Agent review asks the backend who can judge now,
+  the owner's Approve and Reject record the verdict as `owner`, and the Agents cards show
+  `unavailable` with the reason until a turn succeeds or you read the cards again.
+
 ## What is new in 2.6.5
 
 Two retry loops that burned GitHub calls and agent runs every few minutes are gone.

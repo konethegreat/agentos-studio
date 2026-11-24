@@ -1313,8 +1313,24 @@ pub async fn review_with_agent(
     reviewer: Option<String>,
 ) -> CmdResult<crate::missions::Mission> {
     let v = current_vault(&state);
-    let who = reviewer.unwrap_or_else(|| "claude-code".into());
-    blocking(move || crate::review_agent::review(&v, &id, &who)).await
+    blocking(move || {
+        let who = match reviewer
+            .map(|r| r.trim().to_lowercase())
+            .filter(|r| !r.is_empty())
+        {
+            Some(r) => r,
+            None => crate::review_agent::suggest_reviewer(&id)?,
+        };
+        crate::review_agent::review(&v, &id, &who)
+    })
+    .await
+}
+
+/// The reviewer the board should name for a mission right now, using the same availability rules
+/// as the automatic review.
+#[tauri::command]
+pub async fn suggest_reviewer(id: String) -> CmdResult<String> {
+    blocking(move || crate::review_agent::suggest_reviewer(&id)).await
 }
 
 /// Merge a mission's pull request only if every gate passes. Returns the merge output.
@@ -1853,7 +1869,18 @@ pub async fn notion_archive_goals_board() -> CmdResult<()> {
 /// The agent registry: one card per agent, the same data the `agents` hub tool returns.
 #[tauri::command]
 pub async fn agent_cards(refresh: Option<bool>) -> CmdResult<Vec<crate::agents::AgentCard>> {
-    blocking(move || Ok(crate::agents::cards(refresh.unwrap_or(false)))).await
+    blocking(move || {
+        let refresh = refresh.unwrap_or(false);
+        if refresh {
+            // Reading the cards again is the owner saying they fixed something: let a restored
+            // provider put its agent back in rotation without waiting for the mark to expire.
+            for a in ["antigravity", "claude-code", "hermes"] {
+                crate::agent_limits::clear_disabled(a);
+            }
+        }
+        Ok(crate::agents::cards(refresh))
+    })
+    .await
 }
 
 /// The model Antigravity runs on (empty = agy's own default) and the models agy offers.

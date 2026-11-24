@@ -11,6 +11,7 @@ const HEALTH_STYLE: Record<string, string> = {
   "low quota": "bg-amber-500/10 text-amber-300 ring-amber-500/25",
   "read-only on the hub": "bg-orange-500/10 text-orange-300 ring-orange-500/25",
   "not installed": "bg-slate-500/10 text-slate-400 ring-slate-500/25",
+  unavailable: "bg-rose-500/10 text-rose-300 ring-rose-500/25",
 };
 
 const COST_LABEL: Record<string, string> = {
@@ -51,6 +52,7 @@ export function Agents() {
   }, []);
 
   async function saveAgyModel(model: string) {
+    if (agy?.model === model) return;
     try {
       await api.setAgyModel(model);
       setAgy((a) => (a ? { ...a, model } : a));
