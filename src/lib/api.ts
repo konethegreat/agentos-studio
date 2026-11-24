@@ -830,6 +830,7 @@ export interface AgentCard {
   };
   measured: { attempts: number; approvals: number; score: number; strong_roles: string[] };
   hub_identity: boolean;
+  disabled: string | null;
   health: string;
   health_detail: string;
 }
