@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronRight, Flag, Plus, RefreshCw, Target, Trash2, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Flag, Play, Plus, RefreshCw, RotateCcw, Target, Trash2, X } from "lucide-react";
 import { api, errorText, type AutonomyLevel, type Escalation, type GoalCheck, type GoalDetail, type NewGoal, type Project } from "../lib/api";
 import { studio, type OrchestratorStatus } from "../lib/studio";
 import { Badge, Button, Card, Empty, inputClass } from "../components/ui";
@@ -19,6 +19,7 @@ const STATUS_STYLE: Record<string, string> = {
 const MISSION_STYLE: Record<string, string> = {
   queued: "text-slate-400",
   running: "text-sky-300",
+  paused: "text-orange-300",
   review: "text-amber-300",
   blocked: "text-orange-300",
   done: "text-emerald-300",
@@ -152,6 +153,47 @@ export function Goals({ target = null }: { target?: RecordTarget | null }) {
       await load();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function reopen(id: string) {
+    setBusy(true);
+    try {
+      const g = await api.reopenGoal(id);
+      const back = g.missions.filter((m) => m.status === "queued" || m.status === "running").length;
+      toast("ok", `${id} reopened: ${back} mission${back === 1 ? "" : "s"} requeued`);
+      setSelected(id);
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resume(id: string) {
+    setBusy(true);
+    try {
+      const g = await api.resumeGoal(id);
+      toast("ok", `${id} is ${g.status}`);
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resumeMission(id: string) {
+    try {
+      await api.resumeMission(id);
+      toast("ok", `${id} queued again`);
+      await load();
+    } catch (e) {
+      toast("error", errorText(e));
+      await load();
     }
   }
 
@@ -399,6 +441,9 @@ export function Goals({ target = null }: { target?: RecordTarget | null }) {
               onLevel={(l) => void changeLevel(detail.goal.id, l)}
               onPlan={() => void act(detail.goal.id, "plan")}
               onApprove={() => void act(detail.goal.id, "approve")}
+              onReopen={() => void reopen(detail.goal.id)}
+              onResume={() => void resume(detail.goal.id)}
+              onResumeMission={(id) => void resumeMission(id)}
               onDelete={() => void remove(detail.goal.id)}
             />
           ) : (
@@ -417,6 +462,9 @@ function GoalPanel({
   onLevel,
   onPlan,
   onApprove,
+  onReopen,
+  onResume,
+  onResumeMission,
   onDelete,
 }: {
   detail: GoalDetail;
@@ -425,13 +473,19 @@ function GoalPanel({
   onLevel: (l: AutonomyLevel) => void;
   onPlan: () => void;
   onApprove: () => void;
+  onReopen: () => void;
+  onResume: () => void;
+  onResumeMission: (id: string) => void;
   onDelete: () => void;
 }) {
   const { goal, missions, spent_usd } = detail;
+  const [confirmReopen, setConfirmReopen] = useState<string | null>(null);
   const planFailed = goal.status === "planning" && goal.note.startsWith("The planner failed");
   const planning = goal.status === "planning" && !planFailed;
   const finished = goal.status === "done" || goal.status === "failed";
   const inFlight = missions.some((m) => m.status === "running" || m.status === "review");
+  const failedMissions = missions.filter((m) => m.status === "failed");
+  const confirming = confirmReopen === goal.id;
   return (
     <Card className="space-y-4 p-4">
       <div>
@@ -456,6 +510,37 @@ function GoalPanel({
               </Button>
             )}
           </div>
+        )}
+        {goal.status === "paused" && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="primary" busy={busy} icon={<Play className="size-3.5" />} onClick={onResume} title="Return the goal to running. Missions stopped with it stay paused until you resume each one.">
+              Resume goal
+            </Button>
+            {missions.some((m) => m.status === "paused") && <span className="text-label text-slate-500">Stopped missions stay paused; resume each one below.</span>}
+          </div>
+        )}
+        {goal.status === "failed" && failedMissions.length > 0 && (
+          confirming ? (
+            <div className="mt-2 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.04] p-3">
+              <p className="text-small text-slate-300">
+                Reopen {failedMissions.length} failed mission{failedMissions.length === 1 ? "" : "s"} in {goal.repos.join(", ")}? Each queues for one new attempt with its previous round cleared, and starts when nothing else is queued. Spend so far stays counted.
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="primary" busy={busy} icon={<RotateCcw className="size-3.5" />} onClick={onReopen}>
+                  Reopen
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmReopen(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2">
+              <Button size="sm" variant="secondary" icon={<RotateCcw className="size-3.5" />} onClick={() => setConfirmReopen(goal.id)} title="Queue this goal's failed missions for one new attempt">
+                Reopen failed missions
+              </Button>
+            </div>
+          )
         )}
       </div>
 
@@ -509,6 +594,11 @@ function GoalPanel({
                 <span className={`w-16 shrink-0 ${MISSION_STYLE[m.status] ?? ""}`}>{m.status}</span>
                 <span className="min-w-0 flex-1 text-slate-200">{m.goal}</span>
                 <span className="text-label text-slate-500">{m.agent}</span>
+                {m.status === "paused" && (
+                  <button onClick={() => onResumeMission(m.id)} className="text-label text-orange-300 hover:underline" title="Queue this mission again">
+                    resume
+                  </button>
+                )}
                 {m.pr_url && (
                   <a href={m.pr_url} target="_blank" rel="noreferrer" className="text-label text-sky-300 hover:underline">
                     PR

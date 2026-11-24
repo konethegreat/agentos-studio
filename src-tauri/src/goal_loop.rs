@@ -139,6 +139,22 @@ pub fn count_reject(id: &str) {
     kv_set(&rejects_key(id), &(rejects(id) + 1).to_string());
 }
 
+/// Forget everything the previous round recorded for a mission, so a reopened mission is judged
+/// on its new work: merge outcome and failures, holds, rejects, the CI heal state, and the count
+/// of rounds that finished without a pull request.
+pub fn clear_round(id: &str) {
+    for key in [
+        merge_key(id),
+        merge_fail_key(id),
+        hold_key(id),
+        rejects_key(id),
+        heal_key(id),
+        crate::automation::no_pr_key(id),
+    ] {
+        kv_del(&key);
+    }
+}
+
 /// Is a blocked mission's reason a destructive approval rather than ordinary stuck work? Pure.
 pub fn is_destructive(reason: &str) -> bool {
     let r = reason.to_lowercase();
@@ -714,6 +730,41 @@ fn blocked_step(m: &Mission, g: &Goal, p: &mut Pass) -> Result<()> {
     Ok(())
 }
 
+/// Stop a mission where it is and end its worker when it has one. A stop is a decision about one
+/// mission: the mission pauses (Resume queues it again) instead of failing, and its goal keeps
+/// its other work. A mission that already finished stays where it is.
+fn stop_mission(id: &str, why: &str) -> Result<()> {
+    let Some(cur) = missions::get(id)? else {
+        return Ok(());
+    };
+    if cur.status == "running" {
+        if let Some(task) = cur.task_id.as_deref() {
+            if crate::kanban::is_kanban(Some(task)) {
+                let _ = crate::kanban::halt(task, why);
+            } else {
+                crate::bus::stop_task_worker(task);
+            }
+        }
+    }
+    let _ = missions::stop(id, why);
+    Ok(())
+}
+
+/// Hold a goal where it is: paused, not failed, so its queued work and its stopped missions can be
+/// resumed. Only a budget, planner or done-check stop ends a goal.
+fn pause_goal(v: &Vault, goal_id: &str, why: &str) -> Result<()> {
+    if goals::set_status(goal_id, &["running", "verifying"], "paused", why).is_ok() {
+        let _ = goals::write_note(v, goal_id);
+        let _ = crate::agent_log::record(&crate::agent_log::NewEvent {
+            kind: "note",
+            from_agent: "agentos-studio",
+            summary: &format!("{goal_id}: {why}"),
+            ..Default::default()
+        });
+    }
+    Ok(())
+}
+
 fn fail_goal(v: &Vault, goal_id: &str, why: &str) -> Result<()> {
     for m in goals::missions_of(goal_id)? {
         if m.status == "queued" || m.status == "blocked" {
@@ -790,20 +841,24 @@ fn apply(v: &Vault, e: &Escalation) -> Result<()> {
             }
             Ok(())
         }
-        (_, "stop") => {
-            if let Some(m) = e.mission_id.as_deref() {
-                kv_del(&hold_key(m));
-                let why = format!("Stopped: {why}");
-                // A retry can restart the mission while the question waits, and cancel only
-                // reaches queued and blocked missions. Block first, then cancel, so a stop always
-                // takes effect instead of being dropped and followed by another round of churn.
-                if missions::cancel(m, &why).is_err() {
-                    let _ = missions::block(m, &why, false);
-                    let _ = missions::cancel(m, &why);
-                }
-            }
+        ("budget" | "plan_failed" | "done_check", "stop") => {
+            // These end the goal: the money is gone, there is no plan, or the checks failed
+            // twice. A reopen starts a new round from a failed goal.
             if let Some(gid) = e.goal_id.as_deref() {
                 fail_goal(v, gid, &format!("Stopped: {why}"))?;
+            }
+            Ok(())
+        }
+        (_, "stop") => {
+            // A stop about one mission pauses that mission and its goal. Nothing else is
+            // cancelled: the sibling missions keep their place, and Resume puts the goal back to
+            // work with the stopped mission waiting for its own restart.
+            if let Some(m) = e.mission_id.as_deref() {
+                kv_del(&hold_key(m));
+                stop_mission(m, &format!("Stopped: {why}"))?;
+            }
+            if let Some(gid) = e.goal_id.as_deref() {
+                pause_goal(v, gid, &format!("Paused: {why}"))?;
             }
             Ok(())
         }
@@ -1055,7 +1110,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stop_answer_ends_a_mission_that_restarted_while_the_question_waited() {
+    fn a_stop_answer_pauses_the_mission_and_its_goal_but_keeps_the_siblings() {
         let d = tempfile::tempdir().unwrap();
         let _g = crate::store::test_env_lock();
         crate::store::set_test_db(Some(d.path().join("studio.db")));
@@ -1085,8 +1140,20 @@ mod tests {
             0.0,
         )
         .unwrap();
-        // The retry restarted the mission while the stop question was still waiting: cancel only
-        // reaches queued and blocked missions.
+        goals::attach(&g.id, &m.id).unwrap();
+        let sibling = missions::create(
+            "agentos-sandbox-1",
+            &g.id,
+            "accept",
+            "implementer",
+            "claude-code",
+            "",
+            "",
+            0.0,
+        )
+        .unwrap();
+        goals::attach(&g.id, &sibling.id).unwrap();
+        // The retry restarted the mission while the stop question was still waiting.
         let c = crate::store::open().unwrap();
         c.execute(
             "UPDATE missions SET status = 'running' WHERE id = ?1",
@@ -1104,12 +1171,19 @@ mod tests {
         .unwrap();
         let answered = escalation::answer(&e.id, "stop", "orchestrator").unwrap();
         apply(&v, &answered).expect("a stop answer must always take effect");
+        let stopped = missions::get(&m.id).unwrap().unwrap();
+        assert_eq!(stopped.status, "paused", "the stopped mission is resumable");
+        assert!(stopped
+            .review_note
+            .as_deref()
+            .unwrap()
+            .contains("E-1 stop"));
+        assert_eq!(goals::get(&g.id).unwrap().unwrap().status, "paused");
         assert_eq!(
-            missions::get(&m.id).unwrap().unwrap().status,
-            "failed",
-            "a restarted mission is stopped too, not left running under a failed goal"
+            missions::get(&sibling.id).unwrap().unwrap().status,
+            "queued",
+            "a stop about one mission never cancels the other work"
         );
-        assert_eq!(goals::get(&g.id).unwrap().unwrap().status, "failed");
         crate::store::set_test_db(None);
     }
 
@@ -1201,15 +1275,15 @@ mod tests {
         assert!(!held(&m.id));
         assert_eq!(rejects(&m.id), 1, "the next reject asks again");
 
-        // A stop fails the mission and the goal, and says why.
+        // A stop pauses the mission and the goal, and says why.
         count_reject(&m.id);
         reject_step(&m, &g, &mut p).unwrap();
         let e2 = escalation::find_open(Some(&g.id), Some(&m.id), "second_reject").unwrap();
         let e2 = escalation::answer(&e2.id, "stop", "studio").unwrap();
         apply(&v, &e2).unwrap();
-        assert_eq!(missions::get(&m.id).unwrap().unwrap().status, "failed");
+        assert_eq!(missions::get(&m.id).unwrap().unwrap().status, "paused");
         let g = goals::get(&g.id).unwrap().unwrap();
-        assert_eq!(g.status, "failed");
+        assert_eq!(g.status, "paused");
         assert!(
             g.note.contains("E-2 stop (answered from studio)"),
             "{}",

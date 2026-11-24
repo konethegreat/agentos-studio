@@ -388,6 +388,31 @@ pub fn delete_for_goal(goal_id: &str) -> Result<usize> {
     )?)
 }
 
+/// Remove a mission's escalations of the given kinds, with their applied and Shadow plan
+/// markers. Work that is reopened starts with no questions left over from the rounds that
+/// stopped it: an open one would be answered by the orchestrator on its next pass and undo the
+/// reopen before the new attempt could run.
+pub fn delete_for_mission(mission_id: &str, kinds: &[&str]) -> Result<usize> {
+    let c = store::open()?;
+    let mut removed = 0;
+    for kind in kinds {
+        let ids: Vec<String> = c
+            .prepare("SELECT id FROM escalations WHERE mission_id = ?1 AND kind = ?2")?
+            .query_map(params![mission_id, kind], |r| r.get(0))?
+            .flatten()
+            .collect();
+        for id in &ids {
+            store::kv_delete(&c, &applied_key(id))?;
+            store::kv_delete(&c, &crate::shadow::plan_key(id))?;
+        }
+        removed += c.execute(
+            "DELETE FROM escalations WHERE mission_id = ?1 AND kind = ?2",
+            params![mission_id, kind],
+        )?;
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,6 +546,48 @@ mod tests {
             assert_eq!(timeout_minutes(), 15);
             assert!(set_timeout_minutes(1).is_err());
             assert_eq!(delete_for_goal("G-001").unwrap(), 1);
+        })
+    }
+
+    #[test]
+    fn reopening_a_mission_removes_only_the_questions_it_answers_for() {
+        with_db(|| {
+            let (stuck, _) = raise(
+                Some("G-001"),
+                Some("M-001"),
+                "stuck",
+                "Retry M-001?",
+                &["retry", "stop"],
+                "stop",
+            )
+            .unwrap();
+            let (budget, _) = raise(
+                Some("G-001"),
+                Some("M-001"),
+                "budget",
+                "M-001 passed its budget. Keep going?",
+                &["stop", "raise"],
+                "stop",
+            )
+            .unwrap();
+            let (other, _) = raise(
+                Some("G-001"),
+                Some("M-002"),
+                "stuck",
+                "Retry M-002?",
+                &["retry", "stop"],
+                "stop",
+            )
+            .unwrap();
+            let c = store::open().unwrap();
+            store::kv_set(&c, &applied_key(&stuck.id), "1").unwrap();
+
+            assert_eq!(delete_for_mission("M-001", &["stuck", "destructive"]).unwrap(), 1);
+            assert!(get(&stuck.id).unwrap().is_none());
+            assert!(store::kv_get(&c, &applied_key(&stuck.id)).unwrap().is_none());
+            assert!(get(&budget.id).unwrap().is_some(), "a budget question still matters");
+            assert!(get(&other.id).unwrap().is_some(), "another mission is untouched");
+            assert_eq!(delete_for_mission("M-001", &["stuck"]).unwrap(), 0);
         })
     }
 
