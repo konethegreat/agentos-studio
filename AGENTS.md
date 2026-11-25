@@ -79,3 +79,7 @@ rules apply to every agent and every terminal in this repository:
   building this repository. Wait for the running command to finish.
 - `src-tauri/tests` has one top-level file per test binary. Each one is a separate link, so a full
   run pays for every file; that is the reason targeted suites matter here.
+- Unit tests never open the live Studio store. `store::db_path()` panics under `cfg(test)` when no
+  override is set, so a test that needs the store calls `store::set_test_db(Some(dir.path().join("studio.db")))`
+  and clears it with `set_test_db(None)` at the end. Never point tests at the real
+  `%APPDATA%\agentos-studio\studio.db`; a newer schema there makes the running hub refuse reads.
