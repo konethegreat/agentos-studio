@@ -35,11 +35,47 @@ file writes a starter file for the extension you chose.
 
 ## Preview
 
-**Preview** opens a window pointed at a loopback HTTP server that only this Studio process starts.
-The server binds `127.0.0.1` on a random port, requires an unguessable token in the URL, serves
-only files inside the artifact folder, and never lists directories. Responses are capped at 8 MB
-and carry `no-store`, `nosniff` and `no-referrer`. A draft can be previewed before it is published;
-previews never touch the public site.
+**Code > Artifacts** has a Preview and a Code view. Preview renders the saved files inside Studio,
+in a frame served by the same loopback HTTP server that **Open window** uses. The server binds
+`127.0.0.1` on a random port, requires an unguessable token in the URL, serves only files inside the
+artifact folder, and never lists directories. Responses are capped at 8 MB and carry `no-store`,
+`nosniff` and `no-referrer`. HTML responses also carry a `frame-ancestors` policy that allows only
+Studio windows.
+
+The preview server injects one extra script, `/<token>/_customizer.js`, into every HTML page it
+serves. Publish copies the folder as it is, so the public site never carries the script. The script
+does nothing until Studio switches it on, which is why the preview window and the installed app keep
+working normally.
+
+A draft can be previewed before it is published; previews never touch the public site. Saving a file
+reloads the frame, so the preview always shows the saved folder.
+
+## Customize with AI
+
+The Customizer panel sits beside the preview. The loop is built so the model proposes and Studio
+decides:
+
+1. **Select element** turns the preview into pick mode. Clicking any element highlights it and sends
+   its tag, id, classes, selector, visible text and outer HTML to Studio. Clicking a link or a button
+   in pick mode selects it instead of activating it. Escape turns pick mode off.
+2. Describe the change and pick an agent. The installed headless agents are Claude Code,
+   Antigravity and Hermes; the default is the strongest one installed here.
+3. The agent runs one headless turn in the artifact folder with read-only tools and answers with a
+   JSON plan: a summary and up to 12 edits, each an exact `old` text and its `new` replacement. With
+   no element selected the request still works and the agent edits from the description.
+4. Studio validates the plan before showing it: every `old` must match the current file exactly and
+   uniquely, paths must stay inside the artifact, `agentos.js` is refused, new files start empty, and
+   every replacement runs the same rules as the publish check (no placeholder markers, no banned
+   dashes, no localhost URLs).
+5. The panel shows the exact patch per file with its line and reason. **Apply changes** re-reads the
+   files, validates the whole plan again against the disk, writes each touched file once and reloads
+   the preview. **Discard** writes nothing.
+
+The agent never writes files itself. It receives the file contents and returns text; Studio performs
+every write after the review. If you have unsaved editor changes, the customizer asks you to save
+first, because the plan was validated against the saved files. A stale or ambiguous patch is refused
+with a message to generate it again. The customizer runs no approval prompt, like any other local
+edit; publishing still asks.
 
 ## Install as an app
 
@@ -51,10 +87,33 @@ site is untouched.
 
 ## Publish
 
-**Publish** commits every published artifact plus the current one to one GitHub repository and
-enables GitHub Pages on it. The default site is `<your GitHub login>/agentos-artifacts`. Set a
-different repository in **Site**; it must belong to the signed-in account. The repository is
-created (public) on the first publish if it does not exist.
+**Publish** first runs the publish check on the saved files, then commits every published artifact
+plus the current one to one GitHub repository and enables GitHub Pages on it. The default site is
+`<your GitHub login>/agentos-artifacts`. Set a different repository in **Site**; it must belong to
+the signed-in account. The repository is created (public) on the first publish if it does not exist.
+
+### Publish check
+
+The header shows **Ready to publish** or a count of problems. The button opens the list with file
+and line. The check reads the saved folder and refuses the publish when it finds:
+
+- index.html missing or empty;
+- unbalanced HTML: an opening tag never closed, a close tag with no opening tag, or a tag that never
+  ends with `>`. Script, style, textarea and title bodies are skipped, so comparisons and template
+  strings do not count as tags;
+- a local `src`, `href` or CSS `url()` that does not exist, or one written from the site root
+  (`/styles.css`), which breaks under `/a/<slug>/`;
+- an empty `src` or `href`;
+- a file larger than 1 MB;
+- a JavaScript file that `node --check` rejects, when Node is installed; module syntax is skipped;
+- a placeholder marker (`TODO` or `FIXME` as a whole word, `implement later`, `lorem ipsum`);
+- an em dash or en dash;
+- `localhost`, `127.0.0.1` or `0.0.0.0`;
+- text that is not UTF-8.
+
+The list is capped at 60 problems. Publish names the first problems in its error, so a broken page
+cannot reach GitHub Pages. The same rules run on every customizer replacement, which is what keeps a
+vibe-coded patch out of the site.
 
 The site layout:
 
@@ -142,3 +201,8 @@ Local editing, preview and install do not ask.
 - **Large artifacts.** Each editable file is capped at 1 MB and the whole artifact is copied into
   the site on every publish, so keep it small. That is the design: a fast static site, not a file
   host.
+- **Node is not installed.** The publish check still runs every static rule, but it cannot run
+  `node --check`, so JavaScript syntax is not verified until Node is on PATH.
+- **Customizer agent unavailable.** The panel names the three headless agents. Install one of them,
+  or the request is refused before any turn starts. A plan also names what failed when the patch is
+  stale, ambiguous or touches a generated file.

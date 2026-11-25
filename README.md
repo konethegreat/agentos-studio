@@ -31,7 +31,7 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Real terminals.** A docked panel with true PTY terminals (ConPTY on Windows) for interactive Hermes, the Hermes TUI, Claude Code or your shell, plus a one-shot command runner. Any chat can be continued in a terminal with one click.
 - **Workspaces and folders.** Organise chats into workspaces, folders and sub-folders with drag and drop, pins, tags, archive and file attachments. Map a folder to a repository and every chat run there lands in it automatically; link it to a Hermes project.
 - **GitHub.** Pull requests (diff, checks, review, merge, create), issues, Actions runs (failed logs, re-run), branches and commits, all through your `gh` login, with "Ask Hermes" hand-offs into chat.
-- **Artifacts.** Build small web apps in plain HTML, CSS and JavaScript. Each one previews over a token-guarded loopback server, installs as its own window that reopens on every start, keeps data per artifact through a small storage runtime, and publishes to one GitHub Pages site with a generated gallery and a URL per app. [docs/ARTIFACTS.md](docs/ARTIFACTS.md).
+- **Artifacts with a selection customizer.** Build small web apps in plain HTML, CSS and JavaScript. Each one previews in a live frame over a token-guarded loopback server; click any element, describe the change, and a headless agent answers with an exact patch you review before it is written. A deterministic publish check blocks placeholder text, banned dashes, broken tags, missing assets and machine-only URLs, so nothing unverified reaches GitHub Pages. Install as its own window, keep data per artifact, and publish to one Pages site with a gallery and a URL per app. [docs/ARTIFACTS.md](docs/ARTIFACTS.md).
 - **Update Center.** Hermes, Claude Code, the Antigravity and Qoder CLIs, every Hermes plugin (each one listed with its installed and available version) and Studio are checked automatically, with an in-app alert, an OS notification and a readable changelog. Update, Skip this version or Remind me later; every update is recorded first, with rollback where the tool supports one.
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
@@ -49,10 +49,14 @@ Stopped and failed work is no longer a dead end.
   the spend kept. Each goal gets one automatic round; the Reopen button on a failed goal queues
   every failed mission at once. `AGENTOS_REOPEN_BUDGET` (`<goals>/<missions>`, default `1/6`) caps
   an automatic pass. [docs/GOALS.md](docs/GOALS.md) has the full rules.
-- **Artifacts.** Code, Artifacts builds small web apps in HTML, CSS and JavaScript, previews them
-  over a loopback server, installs them as their own window, and publishes them to a GitHub Pages
-  site with a gallery and a URL per app, with per-artifact data kept in the browser.
-  [docs/ARTIFACTS.md](docs/ARTIFACTS.md) covers editing, install, publishing and custom domains.
+- **Artifacts, customized by selection.** Code, Artifacts builds small web apps in HTML, CSS and
+  JavaScript and previews them in a live frame. Select any element, describe the change, and pick a
+  headless agent; it answers with an exact patch shown for review before Studio writes it. A
+  deterministic publish check refuses broken tags, missing assets, placeholder text, banned dashes
+  and localhost URLs before anything reaches the GitHub Pages site, which keeps a gallery and a URL
+  per app, with per-artifact data kept in the browser.
+  [docs/ARTIFACTS.md](docs/ARTIFACTS.md) covers the customizer, the check, install, publishing and
+  custom domains.
 
 ## What is new in 2.6.6
 

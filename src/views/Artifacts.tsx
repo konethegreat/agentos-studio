@@ -1,17 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppWindow,
   CheckCircle2,
   CircleAlert,
+  Code2,
   Copy,
   ExternalLink,
   Eye,
   FilePlus2,
   Globe,
+  MousePointerClick,
   Package,
   Plus,
   RefreshCw,
   Save,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
   Trash2,
   UploadCloud,
 } from "lucide-react";
@@ -19,9 +24,21 @@ import { errorText } from "../lib/api";
 import { ApprovalDeclined, useGuarded } from "../components/ApprovalProvider";
 import { useToast } from "../components/Toasts";
 import { Badge, Button, Empty, Field, Modal, inputClass } from "../components/ui";
-import { studio, type Artifact, type ArtifactFile, type ArtifactSite, type ArtifactTemplate } from "../lib/studio";
+import {
+  studio,
+  type Artifact,
+  type ArtifactAgent,
+  type ArtifactCheck,
+  type ArtifactFile,
+  type ArtifactPlan,
+  type ArtifactSelection,
+  type ArtifactSite,
+  type ArtifactTemplate,
+} from "../lib/studio";
 
 const TEMPLATE_ORDER = ["blank", "todo", "notes"];
+
+const NO_SELECTION: ArtifactSelection = { selector: "", tag: "", id: "", classes: "", text: "", html: "" };
 
 function bytesLabel(n: number) {
   if (n < 1024) return `${n} B`;
@@ -115,9 +132,28 @@ export function Artifacts() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [lastPublished, setLastPublished] = useState<string | null>(null);
 
+  const [view, setView] = useState<"preview" | "code">("preview");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewTick, setPreviewTick] = useState(0);
+  const [frameReady, setFrameReady] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [selection, setSelection] = useState<ArtifactSelection | null>(null);
+  const [agents, setAgents] = useState<ArtifactAgent[]>([]);
+  const [agent, setAgent] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const [planning, setPlanning] = useState(false);
+  const [plan, setPlan] = useState<ArtifactPlan | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [check, setCheck] = useState<ArtifactCheck | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkOpen, setCheckOpen] = useState(false);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+
   const artifact = useMemo(() => rows?.find((r) => r.id === selected) ?? null, [rows, selected]);
   const generated = file === "agentos.js";
   const dirty = selected !== null && file !== "" && content !== saved && !generated;
+  const installedAgents = useMemo(() => agents.filter((a) => a.installed), [agents]);
 
   const load = useCallback(async () => {
     try {
@@ -151,6 +187,83 @@ export function Artifacts() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    studio.artifacts
+      .agents()
+      .then((list) => {
+        setAgents(list);
+        setAgent((current) => current || list.find((a) => a.installed)?.id || "");
+      })
+      .catch((e) => toast("error", errorText(e)));
+  }, [toast]);
+
+  const runCheck = useCallback(
+    async (id: string) => {
+      setChecking(true);
+      try {
+        setCheck(await studio.artifacts.validate(id));
+      } catch (e) {
+        setCheck(null);
+        toast("error", errorText(e));
+      } finally {
+        setChecking(false);
+      }
+    },
+    [toast],
+  );
+
+  useEffect(() => {
+    setPlan(null);
+    setSelection(null);
+    setPicking(false);
+    setCheck(null);
+    setPreviewUrl(null);
+    setFrameReady(false);
+    setPreviewTick(0);
+    if (selected) void runCheck(selected);
+  }, [selected, runCheck]);
+
+  useEffect(() => {
+    if (!selected || view !== "preview") return;
+    let live = true;
+    setPreviewError(null);
+    studio.artifacts
+      .previewUrl(selected)
+      .then((url) => {
+        if (live) setPreviewUrl(url);
+      })
+      .catch((e) => {
+        if (live) setPreviewError(errorText(e));
+      });
+    return () => {
+      live = false;
+    };
+  }, [selected, view, previewTick]);
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      const frame = frameRef.current;
+      if (!frame || event.source !== frame.contentWindow) return;
+      const data = event.data as { t?: string; pick?: Partial<ArtifactSelection> } | null;
+      if (!data || typeof data.t !== "string") return;
+      if (data.t === "agentos:pick" && data.pick) {
+        setSelection({
+          selector: String(data.pick.selector ?? ""),
+          tag: String(data.pick.tag ?? ""),
+          id: String(data.pick.id ?? ""),
+          classes: String(data.pick.classes ?? ""),
+          text: String(data.pick.text ?? ""),
+          html: String(data.pick.html ?? ""),
+        });
+        setPicking(false);
+        return;
+      }
+      if (data.t === "agentos:off") setPicking(false);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   useEffect(() => {
     if (!selected) {
@@ -218,6 +331,7 @@ export function Artifacts() {
       setRows((list) => list?.map((r) => (r.id === row.id ? row : r)) ?? list);
       setSaved(content);
       setFiles(await studio.artifacts.files(selected));
+      setPreviewTick((t) => t + 1);
       toast("ok", `Saved ${file}`);
       return true;
     } catch (e) {
@@ -247,9 +361,13 @@ export function Artifacts() {
   }
 
   async function pickFile(path: string) {
-    if (path === file) return;
+    if (path === file) {
+      setView("code");
+      return;
+    }
     if (dirty && !(await save())) return;
     setFile(path);
+    setView("code");
   }
 
   async function create() {
@@ -290,6 +408,7 @@ export function Artifacts() {
       setRows((list) => list?.map((r) => (r.id === row.id ? row : r)) ?? list);
       setFiles(await studio.artifacts.files(selected));
       setFile(path);
+      setView("code");
       setNewPath("");
       setAdding(false);
       toast("ok", `${path} added`);
@@ -405,6 +524,66 @@ export function Artifacts() {
     }
   }
 
+  function togglePick() {
+    if (picking) {
+      frameRef.current?.contentWindow?.postMessage({ t: "agentos:off" }, "*");
+      setPicking(false);
+      return;
+    }
+    setPicking(true);
+    frameRef.current?.contentWindow?.postMessage({ t: "agentos:enable" }, "*");
+  }
+
+  function onFrameLoad() {
+    setFrameReady(true);
+    if (picking) frameRef.current?.contentWindow?.postMessage({ t: "agentos:enable" }, "*");
+  }
+
+  async function askAgent() {
+    if (!selected || !instruction.trim()) return;
+    if (dirty && !(await save())) return;
+    setPlanning(true);
+    setPlan(null);
+    try {
+      const next = await studio.artifacts.customize(selected, selection ?? NO_SELECTION, instruction.trim(), agent || null);
+      setPlan(next);
+      setInstruction("");
+      toast("ok", "Review the exact change, then apply it");
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setPlanning(false);
+    }
+  }
+
+  async function applyPlan() {
+    if (!selected || !plan) return;
+    if (dirty) {
+      toast("error", "Save or undo the editor changes first. The plan was checked against the saved files.");
+      return;
+    }
+    setApplying(true);
+    try {
+      const row = await studio.artifacts.apply(selected, plan.edits);
+      setRows((list) => list?.map((r) => (r.id === row.id ? row : r)) ?? list);
+      const touched = new Set(plan.edits.map((e) => e.path));
+      setFiles(await studio.artifacts.files(selected));
+      if (file && touched.has(file) && !generated) {
+        const text = await studio.artifacts.readFile(selected, file);
+        setContent(text);
+        setSaved(text);
+      }
+      setPlan(null);
+      setPreviewTick((t) => t + 1);
+      void runCheck(selected);
+      toast("ok", `Applied: ${plan.summary}`);
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setApplying(false);
+    }
+  }
+
   const siteReady = !!site?.pages_ready;
 
   return (
@@ -412,7 +591,7 @@ export function Artifacts() {
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-6 py-3">
         <div className="min-w-0">
           <h1 className="text-base font-semibold text-slate-100">Artifacts</h1>
-          <p className="truncate text-label text-slate-500">Small web apps you build here, preview over loopback, install as their own window, and publish to GitHub Pages.</p>
+          <p className="truncate text-label text-slate-500">Small web apps you build here, customize by selecting an element, install as their own window, and publish to GitHub Pages.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button size="sm" icon={<RefreshCw className="size-3.5" />} onClick={() => void load()} title="Reload artifacts and site status">
@@ -496,6 +675,22 @@ export function Artifacts() {
                         <Badge className="bg-white/5 text-slate-400 ring-white/10">Draft</Badge>
                       )}
                       <Badge className="bg-white/5 text-slate-400 ring-white/10">{artifact.template}</Badge>
+                      {check && (
+                        <button
+                          type="button"
+                          onClick={() => setCheckOpen(true)}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-label ${
+                            check.ok
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                              : "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                          }`}
+                          title="Open the publish check"
+                        >
+                          {check.ok ? <ShieldCheck className="size-3.5" /> : <ShieldAlert className="size-3.5" />}
+                          {check.ok ? "Ready to publish" : `${check.issues.length} problem${check.issues.length === 1 ? "" : "s"}`}
+                        </button>
+                      )}
+                      {checking && <span className="text-label text-slate-500">Checking...</span>}
                       {installed.includes(artifact.id) && (
                         <Badge className="bg-sky-500/10 text-sky-300 ring-sky-500/25">Installed</Badge>
                       )}
@@ -544,13 +739,37 @@ export function Artifacts() {
               </div>
 
               <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-6 py-2">
+                <div className="flex items-center rounded-lg border border-line bg-canvas p-0.5" role="group" aria-label="Editor view">
+                  <button
+                    type="button"
+                    onClick={() => setView("preview")}
+                    aria-pressed={view === "preview"}
+                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-label transition-colors ${
+                      view === "preview" ? "bg-emerald-500/15 text-emerald-200" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    <Eye className="size-3.5" />
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView("code")}
+                    aria-pressed={view === "code"}
+                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-label transition-colors ${
+                      view === "code" ? "bg-emerald-500/15 text-emerald-200" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    <Code2 className="size-3.5" />
+                    Code
+                  </button>
+                </div>
                 <Button
                   size="sm"
-                  icon={<Eye className="size-3.5" />}
+                  icon={<ExternalLink className="size-3.5" />}
                   onClick={() => void studio.artifacts.preview(artifact.id).catch((e) => toast("error", errorText(e)))}
                   title="Open a private preview window served from this machine"
                 >
-                  Preview
+                  Open window
                 </Button>
                 <Button
                   size="sm"
@@ -648,31 +867,182 @@ export function Artifacts() {
                 )}
               </div>
 
-              <div className="relative min-h-0 flex-1">
-                {loadingFile || loadingFiles ? (
-                  <p className="px-6 py-4 text-xs text-slate-500">Loading {file || "files"}...</p>
-                ) : file ? (
-                  <textarea
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    spellCheck={false}
-                    readOnly={generated}
-                    aria-label={`${file} contents`}
-                    className="h-full w-full resize-none border-0 bg-transparent px-6 py-4 font-mono text-ui leading-relaxed text-slate-200 outline-none read-only:text-slate-400"
-                  />
-                ) : (
-                  <div className="p-6">
-                    <Empty icon={<FilePlus2 className="size-6" />} title="No files" hint="Add an index.html to make this artifact runnable." />
+              {view === "code" ? (
+                <>
+                  <div className="relative min-h-0 flex-1">
+                    {loadingFile || loadingFiles ? (
+                      <p className="px-6 py-4 text-xs text-slate-500">Loading {file || "files"}...</p>
+                    ) : file ? (
+                      <textarea
+                        value={content}
+                        onChange={(e) => setContent(e.target.value)}
+                        spellCheck={false}
+                        readOnly={generated}
+                        aria-label={`${file} contents`}
+                        className="h-full w-full resize-none border-0 bg-transparent px-6 py-4 font-mono text-ui leading-relaxed text-slate-200 outline-none read-only:text-slate-400"
+                      />
+                    ) : (
+                      <div className="p-6">
+                        <Empty icon={<FilePlus2 className="size-6" />} title="No files" hint="Add an index.html to make this artifact runnable." />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <footer className="flex shrink-0 items-center gap-2 border-t border-line px-6 py-1.5 text-label text-slate-500">
-                <span>{fileLanguage(file)}</span>
-                <span aria-hidden="true">·</span>
-                <span>{generated ? "agentos.js is generated and refreshed on publish" : dirty ? "Unsaved changes" : "Saved"}</span>
-                <span className="ml-auto">Ctrl+S saves</span>
-              </footer>
+                  <footer className="flex shrink-0 items-center gap-2 border-t border-line px-6 py-1.5 text-label text-slate-500">
+                    <span>{fileLanguage(file)}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{generated ? "agentos.js is generated and refreshed on publish" : dirty ? "Unsaved changes" : "Saved"}</span>
+                    <span className="ml-auto">Ctrl+S saves</span>
+                  </footer>
+                </>
+              ) : (
+                <div className="flex min-h-0 flex-1">
+                  <div className="relative min-h-0 min-w-0 flex-1 bg-slate-950">
+                    {previewError ? (
+                      <div className="flex h-full items-center justify-center p-6">
+                        <div className="max-w-sm text-center">
+                          <CircleAlert className="mx-auto size-6 text-amber-300" />
+                          <p className="mt-2 break-words text-xs leading-relaxed text-amber-200">{previewError}</p>
+                          <Button size="sm" className="mt-3" icon={<RefreshCw className="size-3.5" />} onClick={() => setPreviewTick((t) => t + 1)}>
+                            Retry
+                          </Button>
+                        </div>
+                      </div>
+                    ) : previewUrl ? (
+                      <iframe
+                        key={previewTick}
+                        ref={frameRef}
+                        src={previewUrl}
+                        title={`${artifact.name} live preview`}
+                        onLoad={onFrameLoad}
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                        className="h-full w-full border-0 bg-white"
+                      />
+                    ) : (
+                      <p className="px-6 py-4 text-xs text-slate-500">Starting the preview server...</p>
+                    )}
+                  </div>
+
+                  <aside className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-line" aria-label="Artifact customizer">
+                    <div className="border-b border-line px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-slate-100">Customizer</h3>
+                        {picking && <Badge className="bg-emerald-500/10 text-emerald-300 ring-emerald-500/25">Picking</Badge>}
+                      </div>
+                      <p className="mt-1 text-label leading-relaxed text-slate-500">
+                        Select one element in the preview, describe the change, then review the exact patch before anything is written.
+                      </p>
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant={picking ? "primary" : "secondary"}
+                          icon={<MousePointerClick className="size-3.5" />}
+                          onClick={togglePick}
+                          disabled={!frameReady || !!previewError}
+                        >
+                          {picking ? "Cancel picking" : "Select element"}
+                        </Button>
+                        {selection && (
+                          <Button size="sm" variant="ghost" onClick={() => setSelection(null)}>
+                            Clear
+                          </Button>
+                        )}
+                      </div>
+                      {selection ? (
+                        <div className="mt-2 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.06] px-2.5 py-2">
+                          <p className="truncate font-mono text-label text-emerald-200" title={selection.selector}>
+                            {selection.selector || selection.tag}
+                          </p>
+                          {selection.text && <p className="mt-0.5 line-clamp-2 text-label text-slate-400">{selection.text}</p>}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-label text-slate-600">No element selected. The agent changes the page from your description.</p>
+                      )}
+                    </div>
+
+                    <div className="flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
+                      <textarea
+                        value={instruction}
+                        onChange={(e) => setInstruction(e.target.value)}
+                        placeholder={selection ? "Make this section calmer and keep the text." : "Add a dark footer with the current year."}
+                        aria-label="Describe the change"
+                        maxLength={2000}
+                        className="min-h-24 w-full resize-y rounded-lg border border-line bg-canvas px-3 py-2 text-xs leading-relaxed text-slate-200 outline-none focus:border-emerald-500/60"
+                      />
+                      <label className="flex items-center gap-2 text-label text-slate-500">
+                        <span className="shrink-0">Agent</span>
+                        <select
+                          value={agent}
+                          onChange={(e) => setAgent(e.target.value)}
+                          aria-label="Customizer agent"
+                          className="h-7 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2 text-label text-slate-200"
+                        >
+                          {agents.map((a) => (
+                            <option key={a.id} value={a.id} disabled={!a.installed}>
+                              {a.name}
+                              {a.installed ? "" : " (not installed)"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {installedAgents.length === 0 && (
+                        <p className="text-label leading-relaxed text-amber-300">
+                          Install Claude Code, Antigravity or Hermes to customize artifacts with AI.
+                        </p>
+                      )}
+                      <Button
+                        variant="primary"
+                        className="w-full"
+                        icon={<Sparkles className="size-3.5" />}
+                        busy={planning}
+                        disabled={!instruction.trim() || !agent || installedAgents.length === 0}
+                        onClick={() => void askAgent()}
+                      >
+                        {planning ? "Working..." : "Ask for the change"}
+                      </Button>
+                      {dirty && (
+                        <p className="text-label leading-relaxed text-amber-300">
+                          You have unsaved editor changes. The preview and the agent read the saved files.
+                        </p>
+                      )}
+
+                      {plan && (
+                        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] p-3">
+                          <p className="text-xs font-medium text-slate-100">{plan.summary}</p>
+                          <p className="mt-0.5 text-label text-slate-500">
+                            {plan.agent} · {plan.edits.length} edit{plan.edits.length === 1 ? "" : "s"} · {(plan.duration_ms / 1000).toFixed(1)}s
+                            {plan.cost_usd > 0 ? ` · $${plan.cost_usd.toFixed(3)}` : ""}
+                          </p>
+                          <ul className="mt-2 space-y-2">
+                            {plan.edits.map((editItem, i) => (
+                              <li key={`${editItem.path}-${i}`} className="rounded-lg border border-line bg-canvas p-2">
+                                <p className="font-mono text-label text-emerald-300">
+                                  {editItem.path}:{editItem.line || 1}
+                                </p>
+                                {editItem.why && <p className="mt-0.5 text-label text-slate-400">{editItem.why}</p>}
+                                <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap rounded bg-rose-500/[0.06] p-1.5 font-mono text-label leading-relaxed text-rose-200/80">
+                                  {editItem.old || "(new file)"}
+                                </pre>
+                                <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap rounded bg-emerald-500/[0.06] p-1.5 font-mono text-label leading-relaxed text-emerald-200/90">
+                                  {editItem.new}
+                                </pre>
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="mt-2 flex items-center gap-1.5">
+                            <Button size="sm" variant="primary" busy={applying} onClick={() => void applyPlan()}>
+                              Apply changes
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setPlan(null)}>
+                              Discard
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </aside>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -837,6 +1207,56 @@ export function Artifacts() {
                 Save domain
               </Button>
             </form>
+          </div>
+        </Modal>
+      )}
+
+      {checkOpen && (
+        <Modal
+          title="Publish check"
+          onClose={() => setCheckOpen(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setCheckOpen(false)}>
+                Close
+              </Button>
+              <Button
+                busy={checking}
+                icon={<RefreshCw className="size-3.5" />}
+                onClick={() => {
+                  if (selected) void runCheck(selected);
+                }}
+              >
+                Check again
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <p className={`flex items-center gap-1.5 text-xs ${check?.ok ? "text-emerald-300" : "text-amber-300"}`}>
+              {check?.ok ? <ShieldCheck className="size-4" /> : <ShieldAlert className="size-4" />}
+              {check?.ok
+                ? "This artifact passes every publish rule."
+                : "Publish stops until every problem below is fixed."}
+            </p>
+            {check && check.issues.length > 0 && (
+              <ul className="max-h-80 space-y-1.5 overflow-y-auto">
+                {check.issues.map((issueItem, i) => (
+                  <li key={`${issueItem.file}-${issueItem.line}-${i}`} className="rounded-lg border border-line bg-canvas px-2.5 py-2">
+                    <p className="font-mono text-label text-slate-300">
+                      {issueItem.file}
+                      {issueItem.line > 0 ? `:${issueItem.line}` : ""}
+                    </p>
+                    <p className="mt-0.5 text-label leading-relaxed text-slate-400">{issueItem.message}</p>
+                    <Badge className="mt-1 bg-white/5 text-slate-500 ring-white/10">{issueItem.rule}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-label leading-relaxed text-slate-500">
+              The check reads the saved files: index.html presence, tag balance, local assets, JavaScript syntax, placeholder
+              markers, banned dashes and machine-only URLs.
+            </p>
           </div>
         </Modal>
       )}

@@ -7,8 +7,10 @@ pub mod agent_limits;
 pub mod agent_log;
 pub mod agent_packs;
 pub mod agents;
-pub mod ask;
+pub mod artifact_check;
+pub mod artifact_customize;
 pub mod artifacts;
+pub mod ask;
 pub mod assign;
 pub mod automation;
 pub mod autonomy;
@@ -546,6 +548,11 @@ pub fn run_gui() {
             artifacts::artifacts_install_window,
             artifacts::artifacts_uninstall,
             artifacts::artifacts_installed,
+            artifacts::artifacts_validate,
+            artifacts::artifacts_customize_agents,
+            artifacts::artifacts_customize,
+            artifacts::artifacts_customize_apply,
+            artifacts::artifacts_preview_url,
             commands::ci_badge,
             commands::memory_ledger,
             commands::memory_recent,

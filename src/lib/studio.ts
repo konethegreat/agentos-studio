@@ -391,6 +391,49 @@ export interface ArtifactPublish {
   commit: string;
 }
 
+export interface ArtifactIssue {
+  file: string;
+  line: number;
+  rule: string;
+  message: string;
+}
+
+export interface ArtifactCheck {
+  ok: boolean;
+  issues: ArtifactIssue[];
+}
+
+export interface ArtifactAgent {
+  id: string;
+  name: string;
+  installed: boolean;
+}
+
+export interface ArtifactSelection {
+  selector: string;
+  tag: string;
+  id: string;
+  classes: string;
+  text: string;
+  html: string;
+}
+
+export interface ArtifactEdit {
+  path: string;
+  old: string;
+  new: string;
+  why: string;
+  line: number;
+}
+
+export interface ArtifactPlan {
+  summary: string;
+  edits: ArtifactEdit[];
+  agent: string;
+  duration_ms: number;
+  cost_usd: number;
+}
+
 type Approved = { approved?: boolean };
 
 // ---------------------------------------------------------------- Hermes surfaces
@@ -676,6 +719,13 @@ export const studio = {
     install: (id: string) => invoke<string>("artifacts_install_window", { id }),
     uninstall: (id: string) => invoke<void>("artifacts_uninstall", { id }),
     installed: () => invoke<string[]>("artifacts_installed"),
+    validate: (id: string) => invoke<ArtifactCheck>("artifacts_validate", { id }),
+    agents: () => invoke<ArtifactAgent[]>("artifacts_customize_agents"),
+    customize: (id: string, selection: ArtifactSelection, instruction: string, agent: string | null) =>
+      invoke<ArtifactPlan>("artifacts_customize", { id, selection, instruction, agent }),
+    apply: (id: string, edits: ArtifactEdit[]) =>
+      invoke<Artifact>("artifacts_customize_apply", { id, edits }),
+    previewUrl: (id: string) => invoke<string>("artifacts_preview_url", { id }),
   },
   os: {
     openExternal: (url: string) => invoke<void>("open_external", { url }),
