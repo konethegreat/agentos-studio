@@ -74,7 +74,7 @@ pub fn name_with_owner(repo: &str) -> Result<String> {
     Ok(name)
 }
 
-fn gh(args: &[&str], stdin: Option<&str>, cwd: Option<&Path>) -> Result<String> {
+pub(crate) fn gh(args: &[&str], stdin: Option<&str>, cwd: Option<&Path>) -> Result<String> {
     if procs::find("gh").is_none() {
         bail!("The GitHub CLI (gh) is not installed. Install it from Setup and Integrations.");
     }
@@ -90,7 +90,7 @@ fn gh(args: &[&str], stdin: Option<&str>, cwd: Option<&Path>) -> Result<String> 
     Ok(out)
 }
 
-fn gh_json(args: &[&str], cwd: Option<&Path>) -> Result<Value> {
+pub(crate) fn gh_json(args: &[&str], cwd: Option<&Path>) -> Result<Value> {
     let out = gh(args, None, cwd)?;
     if out.trim().is_empty() {
         return Ok(Value::Null);

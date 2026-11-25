@@ -22,6 +22,7 @@ export type RailView =
   | "constitution"
   | "explorer"
   | "github"
+  | "artifacts"
   | "control"
   | "updates"
   | "safety"

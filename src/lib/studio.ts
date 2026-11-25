@@ -341,6 +341,56 @@ export interface AuditEntry {
 
 // ---------------------------------------------------------------- bindings
 
+// ---------------------------------------------------------------- artifacts
+
+export interface Artifact {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  template: string;
+  created_at: number;
+  updated_at: number;
+  published_at: number | null;
+  live_url: string | null;
+  folder: string;
+  files: number;
+  bytes: number;
+}
+
+export interface ArtifactFile {
+  path: string;
+  bytes: number;
+  modified_at: number;
+}
+
+export interface ArtifactTemplate {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface ArtifactSite {
+  repo: string;
+  configured: boolean;
+  pages_ready: boolean;
+  url: string | null;
+  artifact_base: string | null;
+  build_type: string | null;
+  status: string | null;
+  cname: string | null;
+  https_enforced: boolean;
+  last_run: { databaseId?: number; status?: string; conclusion?: string | null; createdAt?: string; updatedAt?: string; url?: string } | null;
+  error: string | null;
+}
+
+export interface ArtifactPublish {
+  artifact: Artifact;
+  url: string;
+  site_repo: string;
+  commit: string;
+}
+
 type Approved = { approved?: boolean };
 
 // ---------------------------------------------------------------- Hermes surfaces
@@ -607,6 +657,25 @@ export const studio = {
     run: (repo: string, id: number) => invoke<GhRunDetail>("gh_run_detail", { repo, id }),
     runLog: (repo: string, id: number) => invoke<string>("gh_run_failed_log", { repo, id }),
     rerun: (repo: string, id: number, failedOnly: boolean, a: Approved = {}) => invoke<string>("gh_run_rerun", { repo, id, failedOnly, ...a }),
+  },
+  artifacts: {
+    templates: () => invoke<ArtifactTemplate[]>("artifacts_templates"),
+    list: () => invoke<Artifact[]>("artifacts_list"),
+    create: (name: string, description: string, template: string) =>
+      invoke<Artifact>("artifacts_create", { name, description, template }),
+    files: (id: string) => invoke<ArtifactFile[]>("artifacts_files", { id }),
+    readFile: (id: string, path: string) => invoke<string>("artifacts_read_file", { id, path }),
+    writeFile: (id: string, path: string, content: string) =>
+      invoke<Artifact>("artifacts_write_file", { id, path, content }),
+    site: () => invoke<ArtifactSite>("artifacts_site_status"),
+    setSite: (repo: string) => invoke<ArtifactSite>("artifacts_set_site", { repo }),
+    setDomain: (domain: string, a: Approved = {}) => invoke<ArtifactSite>("artifacts_set_domain", { domain, ...a }),
+    publish: (id: string, a: Approved = {}) => invoke<ArtifactPublish>("artifacts_publish", { id, ...a }),
+    remove: (id: string, a: Approved = {}) => invoke<void>("artifacts_remove", { id, ...a }),
+    preview: (id: string) => invoke<string>("artifacts_preview_window", { id }),
+    install: (id: string) => invoke<string>("artifacts_install_window", { id }),
+    uninstall: (id: string) => invoke<void>("artifacts_uninstall", { id }),
+    installed: () => invoke<string[]>("artifacts_installed"),
   },
   os: {
     openExternal: (url: string) => invoke<void>("open_external", { url }),

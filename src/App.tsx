@@ -67,13 +67,14 @@ import { Prompts } from "./views/Prompts";
 import { Autonomy } from "./views/Autonomy";
 import { Today } from "./views/Today";
 import { UpdateCenter } from "./views/UpdateCenter";
+import { Artifacts } from "./views/Artifacts";
 import type { ExploreIntent } from "./views/Explorer";
 
 const GitHubView = lazy(() => import("./views/GitHubView").then((m) => ({ default: m.GitHubView })));
 const ComputerUse = lazy(() => import("./views/ComputerUse").then((m) => ({ default: m.ComputerUse })));
 const Explorer = lazy(() => import("./views/Explorer").then((m) => ({ default: m.Explorer })));
 
-const VIEWS = ["today", "chat", "goals", "reports", "autonomy", "projects", "prompts", "skills", "capabilities", "memory", "context", "help", "explorer", "github", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
+const VIEWS = ["today", "chat", "goals", "reports", "autonomy", "projects", "prompts", "skills", "capabilities", "memory", "context", "help", "explorer", "github", "artifacts", "mission", "control", "fleet", "agents", "timeline", "computer", "constitution", "updates", "safety", "setup", "diagnostics"] as const;
 type View = (typeof VIEWS)[number];
 const isView = (v: string): v is View => (VIEWS as readonly string[]).includes(v);
 
@@ -131,6 +132,7 @@ const GROUPS: RailGroup[] = [
     tabs: [
       { id: "explorer", label: "Explorer", hint: "Browse a repository or an agent's worktree: files, code, search and the working changes, read only, with Ask in Chat and Open in VS Code" },
       { id: "github", label: "GitHub", hint: "Pull requests, issues, Actions, branches and commits through gh" },
+      { id: "artifacts", label: "Artifacts", hint: "Small web apps built here: edit HTML, CSS and JS, preview over loopback, install as their own window, and publish to GitHub Pages" },
     ],
   },
   {
@@ -545,6 +547,7 @@ function Studio() {
             {view === "goals" && <Goals target={noticeTarget} />}
             {view === "reports" && <Reports />}
             {view === "timeline" && <Timeline />}
+            {view === "artifacts" && <Artifacts />}
             {view === "constitution" && <ConstitutionStudio memoryTick={memoryTick} />}
             {view === "updates" && <UpdateCenter />}
             {view === "safety" && <SafetyCenter />}
