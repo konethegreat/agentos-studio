@@ -2609,32 +2609,33 @@ const GALLERY_HTML: &str = r##"<!doctype html>
 </html>
 "##;
 
-const PAGES_WORKFLOW: &str = "name: Deploy artifacts\n\
-on:\n\
-  push:\n\
-    branches: [main]\n\
-  workflow_dispatch:\n\
-permissions:\n\
-  contents: read\n\
-  pages: write\n\
-  id-token: write\n\
-concurrency:\n\
-  group: pages\n\
-  cancel-in-progress: false\n\
-jobs:\n\
-  deploy:\n\
-    environment:\n\
-      name: github-pages\n\
-      url: ${{ steps.deployment.outputs.page_url }}\n\
-    runs-on: ubuntu-latest\n\
-    steps:\n\
-      - uses: actions/checkout@v6\n\
-      - uses: actions/configure-pages@v5\n\
-      - uses: actions/upload-pages-artifact@v4\n\
-        with:\n\
-          path: .\n\
-      - id: deployment\n\
-        uses: actions/deploy-pages@v4\n";
+const PAGES_WORKFLOW: &str = r#"name: Deploy artifacts
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
+"#;
 
 const SITE_404: &str = r#"<!doctype html>
 <html lang="en">
@@ -2843,6 +2844,22 @@ mod tests {
         assert!(!valid_domain("-bad.example.com"));
         assert!(!valid_domain("localhost"));
         assert!(!valid_domain("bad..example.com"));
+    }
+
+    #[test]
+    fn pages_workflow_keeps_its_yaml_indentation() {
+        for block in [
+            "on:\n  push:\n    branches: [main]\n",
+            "permissions:\n  contents: read\n  pages: write\n  id-token: write\n",
+            "jobs:\n  deploy:\n    environment:\n      name: github-pages\n",
+            "    steps:\n      - uses: actions/checkout@v6\n",
+            "        with:\n          path: .\n",
+        ] {
+            assert!(
+                PAGES_WORKFLOW.contains(block),
+                "missing indented block {block:?} in:\n{PAGES_WORKFLOW}"
+            );
+        }
     }
 
     #[test]
