@@ -123,10 +123,7 @@ export function Artifacts() {
     try {
       const list = await studio.artifacts.list();
       setRows(list);
-      setSelected((current) => {
-        if (current && list.some((a) => a.id === current)) return current;
-        return list[0]?.id ?? null;
-      });
+      setSelected((current) => (current && list.some((a) => a.id === current) ? current : list[0]?.id ?? null));
     } catch (e) {
       toast("error", errorText(e));
       setRows([]);
@@ -350,11 +347,9 @@ export function Artifacts() {
     try {
       await guarded((a) => studio.artifacts.remove(selected, a));
       const gone = rows?.find((r) => r.id === selected);
-      setRows((list) => {
-        const next = list?.filter((r) => r.id !== selected) ?? [];
-        setSelected(next[0]?.id ?? null);
-        return next;
-      });
+      const next = rows?.filter((r) => r.id !== selected) ?? [];
+      setRows(next);
+      setSelected(next[0]?.id ?? null);
       setInstalled((ids) => ids.filter((id) => id !== selected));
       setConfirmDelete(false);
       toast("ok", `${gone?.name ?? "Artifact"} deleted from this machine`);
