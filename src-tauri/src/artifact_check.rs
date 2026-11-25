@@ -124,7 +124,11 @@ pub fn check_with(root: &Path, node: bool) -> Report {
     }
 
     let mut files: Vec<(String, PathBuf)> = Vec::new();
-    for entry in walkdir::WalkDir::new(root).max_depth(3).into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(root)
+        .max_depth(3)
+        .into_iter()
+        .flatten()
+    {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -291,7 +295,10 @@ fn html_issues(rel: &str, text: &str) -> Vec<Issue> {
             continue;
         }
         if text[i..].starts_with("<!") || text[i..].starts_with("<?") {
-            let end = text[i..].find('>').map(|p| i + p + 1).unwrap_or(bytes.len());
+            let end = text[i..]
+                .find('>')
+                .map(|p| i + p + 1)
+                .unwrap_or(bytes.len());
             line += text[i..end].bytes().filter(|b| *b == b'\n').count() as u32;
             i = end;
             continue;
@@ -325,7 +332,12 @@ fn html_issues(rel: &str, text: &str) -> Vec<Issue> {
             k += 1;
         }
         if k >= bytes.len() {
-            out.push(issue(rel, start_line, "unclosed-tag", format!("<{name}> never closes with >")));
+            out.push(issue(
+                rel,
+                start_line,
+                "unclosed-tag",
+                format!("<{name}> never closes with >"),
+            ));
             break;
         }
         let self_closing = k > j && bytes[k - 1] == b'/';
@@ -382,7 +394,12 @@ fn html_issues(rel: &str, text: &str) -> Vec<Issue> {
         }
     }
     for (name, at) in stack {
-        out.push(issue(rel, at, "unclosed-tag", format!("<{name}> is never closed")));
+        out.push(issue(
+            rel,
+            at,
+            "unclosed-tag",
+            format!("<{name}> is never closed"),
+        ));
     }
     out
 }
@@ -402,7 +419,12 @@ fn reference_issues(rel: &str, text: &str, root: &Path, kind: RefKind) -> Vec<Is
     } {
         let reference = reference.trim();
         if reference.is_empty() {
-            out.push(issue(rel, line_at(text, offset), "empty-link", "has an empty src or href"));
+            out.push(issue(
+                rel,
+                line_at(text, offset),
+                "empty-link",
+                "has an empty src or href",
+            ));
             continue;
         }
         let lower = reference.to_ascii_lowercase();
@@ -444,7 +466,11 @@ fn reference_issues(rel: &str, text: &str, root: &Path, kind: RefKind) -> Vec<Is
             ));
             continue;
         };
-        let target = if clean.ends_with('/') { target.join("index.html") } else { target };
+        let target = if clean.ends_with('/') {
+            target.join("index.html")
+        } else {
+            target
+        };
         if !target.is_file() {
             out.push(issue(
                 rel,
@@ -470,7 +496,10 @@ fn join_under(root: &Path, base: &Path, reference: &str) -> Option<PathBuf> {
             path.pop();
             continue;
         }
-        if Path::new(part).components().any(|c| !matches!(c, Component::Normal(_))) {
+        if Path::new(part)
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+        {
             return None;
         }
         path.push(part);
@@ -485,7 +514,11 @@ fn html_refs(text: &str) -> Vec<(String, usize)> {
     });
     re.captures_iter(text)
         .map(|c| {
-            let value = c.get(1).or_else(|| c.get(2)).map(|m| m.as_str()).unwrap_or("");
+            let value = c
+                .get(1)
+                .or_else(|| c.get(2))
+                .map(|m| m.as_str())
+                .unwrap_or("");
             (value.to_string(), c.get(0).map(|m| m.start()).unwrap_or(0))
         })
         .collect()
@@ -504,7 +537,10 @@ fn css_refs(text: &str) -> Vec<(String, usize)> {
                 .or_else(|| c.get(3))
                 .map(|m| m.as_str())
                 .unwrap_or("");
-            (value.trim().to_string(), c.get(0).map(|m| m.start()).unwrap_or(0))
+            (
+                value.trim().to_string(),
+                c.get(0).map(|m| m.start()).unwrap_or(0),
+            )
         })
         .collect()
 }
@@ -558,14 +594,22 @@ mod tests {
         let html = "<!doctype html>\n<html>\n<body>\n  <div>\n    <section>\n      <p>x</p>\n    </div>\n  </body>\n</html>\n";
         let dir = fixture(&[("index.html", html)]);
         let report = check_with(dir.path(), false);
-        let unclosed: Vec<&Issue> = report.issues.iter().filter(|i| i.rule == "unclosed-tag").collect();
+        let unclosed: Vec<&Issue> = report
+            .issues
+            .iter()
+            .filter(|i| i.rule == "unclosed-tag")
+            .collect();
         assert_eq!(unclosed.len(), 1, "{:?}", report.issues);
         assert_eq!(unclosed[0].file, "index.html");
         assert_eq!(unclosed[0].line, 5);
 
         let stray = fixture(&[("index.html", &page("<p>x</p></div>"))]);
         let report = check_with(stray.path(), false);
-        assert!(report.issues.iter().any(|i| i.rule == "stray-close"), "{:?}", report.issues);
+        assert!(
+            report.issues.iter().any(|i| i.rule == "stray-close"),
+            "{:?}",
+            report.issues
+        );
     }
 
     #[test]
@@ -581,8 +625,16 @@ mod tests {
         let html = page("<img src=\"logo.png\" alt=\"logo\"><a href=\"/about.html\">About</a>");
         let dir = fixture(&[("index.html", &html), ("styles.css", GOOD_CSS)]);
         let report = check_with(dir.path(), false);
-        assert!(report.issues.iter().any(|i| i.rule == "missing-asset"), "{:?}", report.issues);
-        assert!(report.issues.iter().any(|i| i.rule == "root-path"), "{:?}", report.issues);
+        assert!(
+            report.issues.iter().any(|i| i.rule == "missing-asset"),
+            "{:?}",
+            report.issues
+        );
+        assert!(
+            report.issues.iter().any(|i| i.rule == "root-path"),
+            "{:?}",
+            report.issues
+        );
 
         let fixed = fixture(&[
             ("index.html", &page("<a href=\"about.html\">About</a>")),
@@ -597,7 +649,11 @@ mod tests {
         let css = "body { background: url(\"art/bg.png\"); }\n";
         let dir = fixture(&[("index.html", &page("<p>x</p>")), ("styles.css", css)]);
         let report = check_with(dir.path(), false);
-        assert!(report.issues.iter().any(|i| i.rule == "missing-asset"), "{:?}", report.issues);
+        assert!(
+            report.issues.iter().any(|i| i.rule == "missing-asset"),
+            "{:?}",
+            report.issues
+        );
         let good = fixture(&[
             ("index.html", &page("<p>x</p>")),
             ("styles.css", css),
@@ -613,15 +669,29 @@ mod tests {
             &page("<p>Implement later</p><p>Owner: 127.0.0.1</p>"),
         )]);
         let report = check_with(dir.path(), false);
-        assert!(report.issues.iter().any(|i| i.rule == "placeholder"), "{:?}", report.issues);
-        assert!(report.issues.iter().any(|i| i.rule == "local-url"), "{:?}", report.issues);
+        assert!(
+            report.issues.iter().any(|i| i.rule == "placeholder"),
+            "{:?}",
+            report.issues
+        );
+        assert!(
+            report.issues.iter().any(|i| i.rule == "local-url"),
+            "{:?}",
+            report.issues
+        );
 
         let dash = fixture(&[("index.html", &page("<p>one \u{2014} two</p>"))]);
-        assert!(check_with(dash.path(), false).issues.iter().any(|i| i.rule == "dash"));
+        assert!(check_with(dash.path(), false)
+            .issues
+            .iter()
+            .any(|i| i.rule == "dash"));
 
         let marker = fixture(&[("app.js", "// TODO wire this up\n")]);
         fs::write(marker.path().join("index.html"), page("<p>x</p>")).unwrap();
-        assert!(check_with(marker.path(), false).issues.iter().any(|i| i.rule == "placeholder"));
+        assert!(check_with(marker.path(), false)
+            .issues
+            .iter()
+            .any(|i| i.rule == "placeholder"));
     }
 
     #[test]
@@ -638,7 +708,9 @@ mod tests {
         crate::artifacts::set_test_root(Some(parent.join("artifacts")));
         let c = crate::store::test_conn();
         for template in ["blank", "todo", "notes"] {
-            let artifact = crate::artifacts::create_in(&c, &format!("Probe {template}"), "", template).unwrap();
+            let artifact =
+                crate::artifacts::create_in(&c, &format!("Probe {template}"), "", template)
+                    .unwrap();
             let report = check_with(&crate::artifacts::artifact_dir(&artifact.slug), false);
             assert!(report.ok, "{template}: {:?}", report.issues);
         }
@@ -647,8 +719,12 @@ mod tests {
 
     #[test]
     fn text_issues_are_shared_with_the_customizer() {
-        assert!(text_issues("a.js", "// TODO: later").iter().any(|i| i.rule == "placeholder"));
+        assert!(text_issues("a.js", "// TODO: later")
+            .iter()
+            .any(|i| i.rule == "placeholder"));
         assert!(text_issues("a.css", "x { color: red }").is_empty());
-        assert!(text_issues("a.html", "see http://localhost:3000").iter().any(|i| i.rule == "local-url"));
+        assert!(text_issues("a.html", "see http://localhost:3000")
+            .iter()
+            .any(|i| i.rule == "local-url"));
     }
 }

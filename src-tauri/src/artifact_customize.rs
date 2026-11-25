@@ -50,8 +50,9 @@ pub fn agents() -> Vec<AgentChoice> {
 
 /// The agent used when the caller names none: the best flat-rate headless agent installed here.
 pub fn default_agent() -> Result<&'static str> {
-    crate::bus::best_headless("", crate::bus::headless_available)
-        .ok_or_else(|| anyhow!("Install Claude Code, Antigravity or Hermes to customize artifacts with AI"))
+    crate::bus::best_headless("", crate::bus::headless_available).ok_or_else(|| {
+        anyhow!("Install Claude Code, Antigravity or Hermes to customize artifacts with AI")
+    })
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -237,7 +238,10 @@ pub fn validate_edits(
             }
             let at = content.find(edit.old.as_str()).unwrap_or(0);
             line = content[..at].bytes().filter(|b| *b == b'\n').count() as u32 + 1;
-            working.insert(path.clone(), content.replacen(edit.old.as_str(), &edit.new, 1));
+            working.insert(
+                path.clone(),
+                content.replacen(edit.old.as_str(), &edit.new, 1),
+            );
         }
         if let Some(first) = crate::artifact_check::text_issues(&path, &edit.new).first() {
             bail!("edit {step}: the replacement in {path} {}", first.message);
@@ -351,7 +355,10 @@ pub fn customize_in(
     }
     let artifact = artifacts::get_in(c, id)?;
     let fallback = default_agent()?;
-    let requested = agent.map(str::trim).filter(|a| !a.is_empty()).unwrap_or(fallback);
+    let requested = agent
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .unwrap_or(fallback);
     let agent = check_agent(requested)?;
     if crate::ask::answering(&agent) {
         bail!("{agent} is answering another question right now; try again in a minute");
@@ -361,7 +368,13 @@ pub fn customize_in(
         bail!("This artifact has no editable text files yet");
     }
     let selection = selection.bounded();
-    let prompt = plan_prompt(&artifact.name, &artifact.slug, &selection, instruction, &files);
+    let prompt = plan_prompt(
+        &artifact.name,
+        &artifact.slug,
+        &selection,
+        instruction,
+        &files,
+    );
     let dir = artifacts::artifact_dir(&artifact.slug);
     let started = Instant::now();
     let (answer, _session, cost) = crate::ask::run_turn(&agent, &prompt, &dir, limit)?;
@@ -659,7 +672,9 @@ mod tests {
                 r#"{{"summary":"x","files":[{{"path":"styles.css","old":".primary {{ color: #fff; }}","new":".primary {{ color: red; }} {}"}}]}}"#,
                 bad
             );
-            let e = validate_plan(&plan, &files(), &existing()).unwrap_err().to_string();
+            let e = validate_plan(&plan, &files(), &existing())
+                .unwrap_err()
+                .to_string();
             assert!(e.contains(needle), "{bad}: {e}");
         }
     }
@@ -747,13 +762,9 @@ mod tests {
         let css = artifacts::read_file_in(&c, &a.id, "styles.css").unwrap();
         assert!(css.contains("#0a7f5c"), "{css}");
 
-        let stale = apply_in(
-            &c,
-            &a.id,
-            &[edit("styles.css", "#056348", "#111111")],
-        )
-        .unwrap_err()
-        .to_string();
+        let stale = apply_in(&c, &a.id, &[edit("styles.css", "#056348", "#111111")])
+            .unwrap_err()
+            .to_string();
         assert!(stale.contains("styles.css"), "{stale}");
         let css = artifacts::read_file_in(&c, &a.id, "styles.css").unwrap();
         assert!(!css.contains("#111111"), "a refused plan writes nothing");

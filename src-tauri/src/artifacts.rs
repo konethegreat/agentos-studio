@@ -299,9 +299,7 @@ pub fn valid_domain(domain: &str) -> bool {
                 && label.len() <= 63
                 && !label.starts_with('-')
                 && !label.ends_with('-')
-                && label
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-')
+                && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
         })
 }
 
@@ -326,7 +324,11 @@ fn scan_stats(dir: &Path) -> (u32, u64) {
     }
     let mut files = 0u32;
     let mut bytes = 0u64;
-    for entry in walkdir::WalkDir::new(dir).max_depth(2).into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(dir)
+        .max_depth(2)
+        .into_iter()
+        .flatten()
+    {
         if entry.file_type().is_file() {
             files += 1;
             bytes += entry.metadata().map(|m| m.len()).unwrap_or(0);
@@ -391,9 +393,11 @@ fn unique_slug(c: &Connection, base: &str) -> Result<String> {
             format!("{base}-{n}")
         };
         let taken: Option<String> = c
-            .query_row("SELECT id FROM artifacts WHERE slug = ?1", [&candidate], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT id FROM artifacts WHERE slug = ?1",
+                [&candidate],
+                |r| r.get(0),
+            )
             .optional()?;
         if taken.is_none() && !artifact_dir(&candidate).exists() {
             return Ok(candidate);
@@ -402,7 +406,12 @@ fn unique_slug(c: &Connection, base: &str) -> Result<String> {
     bail!("could not find a free slug for {base}")
 }
 
-pub fn create_in(c: &Connection, name: &str, description: &str, template: &str) -> Result<Artifact> {
+pub fn create_in(
+    c: &Connection,
+    name: &str,
+    description: &str,
+    template: &str,
+) -> Result<Artifact> {
     let name = name.trim();
     if name.is_empty() {
         bail!("Give the artifact a name");
@@ -450,7 +459,11 @@ pub fn files_in(c: &Connection, id: &str) -> Result<Vec<ArtifactFile>> {
     let base = get_base(c, id)?;
     let dir = artifact_dir(&base.slug);
     let mut out = Vec::new();
-    for entry in walkdir::WalkDir::new(&dir).max_depth(2).into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(&dir)
+        .max_depth(2)
+        .into_iter()
+        .flatten()
+    {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -648,7 +661,11 @@ fn enable_pages(full: &str) -> Result<Value> {
             return Ok(p.clone());
         }
         let mut extra = Vec::new();
-        if let Some(cname) = p.get("cname").and_then(Value::as_str).filter(|c| !c.is_empty()) {
+        if let Some(cname) = p
+            .get("cname")
+            .and_then(Value::as_str)
+            .filter(|c| !c.is_empty())
+        {
             extra.push(("cname", cname));
         }
         if p.get("https_enforced").and_then(Value::as_bool) == Some(true) {
@@ -679,13 +696,7 @@ fn enable_pages(full: &str) -> Result<Value> {
 
 fn ensure_repo(full: &str) -> Result<()> {
     if github::gh(
-        &[
-            "repo",
-            "view",
-            full,
-            "--json",
-            "nameWithOwner,isEmpty",
-        ],
+        &["repo", "view", full, "--json", "nameWithOwner,isEmpty"],
         None,
         None,
     )
@@ -781,7 +792,11 @@ fn sync_artifact_dir(src: &Path, dest: &Path, slug: &str) -> Result<()> {
         fs::remove_dir_all(dest)?;
     }
     fs::create_dir_all(dest)?;
-    for entry in walkdir::WalkDir::new(src).max_depth(3).into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(src)
+        .max_depth(3)
+        .into_iter()
+        .flatten()
+    {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -1019,7 +1034,9 @@ fn publish_impl(c: &Connection, id: &str) -> Result<PublishResult> {
         )?;
         pushed = true;
     }
-    let commit = git(dir, &["rev-parse", "HEAD"], GIT_LIMIT)?.trim().to_string();
+    let commit = git(dir, &["rev-parse", "HEAD"], GIT_LIMIT)?
+        .trim()
+        .to_string();
     if pushed || !has_main {
         git(dir, &["push", "origin", "HEAD:main"], PUSH_LIMIT)?;
     }
@@ -1126,10 +1143,7 @@ pub fn site_status_in(c: &Connection) -> Result<SiteStatus> {
                     .get("build_type")
                     .and_then(Value::as_str)
                     .map(str::to_string),
-                status: p
-                    .get("status")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
+                status: p.get("status").and_then(Value::as_str).map(str::to_string),
                 cname,
                 https_enforced: p
                     .get("https_enforced")
@@ -1609,7 +1623,8 @@ pub async fn artifacts_validate(id: String) -> CmdResult<crate::artifact_check::
 }
 
 #[tauri::command]
-pub async fn artifacts_customize_agents() -> CmdResult<Vec<crate::artifact_customize::AgentChoice>> {
+pub async fn artifacts_customize_agents() -> CmdResult<Vec<crate::artifact_customize::AgentChoice>>
+{
     Ok(crate::artifact_customize::agents())
 }
 
@@ -2697,7 +2712,10 @@ mod tests {
             assert!(names.contains(&"app.js"), "{id}");
             assert!(names.contains(&"agentos.js"), "{id}");
             let html = read_file_in(&c, &a.id, "index.html").expect("read");
-            assert!(html.contains(&format!("data-artifact=\"{}\"", a.slug)), "{id}");
+            assert!(
+                html.contains(&format!("data-artifact=\"{}\"", a.slug)),
+                "{id}"
+            );
             assert!(html.contains("agentos.js"), "{id}");
             let js = read_file_in(&c, &a.id, "app.js").expect("read js");
             assert!(!js.trim().is_empty(), "{id}");
@@ -2799,11 +2817,18 @@ mod tests {
             "https://konethegreat.github.io"
         );
         assert_eq!(
-            site_url("konethegreat", "agentos-artifacts", Some("apps.example.com")),
+            site_url(
+                "konethegreat",
+                "agentos-artifacts",
+                Some("apps.example.com")
+            ),
             "https://apps.example.com"
         );
         assert_eq!(
-            artifact_url("https://konethegreat.github.io/agentos-artifacts/", "my-app"),
+            artifact_url(
+                "https://konethegreat.github.io/agentos-artifacts/",
+                "my-app"
+            ),
             "https://konethegreat.github.io/agentos-artifacts/a/my-app/"
         );
     }
