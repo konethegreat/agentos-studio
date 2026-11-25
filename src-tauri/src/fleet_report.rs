@@ -190,6 +190,8 @@ mod tests {
 
     #[test]
     fn builds_and_sends_daily_fleet_digest() {
+        let db_dir = tempfile::tempdir().unwrap();
+        crate::store::set_test_db(Some(db_dir.path().join("studio.db")));
         let lanes = vec![
             Lane {
                 provider: "claude".into(),
@@ -245,5 +247,6 @@ mod tests {
         assert!(sent.contains("Repairs: re-enabled plugin"));
         assert!(sent.contains("M-12 (7h): auth refresh"));
         assert!(sent.contains("C:/repos/alpha"));
+        crate::store::set_test_db(None);
     }
 }

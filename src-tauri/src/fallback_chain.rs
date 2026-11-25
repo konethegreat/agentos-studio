@@ -367,6 +367,8 @@ mod tests {
 
     #[test]
     fn sync_with_only_applies_when_chain_differs() {
+        let db_dir = tempfile::tempdir().unwrap();
+        crate::store::set_test_db(Some(db_dir.path().join("studio.db")));
         let lanes = vec![lane(
             "claude-subscription-directsdk-experimental",
             "claude-sonnet-5-5",
@@ -396,5 +398,6 @@ mod tests {
         });
         assert!(rep2.changed);
         assert_eq!(called, 1);
+        crate::store::set_test_db(None);
     }
 }

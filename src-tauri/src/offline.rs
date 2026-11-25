@@ -425,7 +425,10 @@ mod tests {
 
     #[test]
     fn status_always_explains_itself() {
+        let db_dir = tempfile::tempdir().unwrap();
+        crate::store::set_test_db(Some(db_dir.path().join("studio.db")));
         let s = status();
         assert!(!s.note.is_empty());
+        crate::store::set_test_db(None);
     }
 }

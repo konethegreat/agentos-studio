@@ -362,6 +362,11 @@ pub fn db_path() -> PathBuf {
             return PathBuf::from(p);
         }
     }
+    #[cfg(test)]
+    panic!(
+        "a test reached the live Studio store; set store::set_test_db or AGENTOS_STUDIO_DB first"
+    );
+    #[cfg(not(test))]
     studio_dir().join("studio.db")
 }
 

@@ -2774,7 +2774,8 @@ mod tests {
 
     #[test]
     fn delete_removes_files_and_the_row() {
-        let (_dir, c) = fixture();
+        let (fixture_dir, c) = fixture();
+        store::set_test_db(Some(fixture_dir.path().join("store.db")));
         let a = create_in(&c, "Gone", "", "blank").expect("create");
         let dir = artifact_dir(&a.slug);
         assert!(dir.is_dir());
@@ -2783,6 +2784,7 @@ mod tests {
         assert!(list_in(&c).expect("list").is_empty());
         assert!(get_in(&c, &a.id).is_err());
         set_test_root(None);
+        store::set_test_db(None);
     }
 
     #[test]
