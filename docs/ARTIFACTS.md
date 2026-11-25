@@ -97,7 +97,9 @@ sends the domain and keeps HTTPS enforcement on. Clearing the field removes the 
 
 ## Data and storage
 
-Every artifact gets `agentos.js` when it is written or published. It exposes `window.AgentOS`:
+Every artifact gets `agentos.js` when it is created, and publishing writes it again. It is
+generated: the editor shows it read-only, and Studio rewrites it on every publish. It exposes
+`window.AgentOS`:
 
 | Call | What it does |
 | --- | --- |

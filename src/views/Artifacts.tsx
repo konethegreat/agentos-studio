@@ -43,7 +43,17 @@ function fileLanguage(path: string) {
   return "Text";
 }
 
+function escapeHtml(s: string) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function starterFor(path: string, artifact: Artifact) {
+  const name = escapeHtml(artifact.name);
   if (path.endsWith(".css")) return "/* Styles for this page. */\n";
   if (path.endsWith(".js") || path.endsWith(".mjs")) return "// Script for this page. AgentOS is available from agentos.js.\n";
   if (path.endsWith(".json") || path.endsWith(".webmanifest")) return "{}\n";
@@ -54,10 +64,10 @@ function starterFor(path: string, artifact: Artifact) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${artifact.name}</title>
+  <title>${name}</title>
 </head>
 <body>
-  <h1>${artifact.name}</h1>
+  <h1>${name}</h1>
   <p>New page. Link styles.css and agentos.js if you want the shared helpers.</p>
 </body>
 </html>
@@ -106,7 +116,8 @@ export function Artifacts() {
   const [lastPublished, setLastPublished] = useState<string | null>(null);
 
   const artifact = useMemo(() => rows?.find((r) => r.id === selected) ?? null, [rows, selected]);
-  const dirty = selected !== null && file !== "" && content !== saved;
+  const generated = file === "agentos.js";
+  const dirty = selected !== null && file !== "" && content !== saved && !generated;
 
   const load = useCallback(async () => {
     try {
@@ -202,7 +213,7 @@ export function Artifacts() {
   }, [selected, file, toast]);
 
   const save = useCallback(async (): Promise<boolean> => {
-    if (!selected || !file || loadingFile) return false;
+    if (!selected || !file || loadingFile || file === "agentos.js") return false;
     if (content === saved) return true;
     setSaving(true);
     try {
@@ -270,6 +281,12 @@ export function Artifacts() {
   async function addFile() {
     const path = newPath.trim();
     if (!selected || !artifact || !path) return;
+    if (files.some((f) => f.path === path)) {
+      toast("info", `${path} is already open in the tabs`);
+      setAdding(false);
+      setNewPath("");
+      return;
+    }
     if (dirty && !(await save())) return;
     try {
       const row = await studio.artifacts.writeFile(selected, path, starterFor(path, artifact));
@@ -559,7 +576,7 @@ export function Artifacts() {
                   {installed.includes(artifact.id) ? "Uninstall" : "Install as app"}
                 </Button>
                 <div className="ml-auto flex items-center gap-1.5">
-                  <Button size="sm" icon={<Save className="size-3.5" />} busy={saving} disabled={!dirty || loadingFile} onClick={() => void save()}>
+                  <Button size="sm" icon={<Save className="size-3.5" />} busy={saving} disabled={!dirty || loadingFile || generated} onClick={() => void save()}>
                     Save
                   </Button>
                   <Button
@@ -644,8 +661,9 @@ export function Artifacts() {
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     spellCheck={false}
+                    readOnly={generated}
                     aria-label={`${file} contents`}
-                    className="h-full w-full resize-none border-0 bg-transparent px-6 py-4 font-mono text-ui leading-relaxed text-slate-200 outline-none"
+                    className="h-full w-full resize-none border-0 bg-transparent px-6 py-4 font-mono text-ui leading-relaxed text-slate-200 outline-none read-only:text-slate-400"
                   />
                 ) : (
                   <div className="p-6">
@@ -657,7 +675,7 @@ export function Artifacts() {
               <footer className="flex shrink-0 items-center gap-2 border-t border-line px-6 py-1.5 text-label text-slate-500">
                 <span>{fileLanguage(file)}</span>
                 <span aria-hidden="true">·</span>
-                <span>{dirty ? "Unsaved changes" : "Saved"}</span>
+                <span>{generated ? "agentos.js is generated and refreshed on publish" : dirty ? "Unsaved changes" : "Saved"}</span>
                 <span className="ml-auto">Ctrl+S saves</span>
               </footer>
             </>
