@@ -36,6 +36,24 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
 
+## What is new in 2.6.8
+
+Artifacts are built from a description, not from templates.
+
+- **Describe an app and a headless agent builds it.** Code, Artifacts > New artifact takes a name
+  and a brief; Antigravity (default), Claude Code or Hermes researches the brief with web search
+  and the hub memory tools, then answers with a complete HTML, CSS and JavaScript app. There are
+  no templates. Studio validates every path and file, writes the set to a staging folder, runs the
+  full publish check, and only then creates the artifact, so a refused answer leaves nothing
+  behind.
+- **A selection customizer.** Select any element, describe the change, and a headless agent
+  answers with an exact patch you review before Studio writes it.
+- **Pages publishing with a publish check.** Broken tags, missing assets, placeholder text,
+  banned dashes and localhost URLs are refused before anything reaches the GitHub Pages site,
+  which keeps a gallery and a URL per app, with per-artifact data kept in the browser.
+  [docs/ARTIFACTS.md](docs/ARTIFACTS.md) covers the customizer, the check, install, publishing
+  and custom domains.
+
 ## What is new in 2.6.7
 
 Stopped and failed work is no longer a dead end.
@@ -49,14 +67,6 @@ Stopped and failed work is no longer a dead end.
   the spend kept. Each goal gets one automatic round; the Reopen button on a failed goal queues
   every failed mission at once. `AGENTOS_REOPEN_BUDGET` (`<goals>/<missions>`, default `1/6`) caps
   an automatic pass. [docs/GOALS.md](docs/GOALS.md) has the full rules.
-- **Artifacts, customized by selection.** Code, Artifacts builds small web apps in HTML, CSS and
-  JavaScript and previews them in a live frame. Select any element, describe the change, and pick a
-  headless agent; it answers with an exact patch shown for review before Studio writes it. A
-  deterministic publish check refuses broken tags, missing assets, placeholder text, banned dashes
-  and localhost URLs before anything reaches the GitHub Pages site, which keeps a gallery and a URL
-  per app, with per-artifact data kept in the browser.
-  [docs/ARTIFACTS.md](docs/ARTIFACTS.md) covers the customizer, the check, install, publishing and
-  custom domains.
 
 ## What is new in 2.6.6
 
