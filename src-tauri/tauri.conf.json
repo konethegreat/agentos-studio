@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; frame-src http://127.0.0.1:*"
     }
   },
   "bundle": {
@@ -59,6 +59,7 @@
       "../docs/PROMPTS.md": "docs/PROMPTS.md",
       "../docs/AUTONOMOUS-REPOS.md": "docs/AUTONOMOUS-REPOS.md",
       "../docs/EXPLORER.md": "docs/EXPLORER.md",
+      "../docs/ARTIFACTS.md": "docs/ARTIFACTS.md",
       "../docs/BEYOND.md": "docs/BEYOND.md",
       "../docs/SELF-HEALING.md": "docs/SELF-HEALING.md",
       "../docs/SHADOW.md": "docs/SHADOW.md"

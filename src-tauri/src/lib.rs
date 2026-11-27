@@ -7,6 +7,10 @@ pub mod agent_limits;
 pub mod agent_log;
 pub mod agent_packs;
 pub mod agents;
+pub mod artifact_check;
+pub mod artifact_customize;
+pub mod artifact_generate;
+pub mod artifacts;
 pub mod ask;
 pub mod assign;
 pub mod automation;
@@ -181,6 +185,8 @@ pub fn run_gui() {
             std::thread::spawn(move || {
                 boot::run(Some(boot_handle));
             });
+            // Artifacts installed as apps reopen in their own windows on every start.
+            artifacts::reopen_installed(handle.clone());
             // Notification centre: questions, finished goals and blocked missions also raise a
             // Windows notification, once each, unless the owner switched them off.
             let nh = app.handle().clone();
@@ -528,6 +534,25 @@ pub fn run_gui() {
             commands::set_working_dir,
             commands::get_pref,
             commands::set_pref,
+            artifacts::artifacts_list,
+            artifacts::artifacts_create,
+            artifacts::artifacts_files,
+            artifacts::artifacts_read_file,
+            artifacts::artifacts_write_file,
+            artifacts::artifacts_site_status,
+            artifacts::artifacts_set_site,
+            artifacts::artifacts_set_domain,
+            artifacts::artifacts_publish,
+            artifacts::artifacts_remove,
+            artifacts::artifacts_preview_window,
+            artifacts::artifacts_install_window,
+            artifacts::artifacts_uninstall,
+            artifacts::artifacts_installed,
+            artifacts::artifacts_validate,
+            artifacts::artifacts_customize_agents,
+            artifacts::artifacts_customize,
+            artifacts::artifacts_customize_apply,
+            artifacts::artifacts_preview_url,
             commands::ci_badge,
             commands::memory_ledger,
             commands::memory_recent,

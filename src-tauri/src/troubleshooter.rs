@@ -270,6 +270,8 @@ mod tests {
 
     #[test]
     fn executes_allowlisted_command_and_escalates_disallowed_command() {
+        let db_dir = tempfile::tempdir().unwrap();
+        crate::store::set_test_db(Some(db_dir.path().join("studio.db")));
         let mut escalated = false;
         let res_ok = troubleshoot_with(
             "antigravity",
@@ -304,5 +306,6 @@ COMMAND: open browser and login"
         assert!(!res_bad.executed);
         assert!(res_bad.escalated);
         assert!(escalated_msg.contains("Need manual token."));
+        crate::store::set_test_db(None);
     }
 }

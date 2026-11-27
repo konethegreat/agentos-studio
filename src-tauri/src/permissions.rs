@@ -212,6 +212,30 @@ pub const ACTIONS: &[ActionDef] = &[
         "ask",
         true,
     ),
+    def(
+        "artifacts.publish",
+        "Artifacts",
+        "Commit and push an artifact to the public GitHub Pages site",
+        "medium",
+        "ask",
+        true,
+    ),
+    def(
+        "artifacts.domain",
+        "Artifacts",
+        "Point the artifact site at a custom domain through GitHub Pages",
+        "high",
+        "ask",
+        true,
+    ),
+    def(
+        "artifacts.delete",
+        "Artifacts",
+        "Delete an artifact and its local files. A published copy stays on the site until the next publish.",
+        "medium",
+        "ask",
+        true,
+    ),
 ];
 
 pub fn action(id: &str) -> Option<&'static ActionDef> {

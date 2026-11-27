@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{ensure, Context, Result};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
-pub(crate) const SCHEMA_VERSION: i64 = 14;
+pub(crate) const SCHEMA_VERSION: i64 = 15;
 
 const MIGRATION_1: &str = "
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -314,6 +314,23 @@ CREATE INDEX IF NOT EXISTS idx_audit_at ON audit(at);
 CREATE INDEX IF NOT EXISTS idx_memory_ledger_at ON memory_ledger(at);
 ";
 
+/// Small web apps the owner builds and publishes to GitHub Pages. The files live on disk under
+/// the Studio config folder; this table keeps the identity and publish state.
+const MIGRATION_15: &str = "
+CREATE TABLE IF NOT EXISTS artifacts (
+    id           TEXT PRIMARY KEY,
+    slug         TEXT NOT NULL UNIQUE,
+    name         TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    template     TEXT NOT NULL DEFAULT 'blank',
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    published_at INTEGER,
+    live_url     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_artifacts_updated ON artifacts(updated_at DESC);
+";
+
 pub fn studio_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(crate::settings::home)
@@ -345,6 +362,11 @@ pub fn db_path() -> PathBuf {
             return PathBuf::from(p);
         }
     }
+    #[cfg(test)]
+    panic!(
+        "a test reached the live Studio store; set store::set_test_db or AGENTOS_STUDIO_DB first"
+    );
+    #[cfg(not(test))]
     studio_dir().join("studio.db")
 }
 
@@ -429,6 +451,9 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     if v < 14 {
         c.execute_batch(MIGRATION_14)?;
+    }
+    if v < 15 {
+        c.execute_batch(MIGRATION_15)?;
     }
     if v < SCHEMA_VERSION {
         c.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;

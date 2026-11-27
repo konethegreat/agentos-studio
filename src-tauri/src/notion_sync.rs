@@ -703,7 +703,10 @@ mod tests {
 
     #[test]
     fn without_a_token_nothing_is_sent() {
+        let db_dir = tempfile::tempdir().unwrap();
+        crate::store::set_test_db(Some(db_dir.path().join("studio.db")));
         let r = sync_inner(false, None, None);
         assert!(r.dry_run && !r.connected && r.database.is_none());
+        crate::store::set_test_db(None);
     }
 }

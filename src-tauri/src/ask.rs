@@ -163,6 +163,15 @@ fn set_busy(agent: &str, until: Option<i64>) {
     }
 }
 
+/// Mark a long artifact turn as running, so a second one cannot start on the same agent.
+pub fn mark_answering(agent: &str, seconds: u64) {
+    set_busy(agent, Some(store::now() + seconds as i64));
+}
+
+pub fn clear_answering(agent: &str) {
+    set_busy(agent, None);
+}
+
 /// Where the asked agent runs: the mission's worktree, its repository, or Studio's own asks folder.
 /// Never the home folder.
 fn workdir(mission: Option<&crate::missions::Mission>) -> Result<PathBuf> {
@@ -185,6 +194,29 @@ pub fn run_turn(
     prompt_text: &str,
     dir: &Path,
     limit: Duration,
+) -> Result<(String, Option<String>, f64)> {
+    run_turn_with(agent, prompt_text, dir, limit, &ASK_CLAUDE_TOOLS, None)
+}
+
+/// The read-only tools an ask turn may use.
+pub const ASK_CLAUDE_TOOLS: [&str; 6] = [
+    "mcp__agentos-hub__recall",
+    "mcp__agentos-hub__project_brief",
+    "mcp__agentos-hub__search_shared_memory",
+    "Read",
+    "Grep",
+    "Glob",
+];
+
+/// One headless turn with an explicit Claude tool list and Antigravity model. Artifact work passes
+/// web research tools and a chosen model; asks keep the small read-only set.
+pub fn run_turn_with(
+    agent: &str,
+    prompt_text: &str,
+    dir: &Path,
+    limit: Duration,
+    claude_tools: &[&str],
+    model: Option<&str>,
 ) -> Result<(String, Option<String>, f64)> {
     let qdir = store::studio_dir().join("asks");
     std::fs::create_dir_all(&qdir)?;
@@ -231,16 +263,8 @@ pub fn run_turn(
             Ok((out.trim().to_string(), sid, cost))
         }
         "claude-code" => {
-            let allowed = [
-                "mcp__agentos-hub__recall",
-                "mcp__agentos-hub__project_brief",
-                "mcp__agentos-hub__search_shared_memory",
-                "Read",
-                "Grep",
-                "Glob",
-            ];
             let mut args = vec!["-p", "--output-format", "json", "--allowedTools"];
-            args.extend(allowed);
+            args.extend(claude_tools);
             let (code, out, err) = crate::procs::run_with_timeout(
                 "claude",
                 &args,
@@ -266,7 +290,8 @@ pub fn run_turn(
             let sf = qdir.join(format!("{stamp}.agy-settings.json"));
             let allow = agy_turn_rules();
             std::fs::write(&sf, crate::bus::agy_settings(&allow))?;
-            let args = crate::bus::agy_args(&sf, crate::bus::agy_model().as_deref());
+            let chosen = model.map(str::to_string).or_else(crate::bus::agy_model);
+            let args = crate::bus::agy_args(&sf, chosen.as_deref());
             let argv: Vec<&str> = args.iter().map(String::as_str).collect();
             let r = crate::procs::run_with_timeout(
                 "agy",

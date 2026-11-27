@@ -341,6 +341,101 @@ export interface AuditEntry {
 
 // ---------------------------------------------------------------- bindings
 
+// ---------------------------------------------------------------- artifacts
+
+export interface Artifact {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  template: string;
+  created_at: number;
+  updated_at: number;
+  published_at: number | null;
+  live_url: string | null;
+  folder: string;
+  files: number;
+  bytes: number;
+}
+
+export interface ArtifactFile {
+  path: string;
+  bytes: number;
+  modified_at: number;
+}
+
+export interface ArtifactGenerated {
+  artifact: Artifact;
+  summary: string;
+  agent: string;
+  duration_ms: number;
+  cost_usd: number;
+}
+
+export interface ArtifactSite {
+  repo: string;
+  configured: boolean;
+  pages_ready: boolean;
+  url: string | null;
+  artifact_base: string | null;
+  build_type: string | null;
+  status: string | null;
+  cname: string | null;
+  https_enforced: boolean;
+  last_run: { databaseId?: number; status?: string; conclusion?: string | null; createdAt?: string; updatedAt?: string; url?: string } | null;
+  error: string | null;
+}
+
+export interface ArtifactPublish {
+  artifact: Artifact;
+  url: string;
+  site_repo: string;
+  commit: string;
+}
+
+export interface ArtifactIssue {
+  file: string;
+  line: number;
+  rule: string;
+  message: string;
+}
+
+export interface ArtifactCheck {
+  ok: boolean;
+  issues: ArtifactIssue[];
+}
+
+export interface ArtifactAgent {
+  id: string;
+  name: string;
+  installed: boolean;
+}
+
+export interface ArtifactSelection {
+  selector: string;
+  tag: string;
+  id: string;
+  classes: string;
+  text: string;
+  html: string;
+}
+
+export interface ArtifactEdit {
+  path: string;
+  old: string;
+  new: string;
+  why: string;
+  line: number;
+}
+
+export interface ArtifactPlan {
+  summary: string;
+  edits: ArtifactEdit[];
+  agent: string;
+  duration_ms: number;
+  cost_usd: number;
+}
+
 type Approved = { approved?: boolean };
 
 // ---------------------------------------------------------------- Hermes surfaces
@@ -607,6 +702,31 @@ export const studio = {
     run: (repo: string, id: number) => invoke<GhRunDetail>("gh_run_detail", { repo, id }),
     runLog: (repo: string, id: number) => invoke<string>("gh_run_failed_log", { repo, id }),
     rerun: (repo: string, id: number, failedOnly: boolean, a: Approved = {}) => invoke<string>("gh_run_rerun", { repo, id, failedOnly, ...a }),
+  },
+  artifacts: {
+    list: () => invoke<Artifact[]>("artifacts_list"),
+    create: (name: string, description: string, agent: string | null) =>
+      invoke<ArtifactGenerated>("artifacts_create", { name, description, agent }),
+    files: (id: string) => invoke<ArtifactFile[]>("artifacts_files", { id }),
+    readFile: (id: string, path: string) => invoke<string>("artifacts_read_file", { id, path }),
+    writeFile: (id: string, path: string, content: string) =>
+      invoke<Artifact>("artifacts_write_file", { id, path, content }),
+    site: () => invoke<ArtifactSite>("artifacts_site_status"),
+    setSite: (repo: string) => invoke<ArtifactSite>("artifacts_set_site", { repo }),
+    setDomain: (domain: string, a: Approved = {}) => invoke<ArtifactSite>("artifacts_set_domain", { domain, ...a }),
+    publish: (id: string, a: Approved = {}) => invoke<ArtifactPublish>("artifacts_publish", { id, ...a }),
+    remove: (id: string, a: Approved = {}) => invoke<void>("artifacts_remove", { id, ...a }),
+    preview: (id: string) => invoke<string>("artifacts_preview_window", { id }),
+    install: (id: string) => invoke<string>("artifacts_install_window", { id }),
+    uninstall: (id: string) => invoke<void>("artifacts_uninstall", { id }),
+    installed: () => invoke<string[]>("artifacts_installed"),
+    validate: (id: string) => invoke<ArtifactCheck>("artifacts_validate", { id }),
+    agents: () => invoke<ArtifactAgent[]>("artifacts_customize_agents"),
+    customize: (id: string, selection: ArtifactSelection, instruction: string, agent: string | null) =>
+      invoke<ArtifactPlan>("artifacts_customize", { id, selection, instruction, agent }),
+    apply: (id: string, edits: ArtifactEdit[]) =>
+      invoke<Artifact>("artifacts_customize_apply", { id, edits }),
+    previewUrl: (id: string) => invoke<string>("artifacts_preview_url", { id }),
   },
   os: {
     openExternal: (url: string) => invoke<void>("open_external", { url }),

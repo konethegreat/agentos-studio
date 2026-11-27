@@ -31,6 +31,7 @@ Wiring a multi-agent setup by hand means hours of `PATH` fixes, CLI installs, OA
 - **Real terminals.** A docked panel with true PTY terminals (ConPTY on Windows) for interactive Hermes, the Hermes TUI, Claude Code or your shell, plus a one-shot command runner. Any chat can be continued in a terminal with one click.
 - **Workspaces and folders.** Organise chats into workspaces, folders and sub-folders with drag and drop, pins, tags, archive and file attachments. Map a folder to a repository and every chat run there lands in it automatically; link it to a Hermes project.
 - **GitHub.** Pull requests (diff, checks, review, merge, create), issues, Actions runs (failed logs, re-run), branches and commits, all through your `gh` login, with "Ask Hermes" hand-offs into chat.
+- **Artifacts with a selection customizer.** Describe an app and a headless agent researches the brief and writes the whole thing in plain HTML, CSS and JavaScript; there are no templates. Each artifact previews in a live frame over a token-guarded loopback server; click any element, describe the change, and a headless agent answers with an exact patch you review before it is written. A deterministic publish check blocks placeholder text, banned dashes, broken tags, missing assets and machine-only URLs, so nothing unverified reaches GitHub Pages. Install as its own window, keep data per artifact, and publish to one Pages site with a gallery and a URL per app. [docs/ARTIFACTS.md](docs/ARTIFACTS.md).
 - **Update Center.** Hermes, Claude Code, the Antigravity and Qoder CLIs, every Hermes plugin (each one listed with its installed and available version) and Studio are checked automatically, with an in-app alert, an OS notification and a readable changelog. Update, Skip this version or Remind me later; every update is recorded first, with rollback where the tool supports one.
 - **Safety.** Per-action permission policies (allow, ask, deny) enforced in the Rust core, approval prompts for anything destructive, and an audit log.
 - **Live Mission Control, fleet manager and constitution studio.** The Kanban board over your vault, rule sync for every local repository, and one-click broadcast of your agent constitution, all from v0.1.
@@ -48,6 +49,14 @@ Stopped and failed work is no longer a dead end.
   the spend kept. Each goal gets one automatic round; the Reopen button on a failed goal queues
   every failed mission at once. `AGENTOS_REOPEN_BUDGET` (`<goals>/<missions>`, default `1/6`) caps
   an automatic pass. [docs/GOALS.md](docs/GOALS.md) has the full rules.
+- **Artifacts, customized by selection.** Code, Artifacts builds small web apps in HTML, CSS and
+  JavaScript and previews them in a live frame. Select any element, describe the change, and pick a
+  headless agent; it answers with an exact patch shown for review before Studio writes it. A
+  deterministic publish check refuses broken tags, missing assets, placeholder text, banned dashes
+  and localhost URLs before anything reaches the GitHub Pages site, which keeps a gallery and a URL
+  per app, with per-artifact data kept in the browser.
+  [docs/ARTIFACTS.md](docs/ARTIFACTS.md) covers the customizer, the check, install, publishing and
+  custom domains.
 
 ## What is new in 2.6.6
 
@@ -367,7 +376,7 @@ or from [Releases](https://github.com/konethegreat/agentos-studio/releases/lates
 | Safety | Ad-hoc confirms | Permission policies enforced in Rust, approval modal, audit log |
 | Navigation | Sidebar | Command palette (Ctrl+K), Alt+1 to Alt+9, tooltips on every new control |
 
-Design docs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (diagram, components, data model), [docs/ROADMAP.md](docs/ROADMAP.md) (phases, and what each depends on), [docs/BEYOND.md](docs/BEYOND.md) (after 1.3: Shadow Kone, the quota grid, the dreaming brain, replay, proof-carrying work, Studio building itself and the agency), [docs/SELF-HEALING.md](docs/SELF-HEALING.md) (after 2.0: providers and stalled work that repair themselves), [docs/SHADOW.md](docs/SHADOW.md) (Shadow Kone: answers you have already given, with a window to overrule), [docs/PARITY.md](docs/PARITY.md) (capability scorecard against the tools users compare us to), [docs/MODEL-ROUTER.md](docs/MODEL-ROUTER.md) (design for automatic model selection in v0.6.0), [docs/adr/0001-v0.3-stack.md](docs/adr/0001-v0.3-stack.md) (stack changes and what was refused). User guides: [docs/CHAT.md](docs/CHAT.md) (chat over ACP, approvals, plan first, forks), [docs/ROUTING.md](docs/ROUTING.md) (how a mission's model is chosen), [docs/NOTION.md](docs/NOTION.md) (publishing, inbox, and the two-way missions and goals boards), [docs/COMPUTER-USE.md](docs/COMPUTER-USE.md) (what Hermes did on the desktop), [docs/AGENTS.md](docs/AGENTS.md) (the agent registry, handoffs, asks, council, assignment and the run timeline) and [docs/GOALS.md](docs/GOALS.md) (one sentence in, finished work out: goals, autonomy levels, escalations and the digest).
+Design docs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (diagram, components, data model), [docs/ROADMAP.md](docs/ROADMAP.md) (phases, and what each depends on), [docs/BEYOND.md](docs/BEYOND.md) (after 1.3: Shadow Kone, the quota grid, the dreaming brain, replay, proof-carrying work, Studio building itself and the agency), [docs/SELF-HEALING.md](docs/SELF-HEALING.md) (after 2.0: providers and stalled work that repair themselves), [docs/ARTIFACTS.md](docs/ARTIFACTS.md) (small web apps built in Studio: preview, install, and the GitHub Pages site), [docs/SHADOW.md](docs/SHADOW.md) (Shadow Kone: answers you have already given, with a window to overrule), [docs/PARITY.md](docs/PARITY.md) (capability scorecard against the tools users compare us to), [docs/MODEL-ROUTER.md](docs/MODEL-ROUTER.md) (design for automatic model selection in v0.6.0), [docs/adr/0001-v0.3-stack.md](docs/adr/0001-v0.3-stack.md) (stack changes and what was refused). User guides: [docs/CHAT.md](docs/CHAT.md) (chat over ACP, approvals, plan first, forks), [docs/ROUTING.md](docs/ROUTING.md) (how a mission's model is chosen), [docs/NOTION.md](docs/NOTION.md) (publishing, inbox, and the two-way missions and goals boards), [docs/COMPUTER-USE.md](docs/COMPUTER-USE.md) (what Hermes did on the desktop), [docs/AGENTS.md](docs/AGENTS.md) (the agent registry, handoffs, asks, council, assignment and the run timeline) and [docs/GOALS.md](docs/GOALS.md) (one sentence in, finished work out: goals, autonomy levels, escalations and the digest).
 
 ## What is new in v0.2.0
 
@@ -384,7 +393,7 @@ Design docs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (diagram, components, 
 ```mermaid
 flowchart LR
     subgraph Studio["AgentOS Studio (Tauri v2)"]
-        UI["React 19 UI<br/>Chat Studio - GitHub - Updates - Safety - Mission Control<br/>Control Plane - Fleet - Constitution - Terminal (xterm.js)"]
+        UI["React 19 UI<br/>Chat Studio - GitHub - Artifacts - Updates - Safety - Mission Control<br/>Control Plane - Fleet - Constitution - Terminal (xterm.js)"]
         Core["Rust core<br/>hermes_engine - chat_stream - pty - updates - org - github<br/>permissions - mcp_manager - cli_runner - bus - fleet"]
         UI <-- "invoke / events" --> Core
     end
@@ -590,9 +599,9 @@ defaults to ask; Dismiss records the group so it is not proposed again.
 ## Navigation
 
 A five-group icon rail replaces the old twelve-item list: **Chat**, **Work** (Projects, Mission
-Control, Fleet), **Brain** (Memory, Skills, Constitution), **Code** (GitHub) and **System** (MCP and
-Providers, Updates, Safety, Setup, Diagnostics). The rail is 56 px, expands on hover, and stays open
-if you pin it. Badges count open bus tasks on Work, waiting updates on System and failing CI runs on
+Control, Fleet), **Brain** (Memory, Skills, Constitution), **Code** (Explorer, GitHub, Artifacts)
+and **System** (MCP and Providers, Updates, Safety, Setup, Diagnostics). The rail is 56 px, expands
+on hover, and stays open if you pin it. Badges count open bus tasks on Work, waiting updates on System and failing CI runs on
 Code. `Alt+1..5` jumps between groups and `Ctrl+K` reaches every tab.
 
 Chats never start in a system folder: the working directory comes from the last folder you used,
