@@ -2052,10 +2052,7 @@ mod tests {
                 "styles.css".to_string(),
                 "body { color: #111; }\n".to_string(),
             ),
-            (
-                "app.js".to_string(),
-                "console.log('ready');\n".to_string(),
-            ),
+            ("app.js".to_string(), "console.log('ready');\n".to_string()),
         ];
         create_with_files(c, name, "A test app", &files).expect("create")
     }
@@ -2093,7 +2090,10 @@ mod tests {
     #[test]
     fn the_preview_serves_the_customizer_and_the_runtime() {
         let body = |rest: &[&str]| served_override(rest).map(|b| b.len());
-        assert_eq!(body(&["_customizer.js"]), Some(crate::artifact_customize::CUSTOMIZER_JS.len()));
+        assert_eq!(
+            body(&["_customizer.js"]),
+            Some(crate::artifact_customize::CUSTOMIZER_JS.len())
+        );
         assert_eq!(body(&["probe", "agentos.js"]), Some(RUNTIME_JS.len()));
         assert_eq!(body(&["probe", "app.js"]), None);
         assert_eq!(body(&["agentos.js"]), None);
@@ -2108,7 +2108,10 @@ mod tests {
         assert!(names.contains(&"index.html"));
         assert!(names.contains(&"styles.css"));
         assert!(names.contains(&"app.js"));
-        assert!(!names.contains(&"agentos.js"), "runtime is added at publish");
+        assert!(
+            !names.contains(&"agentos.js"),
+            "runtime is added at publish"
+        );
         assert_eq!(a.template, "generated");
         let html = read_file_in(&c, &a.id, "index.html").expect("read");
         assert!(html.contains("<h1>My App</h1>"));

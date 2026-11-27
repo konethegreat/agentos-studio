@@ -860,10 +860,7 @@ mod tests {
         assert_eq!(list[1].id, "claude-code");
         assert!(default_agent_with(|_| true).is_some());
         assert_eq!(default_agent_with(|_| true), Some("antigravity"));
-        assert_eq!(
-            default_agent_with(|id| id == "hermes"),
-            Some("hermes")
-        );
+        assert_eq!(default_agent_with(|id| id == "hermes"), Some("hermes"));
         assert_eq!(default_agent_with(|_| false), None);
         if list.iter().any(|a| a.installed) {
             assert!(default_agent().is_ok());
@@ -880,8 +877,12 @@ mod tests {
             preferred_model_with(&models)
         };
         assert_eq!(
-            picked(&["gemini-3.8-flash-high", "claude-opus-5-5-high", "gemini-4-neon-xhigh"])
-                .as_deref(),
+            picked(&[
+                "gemini-3.8-flash-high",
+                "claude-opus-5-5-high",
+                "gemini-4-neon-xhigh"
+            ])
+            .as_deref(),
             Some("gemini-4-neon-xhigh")
         );
         assert_eq!(
@@ -892,7 +893,10 @@ mod tests {
             picked(&["gemini-5-argon-medium", "gemini-5-argon-xhigh"]).as_deref(),
             Some("gemini-5-argon-xhigh")
         );
-        assert_eq!(picked(&["gpt-oss-120b-medium"]).as_deref(), Some("gpt-oss-120b-medium"));
+        assert_eq!(
+            picked(&["gpt-oss-120b-medium"]).as_deref(),
+            Some("gpt-oss-120b-medium")
+        );
         assert_eq!(picked(&[]), None);
     }
 

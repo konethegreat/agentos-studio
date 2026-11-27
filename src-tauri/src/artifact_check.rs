@@ -721,8 +721,8 @@ mod tests {
                 "document.getElementById('clock').textContent = '25:00';\n".to_string(),
             ),
         ];
-        let artifact = crate::artifacts::create_with_files(&c, "Generated probe", "", &files)
-            .expect("create");
+        let artifact =
+            crate::artifacts::create_with_files(&c, "Generated probe", "", &files).expect("create");
         let report = check_with(&crate::artifacts::artifact_dir(&artifact.slug), false);
         assert!(report.ok, "{:?}", report.issues);
         crate::artifacts::set_test_root(None);

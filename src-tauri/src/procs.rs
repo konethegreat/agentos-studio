@@ -405,12 +405,8 @@ mod tests {
     #[test]
     fn a_short_command_returns_its_output() {
         #[cfg(windows)]
-        let (code, out, _) = run_shell_with_timeout(
-            "echo agentos",
-            None,
-            Duration::from_secs(20),
-        )
-        .unwrap();
+        let (code, out, _) =
+            run_shell_with_timeout("echo agentos", None, Duration::from_secs(20)).unwrap();
         #[cfg(not(windows))]
         let (code, out, _) =
             run_shell_with_timeout("echo agentos", None, Duration::from_secs(20)).unwrap();
