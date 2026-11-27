@@ -18,16 +18,33 @@ text. Images and fonts are allowed when an artifact is published, but the editor
 A file can be at most 1 MB and at most two folders deep (`pages/about.html` is fine,
 `a/b/c.html` is not). Dotfiles and paths that climb out of the folder are refused.
 
-The database keeps the identity: name, slug, description, template, timestamps, publish time and
-the live URL. The folder is the source of truth for the code.
+The database keeps the identity: name, slug, description, kind, timestamps, publish time and the
+live URL. The `template` column stores the kind, `generated`, for apps Studio built from a
+description and kept for apps from before the generator. The folder is the source of truth for the
+code.
 
 ## Create and edit
 
-**Code > Artifacts > New artifact** asks for a name, a description and a starting point:
+**Code > Artifacts > New artifact** asks for a name, a description of what the app should do, and a
+builder agent. There are no templates: the agent researches the brief and writes the app from
+scratch.
 
-- **Blank** is a single page with a counter saved through the runtime.
-- **To-do** is a filtered task list with counts and export.
-- **Notes** is a note list that autosaves as you type.
+1. The builder is the first installed headless agent in this order: Antigravity, Claude Code,
+   Hermes. Antigravity is the default because it is the flat-rate agent installed here.
+2. The agent runs one headless turn with web research and the hub memory tools, and answers with
+   `{"summary":"...","files":[{"path","content"}]}`. It never writes files itself.
+3. Studio validates the answer before touching disk: paths are relative and inside the folder,
+   `index.html` is required, `agentos.js` and duplicate paths are refused, dashes are normalised,
+   and every file runs the same text rules as the publish check. At most 24 files, 400,000
+   characters per file and 900,000 characters in total.
+4. The file set is written to `.staging` under the artifacts folder, anything the agent wrote
+   outside the answer is removed, and the full publish check runs over the staged folder. Only a
+   passing file set is then written to `artifacts/<slug>/` and inserted into the list.
+5. The staging folder is always removed. A refused answer leaves no artifact, no folder and no row.
+
+Generation usually takes one to four minutes and is limited to six. While it runs, the New artifact
+dialog shows the elapsed time, and the agent cannot start a second artifact or customizer turn at
+the same time.
 
 The editor shows one file at a time with tabs. Ctrl+S saves. Unsaved changes are marked on the tab
 and in the footer, and switching files or artifacts saves first so nothing is silently lost. New
@@ -58,8 +75,10 @@ decides:
 1. **Select element** turns the preview into pick mode. Clicking any element highlights it and sends
    its tag, id, classes, selector, visible text and outer HTML to Studio. Clicking a link or a button
    in pick mode selects it instead of activating it. Escape turns pick mode off.
-2. Describe the change and pick an agent. The installed headless agents are Claude Code,
-   Antigravity and Hermes; the default is the strongest one installed here.
+2. Describe the change and pick an agent. The installed headless agents are Antigravity, Claude
+   Code and Hermes; the default is Antigravity when it is installed, because it is the flat-rate
+   agent here. An Antigravity turn runs on the strongest model `agy models` lists, preferring
+   `gemini-4-neon-xhigh` and falling down a checked ladder; a model saved on Work > Agents wins.
 3. The agent runs one headless turn in the artifact folder with read-only tools and answers with a
    JSON plan: a summary and up to 12 edits, each an exact `old` text and its `new` replacement. With
    no element selected the request still works and the agent edits from the description.
@@ -69,7 +88,8 @@ decides:
    dashes, no localhost URLs).
 5. The panel shows the exact patch per file with its line and reason. **Apply changes** re-reads the
    files, validates the whole plan again against the disk, writes each touched file once and reloads
-   the preview. **Discard** writes nothing.
+   the preview. The selection is re-attached after the reload, so the same element stays in view;
+   if the element no longer exists, the selection clears. **Discard** writes nothing.
 
 The agent never writes files itself. It receives the file contents and returns text; Studio performs
 every write after the review. If you have unsaved editor changes, the customizer asks you to save
@@ -156,9 +176,9 @@ sends the domain and keeps HTTPS enforcement on. Clearing the field removes the 
 
 ## Data and storage
 
-Every artifact gets `agentos.js` when it is created, and publishing writes it again. It is
-generated: the editor shows it read-only, and Studio rewrites it on every publish. It exposes
-`window.AgentOS`:
+Every artifact uses `agentos.js` for storage. Studio serves it from the runtime source in the
+preview and writes it into the published folder, so it is never part of the edited files and is
+refreshed on every publish. It exposes `window.AgentOS`:
 
 | Call | What it does |
 | --- | --- |

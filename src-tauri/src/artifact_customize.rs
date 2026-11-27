@@ -9,6 +9,7 @@
 //! text, banned dashes or machine-only URLs. Publish runs the full check again.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Result};
@@ -32,11 +33,12 @@ pub struct AgentChoice {
     pub installed: bool,
 }
 
-/// The headless agents that can take a customization, in preference order.
+/// The headless agents that can take an artifact turn, in preference order. Antigravity leads
+/// because it is the flat-rate agent installed here that can research and write a whole app.
 pub fn agents() -> Vec<AgentChoice> {
     [
-        ("claude-code", "Claude Code"),
         ("antigravity", "Antigravity"),
+        ("claude-code", "Claude Code"),
         ("hermes", "Hermes"),
     ]
     .into_iter()
@@ -48,11 +50,82 @@ pub fn agents() -> Vec<AgentChoice> {
     .collect()
 }
 
-/// The agent used when the caller names none: the best flat-rate headless agent installed here.
+/// The agent used when the caller names none: the first installed artifact agent.
+pub fn default_agent_with(available: impl Fn(&str) -> bool) -> Option<&'static str> {
+    ["antigravity", "claude-code", "hermes"]
+        .into_iter()
+        .find(|id| available(id))
+}
+
 pub fn default_agent() -> Result<&'static str> {
-    crate::bus::best_headless("", crate::bus::headless_available).ok_or_else(|| {
-        anyhow!("Install Claude Code, Antigravity or Hermes to customize artifacts with AI")
+    default_agent_with(crate::bus::headless_available).ok_or_else(|| {
+        anyhow!("Install Antigravity, Claude Code or Hermes to build artifacts with AI")
     })
+}
+
+/// The Antigravity models worth a long artifact turn, strongest first. `gemini-4-neon-xhigh` is the
+/// top reasoning tier `agy models` offers on this plan; the rest are fallbacks for a plan or a CLI
+/// that lists a different set. Every id is checked against `agy models` before use, so a model that
+/// disappears falls through to the next one instead of failing the turn.
+const MODEL_PREFERENCE: [&str; 8] = [
+    "gemini-4-neon-xhigh",
+    "gemini-4-hydrogen-xhigh",
+    "gemini-4-neon-high",
+    "gemini-4-hydrogen-high",
+    "claude-opus-5-5-high",
+    "gemini-4-carbon-high",
+    "gemini-pro-orchestrator",
+    "gemini-3.8-flash-high",
+];
+
+/// `(id, label)` pairs as `agy models` prints them.
+type ModelList = Vec<(String, String)>;
+
+static AGY_MODELS: Mutex<Option<(Instant, ModelList)>> = Mutex::new(None);
+const MODEL_TTL: Duration = Duration::from_secs(600);
+
+/// Pick the strongest model the agent lists. Pure.
+pub fn preferred_model_with(models: &[(String, String)]) -> Option<String> {
+    if let Some(id) = MODEL_PREFERENCE
+        .iter()
+        .find(|want| models.iter().any(|(id, _)| id == *want))
+    {
+        return Some((*id).to_string());
+    }
+    models
+        .iter()
+        .find(|(id, _)| id.ends_with("-xhigh"))
+        .or_else(|| models.iter().find(|(id, _)| id.ends_with("-high")))
+        .or_else(|| models.first())
+        .map(|(id, _)| id.clone())
+}
+
+fn cached_models() -> Vec<(String, String)> {
+    let now = Instant::now();
+    if let Ok(guard) = AGY_MODELS.lock() {
+        if let Some((at, list)) = guard.as_ref() {
+            if at.elapsed() < MODEL_TTL && !list.is_empty() {
+                return list.clone();
+            }
+        }
+    }
+    let list = crate::bus::agy_models();
+    if let Ok(mut guard) = AGY_MODELS.lock() {
+        *guard = Some((now, list.clone()));
+    }
+    list
+}
+
+/// The model an artifact turn uses: the owner's saved choice, else the strongest one Antigravity
+/// lists. Tests never spawn the CLI.
+pub fn model_for_turn() -> Option<String> {
+    if let Some(saved) = crate::bus::agy_model() {
+        return Some(saved);
+    }
+    if cfg!(test) {
+        return None;
+    }
+    preferred_model_with(&cached_models())
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -269,7 +342,13 @@ pub fn validate_plan(
     let json = extract_json(raw)?;
     let parsed: RawPlan = serde_json::from_str(&json)
         .map_err(|e| anyhow!("The agent returned JSON that does not match the plan shape: {e}"))?;
-    let summary = parsed.summary.trim().chars().take(500).collect::<String>();
+    let summary: String = parsed
+        .summary
+        .trim()
+        .chars()
+        .take(500)
+        .collect::<String>()
+        .replace(['\u{2014}', '\u{2013}'], "-");
     let edits: Vec<Edit> = parsed
         .files
         .into_iter()
@@ -323,7 +402,7 @@ fn context_files(c: &Connection, id: &str) -> Result<(BTreeMap<String, String>, 
 
 /// The agent a customization may run on. Unlike `ask`, there is no caller to protect from asking
 /// itself; the owner picks the agent in the Studio panel.
-fn check_agent(agent: &str) -> Result<String> {
+pub(crate) fn check_agent(agent: &str) -> Result<String> {
     let to = crate::vault::norm_agent(agent)?;
     if to == "human" {
         bail!("The customizer runs on a headless agent, not on the owner");
@@ -333,6 +412,9 @@ fn check_agent(agent: &str) -> Result<String> {
     }
     if !crate::bus::headless_available(&to) {
         bail!("{to} is not installed on this machine");
+    }
+    if let Some(reason) = crate::agent_limits::blocked_reason_for(&to) {
+        bail!("{to} cannot take a turn right now: {reason}");
     }
     Ok(to)
 }
@@ -377,7 +459,18 @@ pub fn customize_in(
     );
     let dir = artifacts::artifact_dir(&artifact.slug);
     let started = Instant::now();
-    let (answer, _session, cost) = crate::ask::run_turn(&agent, &prompt, &dir, limit)?;
+    let model = (agent == "antigravity").then(model_for_turn).flatten();
+    crate::ask::mark_answering(&agent, limit.as_secs() + 30);
+    let turn = crate::ask::run_turn_with(
+        &agent,
+        &prompt,
+        &dir,
+        limit,
+        &crate::ask::ASK_CLAUDE_TOOLS,
+        model.as_deref(),
+    );
+    crate::ask::clear_answering(&agent);
+    let (answer, _session, cost) = turn?;
     let (summary, edits) = validate_plan(&answer, &files, &existing)?;
     Ok(Plan {
         summary,
@@ -515,6 +608,22 @@ pub const CUSTOMIZER_JS: &str = r##"(function () {
     place(el);
   }
 
+  function describe(el) {
+    return {
+      selector: selectorFor(el).slice(0, 600),
+      tag: el.tagName.toLowerCase(),
+      id: el.id || "",
+      classes: (el.getAttribute("class") || "").trim().slice(0, 300),
+      text: (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 300),
+      html: el.outerHTML.slice(0, 4000)
+    };
+  }
+
+  function select(el) {
+    place(el);
+    post({ t: "agentos:pick", pick: describe(el) });
+  }
+
   function onClick(event) {
     if (!enabled) return;
     var el = event.target;
@@ -522,19 +631,7 @@ pub const CUSTOMIZER_JS: &str = r##"(function () {
     event.preventDefault();
     event.stopPropagation();
     if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-    place(el);
-    var text = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 300);
-    post({
-      t: "agentos:pick",
-      pick: {
-        selector: selectorFor(el).slice(0, 600),
-        tag: el.tagName.toLowerCase(),
-        id: el.id || "",
-        classes: (el.getAttribute("class") || "").trim().slice(0, 300),
-        text: text,
-        html: el.outerHTML.slice(0, 4000)
-      }
-    });
+    select(el);
   }
 
   function onKey(event) {
@@ -578,6 +675,20 @@ pub const CUSTOMIZER_JS: &str = r##"(function () {
     var data = event.data || {};
     if (data.t === "agentos:enable") start();
     if (data.t === "agentos:off") stop();
+    if (data.t === "agentos:repick") {
+      var selector = String(data.selector || "");
+      var found = null;
+      try {
+        found = selector ? document.querySelector(selector) : null;
+      } catch (error) {
+        found = null;
+      }
+      if (found && found.nodeType === 1) {
+        select(found);
+      } else {
+        post({ t: "agentos:missing", selector: selector });
+      }
+    }
   });
 })();
 "##;
@@ -627,6 +738,13 @@ mod tests {
         assert_eq!(edits[0].path, "styles.css");
         assert_eq!(edits[0].line, 1);
         assert_eq!(edits[0].why, "stronger action");
+    }
+
+    #[test]
+    fn a_plan_summary_is_cleaned_of_banned_dashes() {
+        let raw = "{\"summary\":\"Calm \u{2014} quiet\",\"files\":[{\"path\":\"styles.css\",\"old\":\".primary { color: #fff; }\",\"new\":\".primary { color: #eee; }\"}]}";
+        let (summary, _) = validate_plan(raw, &files(), &existing()).unwrap();
+        assert_eq!(summary, "Calm - quiet");
     }
 
     #[test]
@@ -726,6 +844,8 @@ mod tests {
     #[test]
     fn the_injected_script_is_self_contained_and_guarded() {
         assert!(CUSTOMIZER_JS.contains("agentos:pick"));
+        assert!(CUSTOMIZER_JS.contains("agentos:repick"));
+        assert!(CUSTOMIZER_JS.contains("agentos:missing"));
         assert!(CUSTOMIZER_JS.contains("event.source !== source"));
         assert!(CUSTOMIZER_JS.contains("stopPropagation"));
         assert!(!CUSTOMIZER_JS.contains('\u{2014}'));
@@ -736,10 +856,44 @@ mod tests {
     fn every_installed_agent_is_listed_with_a_usable_default() {
         let list = agents();
         assert_eq!(list.len(), 3);
-        assert_eq!(list[0].id, "claude-code");
+        assert_eq!(list[0].id, "antigravity");
+        assert_eq!(list[1].id, "claude-code");
+        assert!(default_agent_with(|_| true).is_some());
+        assert_eq!(default_agent_with(|_| true), Some("antigravity"));
+        assert_eq!(
+            default_agent_with(|id| id == "hermes"),
+            Some("hermes")
+        );
+        assert_eq!(default_agent_with(|_| false), None);
         if list.iter().any(|a| a.installed) {
             assert!(default_agent().is_ok());
         }
+    }
+
+    #[test]
+    fn the_model_ladder_prefers_the_strongest_listed_model() {
+        let picked = |ids: &[&str]| {
+            let models: Vec<(String, String)> = ids
+                .iter()
+                .map(|id| ((*id).to_string(), String::new()))
+                .collect();
+            preferred_model_with(&models)
+        };
+        assert_eq!(
+            picked(&["gemini-3.8-flash-high", "claude-opus-5-5-high", "gemini-4-neon-xhigh"])
+                .as_deref(),
+            Some("gemini-4-neon-xhigh")
+        );
+        assert_eq!(
+            picked(&["gemini-4-carbon-low", "gemini-4-argon-high"]).as_deref(),
+            Some("gemini-4-argon-high")
+        );
+        assert_eq!(
+            picked(&["gemini-5-argon-medium", "gemini-5-argon-xhigh"]).as_deref(),
+            Some("gemini-5-argon-xhigh")
+        );
+        assert_eq!(picked(&["gpt-oss-120b-medium"]).as_deref(), Some("gpt-oss-120b-medium"));
+        assert_eq!(picked(&[]), None);
     }
 
     #[test]
@@ -747,15 +901,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         artifacts::set_test_root(Some(dir.path().join("artifacts")));
         let c = crate::store::test_conn();
-        let a = artifacts::create_in(&c, "Demo", "A page", "blank").unwrap();
+        let files = vec![
+            (
+                "index.html".to_string(),
+                "<h1>Demo</h1>\n<button class=\"primary\">Go</button>\n".to_string(),
+            ),
+            (
+                "styles.css".to_string(),
+                ".primary { color: #fff; }\n".to_string(),
+            ),
+        ];
+        let a = artifacts::create_with_files(&c, "Demo", "A page", &files).unwrap();
 
         apply_in(
             &c,
             &a.id,
             &[edit(
                 "styles.css",
-                ".primary:hover { background: #056348; }",
-                ".primary:hover { background: #0a7f5c; }",
+                ".primary { color: #fff; }",
+                ".primary { color: #fff; background: #0a7f5c; }",
             )],
         )
         .unwrap();

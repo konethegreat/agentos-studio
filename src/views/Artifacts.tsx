@@ -33,10 +33,7 @@ import {
   type ArtifactPlan,
   type ArtifactSelection,
   type ArtifactSite,
-  type ArtifactTemplate,
 } from "../lib/studio";
-
-const TEMPLATE_ORDER = ["blank", "todo", "notes"];
 
 const NO_SELECTION: ArtifactSelection = { selector: "", tag: "", id: "", classes: "", text: "", html: "" };
 
@@ -72,7 +69,7 @@ function escapeHtml(s: string) {
 function starterFor(path: string, artifact: Artifact) {
   const name = escapeHtml(artifact.name);
   if (path.endsWith(".css")) return "/* Styles for this page. */\n";
-  if (path.endsWith(".js") || path.endsWith(".mjs")) return "// Script for this page. AgentOS is available from agentos.js.\n";
+  if (path.endsWith(".js") || path.endsWith(".mjs")) return "// Script for this page.\n";
   if (path.endsWith(".json") || path.endsWith(".webmanifest")) return "{}\n";
   if (path.endsWith(".md")) return `# ${artifact.name}\n`;
   if (!path.endsWith(".html")) return "";
@@ -85,7 +82,7 @@ function starterFor(path: string, artifact: Artifact) {
 </head>
 <body>
   <h1>${name}</h1>
-  <p>New page. Link styles.css and agentos.js if you want the shared helpers.</p>
+  <p>New page. Link styles.css from this page.</p>
 </body>
 </html>
 `;
@@ -110,15 +107,16 @@ export function Artifacts() {
   const [publishing, setPublishing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [installed, setInstalled] = useState<string[]>([]);
-  const [templates, setTemplates] = useState<ArtifactTemplate[]>([]);
   const [site, setSite] = useState<ArtifactSite | null>(null);
   const [siteError, setSiteError] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
-  const [createDescription, setCreateDescription] = useState("");
-  const [createTemplate, setCreateTemplate] = useState("blank");
+  const [createBrief, setCreateBrief] = useState("");
+  const [createAgent, setCreateAgent] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createStarted, setCreateStarted] = useState(0);
+  const [createElapsed, setCreateElapsed] = useState(0);
 
   const [adding, setAdding] = useState(false);
   const [newPath, setNewPath] = useState("");
@@ -139,6 +137,7 @@ export function Artifacts() {
   const [frameReady, setFrameReady] = useState(false);
   const [picking, setPicking] = useState(false);
   const [selection, setSelection] = useState<ArtifactSelection | null>(null);
+  const [repick, setRepick] = useState<string | null>(null);
   const [agents, setAgents] = useState<ArtifactAgent[]>([]);
   const [agent, setAgent] = useState("");
   const [instruction, setInstruction] = useState("");
@@ -148,6 +147,7 @@ export function Artifacts() {
   const [check, setCheck] = useState<ArtifactCheck | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkOpen, setCheckOpen] = useState(false);
+  const checkSeq = useRef(0);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
 
   const artifact = useMemo(() => rows?.find((r) => r.id === selected) ?? null, [rows, selected]);
@@ -163,11 +163,6 @@ export function Artifacts() {
     } catch (e) {
       toast("error", errorText(e));
       setRows([]);
-    }
-    try {
-      setTemplates(await studio.artifacts.templates());
-    } catch (e) {
-      toast("error", errorText(e));
     }
     try {
       setInstalled(await studio.artifacts.installed());
@@ -193,29 +188,42 @@ export function Artifacts() {
       .agents()
       .then((list) => {
         setAgents(list);
-        setAgent((current) => current || list.find((a) => a.installed)?.id || "");
+        const fallback = list.find((a) => a.installed)?.id || "";
+        setAgent((current) => current || fallback);
+        setCreateAgent((current) => current || fallback);
       })
       .catch((e) => toast("error", errorText(e)));
   }, [toast]);
 
   const runCheck = useCallback(
     async (id: string) => {
+      const seq = ++checkSeq.current;
       setChecking(true);
       try {
-        setCheck(await studio.artifacts.validate(id));
+        const next = await studio.artifacts.validate(id);
+        if (checkSeq.current === seq) setCheck(next);
       } catch (e) {
-        setCheck(null);
-        toast("error", errorText(e));
+        if (checkSeq.current === seq) {
+          setCheck(null);
+          toast("error", errorText(e));
+        }
       } finally {
-        setChecking(false);
+        if (checkSeq.current === seq) setChecking(false);
       }
     },
     [toast],
   );
 
   useEffect(() => {
+    if (!creating) return;
+    const tick = setInterval(() => setCreateElapsed(Math.floor((Date.now() - createStarted) / 1000)), 1000);
+    return () => clearInterval(tick);
+  }, [creating, createStarted]);
+
+  useEffect(() => {
     setPlan(null);
     setSelection(null);
+    setRepick(null);
     setPicking(false);
     setCheck(null);
     setPreviewUrl(null);
@@ -256,7 +264,13 @@ export function Artifacts() {
           text: String(data.pick.text ?? ""),
           html: String(data.pick.html ?? ""),
         });
+        setRepick(null);
         setPicking(false);
+        return;
+      }
+      if (data.t === "agentos:missing") {
+        setSelection(null);
+        setRepick(null);
         return;
       }
       if (data.t === "agentos:off") setPicking(false);
@@ -331,7 +345,9 @@ export function Artifacts() {
       setRows((list) => list?.map((r) => (r.id === row.id ? row : r)) ?? list);
       setSaved(content);
       setFiles(await studio.artifacts.files(selected));
+      setRepick(selection?.selector || null);
       setPreviewTick((t) => t + 1);
+      void runCheck(selected);
       toast("ok", `Saved ${file}`);
       return true;
     } catch (e) {
@@ -340,7 +356,7 @@ export function Artifacts() {
     } finally {
       setSaving(false);
     }
-  }, [selected, file, content, saved, loadingFile, toast]);
+  }, [selected, file, content, saved, loadingFile, selection, runCheck, toast]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -372,20 +388,29 @@ export function Artifacts() {
 
   async function create() {
     const name = createName.trim();
+    const brief = createBrief.trim();
     if (!name) {
       toast("error", "Give the artifact a name");
       return;
     }
+    if (brief.length < 10) {
+      toast("error", "Describe what the app should do in a sentence or two");
+      return;
+    }
     setCreating(true);
+    setCreateStarted(Date.now());
+    setCreateElapsed(0);
     try {
-      const a = await studio.artifacts.create(name, createDescription.trim(), createTemplate);
+      const result = await studio.artifacts.create(name, brief, createAgent || null);
+      const a = result.artifact;
       setRows((list) => [a, ...(list ?? [])]);
       setSelected(a.id);
+      setLastPublished(null);
+      setView("preview");
       setCreateOpen(false);
       setCreateName("");
-      setCreateDescription("");
-      setCreateTemplate("blank");
-      toast("ok", `${a.name} created at ${a.slug}`);
+      setCreateBrief("");
+      toast("ok", result.summary ? `${a.name}: ${result.summary}` : `${a.name} built at ${a.slug}`);
     } catch (e) {
       toast("error", errorText(e));
     } finally {
@@ -411,6 +436,7 @@ export function Artifacts() {
       setView("code");
       setNewPath("");
       setAdding(false);
+      void runCheck(selected);
       toast("ok", `${path} added`);
     } catch (e) {
       toast("error", errorText(e));
@@ -469,6 +495,7 @@ export function Artifacts() {
       const next = rows?.filter((r) => r.id !== selected) ?? [];
       setRows(next);
       setSelected(next[0]?.id ?? null);
+      setLastPublished(null);
       setInstalled((ids) => ids.filter((id) => id !== selected));
       setConfirmDelete(false);
       toast("ok", `${gone?.name ?? "Artifact"} deleted from this machine`);
@@ -530,6 +557,8 @@ export function Artifacts() {
       setPicking(false);
       return;
     }
+    setSelection(null);
+    setRepick(null);
     setPicking(true);
     frameRef.current?.contentWindow?.postMessage({ t: "agentos:enable" }, "*");
   }
@@ -537,6 +566,7 @@ export function Artifacts() {
   function onFrameLoad() {
     setFrameReady(true);
     if (picking) frameRef.current?.contentWindow?.postMessage({ t: "agentos:enable" }, "*");
+    if (repick) frameRef.current?.contentWindow?.postMessage({ t: "agentos:repick", selector: repick }, "*");
   }
 
   async function askAgent() {
@@ -568,12 +598,15 @@ export function Artifacts() {
       setRows((list) => list?.map((r) => (r.id === row.id ? row : r)) ?? list);
       const touched = new Set(plan.edits.map((e) => e.path));
       setFiles(await studio.artifacts.files(selected));
+      const baseline = saved;
       if (file && touched.has(file) && !generated) {
         const text = await studio.artifacts.readFile(selected, file);
-        setContent(text);
-        setSaved(text);
+        setContent((current) => (current === baseline ? text : current));
+        setSaved((current) => (current === baseline ? text : current));
       }
+      const keep = selection?.selector || null;
       setPlan(null);
+      setRepick(keep);
       setPreviewTick((t) => t + 1);
       void runCheck(selected);
       toast("ok", `Applied: ${plan.summary}`);
@@ -591,7 +624,7 @@ export function Artifacts() {
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-6 py-3">
         <div className="min-w-0">
           <h1 className="text-base font-semibold text-slate-100">Artifacts</h1>
-          <p className="truncate text-label text-slate-500">Small web apps you build here, customize by selecting an element, install as their own window, and publish to GitHub Pages.</p>
+          <p className="truncate text-label text-slate-500">Describe an app and Studio builds it, customize any element by selecting it in the preview, install it as its own window, and publish it to GitHub Pages.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button size="sm" icon={<RefreshCw className="size-3.5" />} onClick={() => void load()} title="Reload artifacts and site status">
@@ -612,7 +645,7 @@ export function Artifacts() {
           {rows === null && <p className="px-2 py-3 text-xs text-slate-500">Loading...</p>}
           {rows?.length === 0 && (
             <div className="px-2 py-4">
-              <Empty icon={<Package className="size-6" />} title="No artifacts yet" hint="Create one from a template and it is ready to run." />
+              <Empty icon={<Package className="size-6" />} title="No artifacts yet" hint="Describe an app, review what the agent built, then select any element to customize it." />
             </div>
           )}
           {rows?.map((a) => (
@@ -674,7 +707,7 @@ export function Artifacts() {
                       ) : (
                         <Badge className="bg-white/5 text-slate-400 ring-white/10">Draft</Badge>
                       )}
-                      <Badge className="bg-white/5 text-slate-400 ring-white/10">{artifact.template}</Badge>
+                      <Badge className="bg-white/5 text-slate-400 ring-white/10">Web app</Badge>
                       {check && (
                         <button
                           type="button"
@@ -943,7 +976,14 @@ export function Artifacts() {
                           {picking ? "Cancel picking" : "Select element"}
                         </Button>
                         {selection && (
-                          <Button size="sm" variant="ghost" onClick={() => setSelection(null)}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setSelection(null);
+                              setRepick(null);
+                            }}
+                          >
                             Clear
                           </Button>
                         )}
@@ -1051,14 +1091,21 @@ export function Artifacts() {
       {createOpen && (
         <Modal
           title="New artifact"
-          onClose={() => setCreateOpen(false)}
+          onClose={() => {
+            if (!creating) setCreateOpen(false);
+          }}
           footer={
             <>
-              <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              <Button variant="ghost" disabled={creating} onClick={() => setCreateOpen(false)}>
                 Cancel
               </Button>
-              <Button variant="primary" busy={creating} disabled={!createName.trim()} onClick={() => void create()}>
-                Create
+              <Button
+                variant="primary"
+                busy={creating}
+                disabled={!createName.trim() || createBrief.trim().length < 10 || !createAgent}
+                onClick={() => void create()}
+              >
+                Generate app
               </Button>
             </>
           }
@@ -1071,41 +1118,47 @@ export function Artifacts() {
                 onChange={(e) => setCreateName(e.target.value)}
                 placeholder="Trip planner"
                 maxLength={80}
+                disabled={creating}
                 className={inputClass}
               />
             </Field>
-            <Field label="Description" hint="Shown on the public gallery card.">
-              <input
-                value={createDescription}
-                onChange={(e) => setCreateDescription(e.target.value)}
-                placeholder="Plan a trip and keep the packing list"
-                maxLength={500}
+            <Field label="What should it do?" hint="The agent researches this brief and builds the app from scratch. There is no template.">
+              <textarea
+                value={createBrief}
+                onChange={(e) => setCreateBrief(e.target.value)}
+                placeholder="A trip planner that keeps days, stops and a packing list. It saves everything in the browser and works offline."
+                maxLength={4000}
+                rows={5}
+                disabled={creating}
                 className={inputClass}
               />
             </Field>
-            <div className="space-y-1.5">
-              <span className="text-xs font-medium text-slate-300">Starting point</span>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {[...templates]
-                  .sort((a, b) => TEMPLATE_ORDER.indexOf(a.id) - TEMPLATE_ORDER.indexOf(b.id))
-                  .map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setCreateTemplate(t.id)}
-                      aria-pressed={createTemplate === t.id}
-                      className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                        createTemplate === t.id
-                          ? "border-emerald-500/50 bg-emerald-500/10"
-                          : "border-line bg-canvas hover:border-slate-600"
-                      }`}
-                    >
-                      <span className="block text-xs font-semibold text-slate-100">{t.name}</span>
-                      <span className="mt-1 block text-label leading-snug text-slate-500">{t.description}</span>
-                    </button>
-                  ))}
-              </div>
-            </div>
+            <Field label="Builder" hint="It researches the brief, writes the files, and Studio checks them before creating the artifact.">
+              <select
+                value={createAgent}
+                onChange={(e) => setCreateAgent(e.target.value)}
+                disabled={creating || installedAgents.length === 0}
+                className={inputClass}
+              >
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id} disabled={!a.installed}>
+                    {a.name}
+                    {a.installed ? "" : " (not installed)"}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {installedAgents.length === 0 && (
+              <p className="text-label leading-relaxed text-amber-300">
+                No headless agent is installed. Install Antigravity, Claude Code or Hermes, then open this dialog again.
+              </p>
+            )}
+            {creating && (
+              <p className="text-label leading-relaxed text-emerald-300" aria-live="polite">
+                {agents.find((a) => a.id === createAgent)?.name ?? "The agent"} is researching and building. {createElapsed}s
+                elapsed. This usually takes one to four minutes, and nothing is created until every file passes the publish check.
+              </p>
+            )}
             <p className="text-label leading-relaxed text-slate-500">
               The artifact is written to a folder in the Studio config directory. Nothing leaves this machine until you publish.
             </p>

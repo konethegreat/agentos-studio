@@ -702,18 +702,29 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_templates_pass() {
+    fn a_generated_folder_passes_the_publish_check() {
         let dir = fixture(&[("index.html", &page("<p>x</p>"))]);
         let parent = dir.path();
         crate::artifacts::set_test_root(Some(parent.join("artifacts")));
         let c = crate::store::test_conn();
-        for template in ["blank", "todo", "notes"] {
-            let artifact =
-                crate::artifacts::create_in(&c, &format!("Probe {template}"), "", template)
-                    .unwrap();
-            let report = check_with(&crate::artifacts::artifact_dir(&artifact.slug), false);
-            assert!(report.ok, "{template}: {:?}", report.issues);
-        }
+        let files = vec![
+            (
+                "index.html".to_string(),
+                page("<h1>Focus</h1><p id=\"clock\">25:00</p><script src=\"app.js\"></script>"),
+            ),
+            (
+                "styles.css".to_string(),
+                "body { color: #111; font-family: system-ui; }\n".to_string(),
+            ),
+            (
+                "app.js".to_string(),
+                "document.getElementById('clock').textContent = '25:00';\n".to_string(),
+            ),
+        ];
+        let artifact = crate::artifacts::create_with_files(&c, "Generated probe", "", &files)
+            .expect("create");
+        let report = check_with(&crate::artifacts::artifact_dir(&artifact.slug), false);
+        assert!(report.ok, "{:?}", report.issues);
         crate::artifacts::set_test_root(None);
     }
 

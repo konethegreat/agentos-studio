@@ -9,6 +9,7 @@ pub mod agent_packs;
 pub mod agents;
 pub mod artifact_check;
 pub mod artifact_customize;
+pub mod artifact_generate;
 pub mod artifacts;
 pub mod ask;
 pub mod assign;
@@ -533,7 +534,6 @@ pub fn run_gui() {
             commands::set_working_dir,
             commands::get_pref,
             commands::set_pref,
-            artifacts::artifacts_templates,
             artifacts::artifacts_list,
             artifacts::artifacts_create,
             artifacts::artifacts_files,

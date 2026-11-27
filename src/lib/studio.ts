@@ -364,10 +364,12 @@ export interface ArtifactFile {
   modified_at: number;
 }
 
-export interface ArtifactTemplate {
-  id: string;
-  name: string;
-  description: string;
+export interface ArtifactGenerated {
+  artifact: Artifact;
+  summary: string;
+  agent: string;
+  duration_ms: number;
+  cost_usd: number;
 }
 
 export interface ArtifactSite {
@@ -702,10 +704,9 @@ export const studio = {
     rerun: (repo: string, id: number, failedOnly: boolean, a: Approved = {}) => invoke<string>("gh_run_rerun", { repo, id, failedOnly, ...a }),
   },
   artifacts: {
-    templates: () => invoke<ArtifactTemplate[]>("artifacts_templates"),
     list: () => invoke<Artifact[]>("artifacts_list"),
-    create: (name: string, description: string, template: string) =>
-      invoke<Artifact>("artifacts_create", { name, description, template }),
+    create: (name: string, description: string, agent: string | null) =>
+      invoke<ArtifactGenerated>("artifacts_create", { name, description, agent }),
     files: (id: string) => invoke<ArtifactFile[]>("artifacts_files", { id }),
     readFile: (id: string, path: string) => invoke<string>("artifacts_read_file", { id, path }),
     writeFile: (id: string, path: string, content: string) =>

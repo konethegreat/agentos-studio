@@ -216,7 +216,15 @@ fn wait_with_timeout(
         }
         if std::time::Instant::now() >= deadline {
             kill_tree(child.id());
-            let _ = child.wait();
+            // Never wait on the child without a bound: a failed kill used to stall a turn far past
+            // its limit. Give the tree five seconds to disappear, then report the timeout.
+            let grace = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while std::time::Instant::now() < grace {
+                if child.try_wait().ok().flatten().is_some() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
             anyhow::bail!("{tool} did not finish within {}s", limit.as_secs());
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -358,10 +366,16 @@ pub fn kill_tree(pid: u32) {
     #[cfg(windows)]
     {
         if let Some(tk) = find("taskkill") {
-            let _ = command(&tk)
-                .args(["/PID", &pid.to_string(), "/T", "/F"])
-                .output();
+            if kill_with(&tk, pid) {
+                return;
+            }
         }
+        // `find` reads PATH that a running process may not include System32; go direct.
+        let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+        let direct = std::path::PathBuf::from(root)
+            .join("System32")
+            .join("taskkill.exe");
+        let _ = kill_with(&direct, pid);
     }
     #[cfg(not(windows))]
     {
@@ -371,5 +385,54 @@ pub fn kill_tree(pid: u32) {
         let _ = Command::new("kill")
             .args(["-TERM", &pid.to_string()])
             .output();
+    }
+}
+
+#[cfg(windows)]
+fn kill_with(exe: &Path, pid: u32) -> bool {
+    command(exe)
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_short_command_returns_its_output() {
+        #[cfg(windows)]
+        let (code, out, _) = run_shell_with_timeout(
+            "echo agentos",
+            None,
+            Duration::from_secs(20),
+        )
+        .unwrap();
+        #[cfg(not(windows))]
+        let (code, out, _) =
+            run_shell_with_timeout("echo agentos", None, Duration::from_secs(20)).unwrap();
+        assert_eq!(code, Some(0));
+        assert!(out.contains("agentos"), "{out}");
+    }
+
+    #[test]
+    fn a_run_past_its_limit_returns_instead_of_waiting_for_the_child() {
+        #[cfg(windows)]
+        let line = "ping -n 30 127.0.0.1 >nul";
+        #[cfg(not(windows))]
+        let line = "sleep 30";
+        let started = Instant::now();
+        let e = run_shell_with_timeout(line, None, Duration::from_secs(1))
+            .unwrap_err()
+            .to_string();
+        let took = started.elapsed();
+        assert!(e.contains("did not finish"), "{e}");
+        assert!(
+            took < Duration::from_secs(20),
+            "timeout waited {took:?}, which is longer than the kill grace allows"
+        );
     }
 }
