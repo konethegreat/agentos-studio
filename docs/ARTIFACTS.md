@@ -46,6 +46,13 @@ Generation usually takes one to four minutes and is limited to six. While it run
 dialog shows the elapsed time, and the agent cannot start a second artifact or customizer turn at
 the same time.
 
+`cargo test --lib -j 2 live_generation -- --ignored --nocapture` runs one real Antigravity turn
+through this whole path against a temporary `studio.db` and a temporary artifacts folder, so the
+owner's gallery is untouched. The test is ignored by default, so `cargo test` and CI never spawn an
+agent; under test the turn uses the agent's default model rather than the saved choice. Set
+`AGENTOS_LIVE_SITE_REPO=<owner>/<repo>` to publish the generated app to a scratch Pages repository
+in the same run and print its URL.
+
 The editor shows one file at a time with tabs. Ctrl+S saves. Unsaved changes are marked on the tab
 and in the footer, and switching files or artifacts saves first so nothing is silently lost. New
 file writes a starter file for the extension you chose.

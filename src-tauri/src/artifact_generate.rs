@@ -402,4 +402,65 @@ mod tests {
         let e = validate_app(&raw).unwrap_err().to_string();
         assert!(e.contains(&MAX_FILES.to_string()), "{e}");
     }
+
+    /// Live: one real Antigravity turn through the whole path (research, JSON answer, publish
+    /// checks, artifact creation). Ignored so `cargo test` and CI never spawn an agent; run with
+    /// `cargo test --lib -j 2 live_generation -- --ignored --nocapture`. The temp database and
+    /// temp artifacts folder keep the owner's studio.db and gallery untouched, and under test the
+    /// turn runs with the agent's own default model instead of the saved choice. Set
+    /// `AGENTOS_LIVE_SITE_REPO=<owner>/<repo>` to also publish the result there and print the URL.
+    #[test]
+    #[ignore = "live: spawns a real antigravity turn, minutes long"]
+    fn live_generation_researches_and_creates_a_checked_artifact() {
+        let _g = crate::store::test_env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        crate::store::set_test_db(Some(dir.path().join("studio.db")));
+        crate::artifacts::set_test_root(Some(dir.path().join("artifacts")));
+        let c = crate::store::test_conn();
+        let brief = "A small offline habit tracker. Add habits, tick each one once per day, and \
+                     show the current streak next to every habit. First run shows an empty state \
+                     that explains the app, and all data persists in localStorage.";
+        let made = match generate_in(&c, "Streakkeeper", brief, None, GENERATE_LIMIT) {
+            Ok(g) => g,
+            Err(e) => {
+                crate::store::set_test_db(None);
+                crate::artifacts::set_test_root(None);
+                panic!("live generation failed: {e:#}");
+            }
+        };
+        let folder = crate::artifacts::artifact_dir(&made.artifact.slug);
+        let report = crate::artifact_check::check(&folder);
+        let site = std::env::var("AGENTOS_LIVE_SITE_REPO")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        let published = site.map(|repo| {
+            crate::artifacts::set_site_in(&c, &repo).expect("the site repo must belong to gh");
+            crate::artifacts::publish_in(&c, &made.artifact.id, true).expect("publish")
+        });
+        crate::store::set_test_db(None);
+        crate::artifacts::set_test_root(None);
+        println!(
+            "agent={} files={} bytes={} in {} ms, summary: {}",
+            made.agent, made.artifact.files, made.artifact.bytes, made.duration_ms, made.summary
+        );
+        if let Some(p) = &published {
+            println!(
+                "published {} (commit {}) to {}",
+                p.url, p.commit, p.site_repo
+            );
+            assert!(p.url.contains(&made.artifact.slug), "{}", p.url);
+        }
+        assert_eq!(
+            made.agent, "antigravity",
+            "the first installed agent builds"
+        );
+        assert_eq!(made.artifact.template, "generated");
+        assert!(
+            folder.join("index.html").is_file(),
+            "index.html exists in {}",
+            folder.display()
+        );
+        assert!(report.ok, "publish checks: {:?}", report.issues);
+    }
 }
